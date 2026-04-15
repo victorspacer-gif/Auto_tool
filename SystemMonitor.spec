@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+from pathlib import Path
 
 
 pynput_datas, pynput_binaries, pynput_hiddenimports = collect_all("pynput")
@@ -10,7 +11,14 @@ pygame_datas, pygame_binaries, pygame_hiddenimports = collect_all("pygame")
 pystray_datas, pystray_binaries, pystray_hiddenimports = collect_all("pystray")
 pil_datas, pil_binaries, pil_hiddenimports = collect_all("PIL")
 pyautogui_datas, pyautogui_binaries, pyautogui_hiddenimports = collect_all("pyautogui")
+pytesseract_datas, pytesseract_binaries, pytesseract_hiddenimports = collect_all("pytesseract")
 win32_hiddenimports = collect_submodules("win32com")
+vendor_tesseract_dir = Path("vendor") / "tesseract"
+vendor_tesseract_datas = []
+if vendor_tesseract_dir.exists():
+    for item in vendor_tesseract_dir.rglob("*"):
+        if item.is_file():
+            vendor_tesseract_datas.append((str(item), str(Path("tesseract") / item.relative_to(vendor_tesseract_dir).parent)))
 
 datas = (
     pynput_datas
@@ -20,6 +28,8 @@ datas = (
     + pystray_datas
     + pil_datas
     + pyautogui_datas
+    + pytesseract_datas
+    + vendor_tesseract_datas
 )
 
 binaries = (
@@ -30,6 +40,7 @@ binaries = (
     + pystray_binaries
     + pil_binaries
     + pyautogui_binaries
+    + pytesseract_binaries
 )
 
 hiddenimports = (
@@ -40,6 +51,7 @@ hiddenimports = (
     + pystray_hiddenimports
     + pil_hiddenimports
     + pyautogui_hiddenimports
+    + pytesseract_hiddenimports
     + win32_hiddenimports
     + [
         "pynput.keyboard",

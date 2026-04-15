@@ -11,9 +11,11 @@ from .config import ConfigSerializer
 from .models import HotkeyJob
 from .runtime import (
     AppRuntime,
+    HAS_CV2,
     HAS_MSS,
     HAS_PYGAME,
     HAS_PYNPUT,
+    HAS_TESSERACT,
     HAS_TRAY,
     HAS_WIN32,
     Image,
@@ -24,6 +26,8 @@ from .runtime import (
 from .services import (
     AlarmService,
     AntiAfkService,
+    AutoHealerService,
+    CharacterStatusService,
     FishingService,
     HotkeyJobService,
     HotkeyService,
@@ -41,7 +45,9 @@ class SystemMonitorApp:
         self.afk_service = AntiAfkService(self.runtime)
         self.rclick_service = RightClickService(self.runtime)
         self.alarm_service = AlarmService(self.runtime)
+        self.char_status_service = CharacterStatusService(self.runtime)
         self.fishing_service = FishingService(self.runtime)
+        self.healer_service = AutoHealerService(self.runtime)
         self.rune_service = RuneMakerService(self.runtime)
         self.job_service = HotkeyJobService(self.runtime)
 
@@ -53,9 +59,25 @@ class SystemMonitorApp:
         self.pos_label: tk.Label | None = None
         self.rod_label: tk.Label | None = None
         self.alarm_region_label: tk.Label | None = None
+        self.char_status_region_label: tk.Label | None = None
+        self.char_status_hp_region_label: tk.Label | None = None
+        self.char_status_mana_region_label: tk.Label | None = None
+        self.char_status_cap_region_label: tk.Label | None = None
+        self.char_status_tesseract_label: tk.Label | None = None
+        self.char_status_watch_label: tk.Label | None = None
+        self.char_status_level_label: tk.Label | None = None
+        self.char_status_hp_label: tk.Label | None = None
+        self.char_status_mana_label: tk.Label | None = None
+        self.char_status_cap_label: tk.Label | None = None
+        self.char_status_food_label: tk.Label | None = None
+        self.char_status_regen_label: tk.Label | None = None
+        self.char_status_seen_label: tk.Label | None = None
+        self.char_status_error_label: tk.Label | None = None
         self.rune_hand_label: tk.Label | None = None
         self.rune_storage_label: tk.Label | None = None
         self.rune_blank_label: tk.Label | None = None
+        self.healer_char_label: tk.Label | None = None
+        self.healer_rune_label: tk.Label | None = None
         self.spots_listbox: tk.Listbox | None = None
         self.fish_session_value_label: tk.Label | None = None
         self.fish_session_remaining_label: tk.Label | None = None
@@ -94,6 +116,9 @@ class SystemMonitorApp:
         self._start_global_hotkeys()
         self._poll_settings()
         self._refresh_stats()
+        self._refresh_character_status_display()
+        if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
+            self.char_status_service.start()
         if HAS_TRAY:
             self._start_tray()
 
@@ -105,6 +130,8 @@ class SystemMonitorApp:
                 ("pygame", HAS_PYGAME),
                 ("pystray+pillow", HAS_TRAY),
                 ("pywin32", HAS_WIN32),
+                ("opencv-python", HAS_CV2),
+                ("pytesseract", HAS_TESSERACT),
             ]
             if not installed
         ]
@@ -152,21 +179,27 @@ class SystemMonitorApp:
 
         automation_tab = tk.Frame(notebook, bg=BG)
         rune_tab = tk.Frame(notebook, bg=BG)
+        healer_tab = tk.Frame(notebook, bg=BG)
         alarm_tab = tk.Frame(notebook, bg=BG)
+        char_status_tab = tk.Frame(notebook, bg=BG)
         fish_tab = tk.Frame(notebook, bg=BG)
         hotkeys_tab = tk.Frame(notebook, bg=BG)
         config_tab = tk.Frame(notebook, bg=BG)
 
         notebook.add(automation_tab, text="🎮  Activity Control")
         notebook.add(rune_tab, text="✨  Rune Session")
+        notebook.add(healer_tab, text="❤️  Auto Healer")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
+        notebook.add(char_status_tab, text="📊  Character Status")
         notebook.add(fish_tab, text="🎣  Fishing Session")
         notebook.add(hotkeys_tab, text="⌨️  Hotkeys")
         notebook.add(config_tab, text="💾  Config")
 
         self._build_automation_tab(automation_tab)
         self._build_rune_tab(rune_tab)
+        self._build_healer_tab(healer_tab)
         self._build_alarm_tab(alarm_tab)
+        self._build_character_status_tab(char_status_tab)
         self._build_fish_tab(fish_tab)
         self._build_hotkeys_tab(hotkeys_tab)
         self._build_config_tab(config_tab)
@@ -223,6 +256,24 @@ class SystemMonitorApp:
         self.ui_vars["rclick_max_var"] = max_var
         self._label_entry(panel, "Timer Min (ms):", min_var)
         self._label_entry(panel, "Timer Max (ms):", max_var)
+        rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
+        rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
+        rclick_food_burst_count = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count))
+        rclick_food_burst_interval = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_interval_ms))
+        self.ui_vars["rclick_mode_var"] = rclick_mode
+        self.ui_vars["rclick_food_min_var"] = rclick_food_min
+        self.ui_vars["rclick_food_burst_count_var"] = rclick_food_burst_count
+        self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
+        mode_row = tk.Frame(panel, bg=PANEL)
+        mode_row.pack(fill="x", pady=2)
+        tk.Label(mode_row, text="Mode:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
+        mode_menu = tk.OptionMenu(mode_row, rclick_mode, "timer", "food")
+        mode_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
+        mode_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
+        mode_menu.pack(side="left", padx=4)
+        self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
+        self._label_entry(panel, "Food burst clicks:", rclick_food_burst_count, width=6)
+        self._label_entry(panel, "Burst interval (ms):", rclick_food_burst_interval, width=6)
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
@@ -248,6 +299,9 @@ class SystemMonitorApp:
         self._label_entry(spell_panel, "Cast settle delay (ms):", rune_cast, width=7)
         self._label_entry(spell_panel, "Cycle delay (ms):", rune_cycle, width=7)
         self._label_entry(spell_panel, "Position jitter (px ±):", rune_jitter, width=5)
+        rune_min_mana = tk.StringVar(value=str(self.runtime.state.rune_min_mana))
+        self.ui_vars["rune_min_mana_var"] = rune_min_mana
+        self._label_entry(spell_panel, "Min mana to cast:", rune_min_mana, width=7)
         cycle_label = tk.Label(spell_panel, text="≈ Cycle time: —", font=SMALL_B, fg=TEAL, bg=PANEL)
         cycle_label.pack(anchor="w", pady=(6, 0))
 
@@ -308,8 +362,11 @@ class SystemMonitorApp:
         self._btn(mp3_row, "Browse", self.browse_alarm_sound, PURPLE).pack(side="left")
 
         alarm_threshold = tk.StringVar(value=str(int(self.runtime.state.alarm_threshold * 100)))
+        alarm_hp_percent = tk.StringVar(value=str(self.runtime.state.alarm_hp_percent))
         self.ui_vars["alarm_thresh_var"] = alarm_threshold
+        self.ui_vars["alarm_hp_percent_var"] = alarm_hp_percent
         self._label_entry(panel, "Change threshold (%):", alarm_threshold, width=6)
+        self._label_entry(panel, "Low HP alert (%):", alarm_hp_percent, width=6)
         auto_pause = tk.BooleanVar(value=self.runtime.state.alarm_auto_pause)
         self.ui_vars["alarm_auto_pause_var"] = auto_pause
         tk.Checkbutton(panel, text="Auto-pause all activities when screen watch triggers", variable=auto_pause, font=BOLD, bg=PANEL, fg=ORANGE, selectcolor=PANEL, activebackground=PANEL, activeforeground=ORANGE).pack(anchor="w", pady=(8, 2))
@@ -318,6 +375,71 @@ class SystemMonitorApp:
         action_row.pack(fill="x", pady=(10, 0))
         self._btn(action_row, "▶ Start Watching", self.alarm_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
         self._btn(action_row, "⏹ Stop", self.alarm_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
+
+    def _build_healer_tab(self, parent: tk.Frame) -> None:
+        left = tk.Frame(parent, bg=BG)
+        right = tk.Frame(parent, bg=BG)
+        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
+        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+
+        mode_panel = tk.LabelFrame(left, text=" ❤️  Healing Mode ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        mode_panel.pack(fill="x", pady=(0, 8))
+        healer_mode = tk.StringVar(value=self.runtime.state.healer_mode)
+        healer_spell_key = tk.StringVar(value=self.runtime.state.healer_spell_key)
+        healer_use_percent = tk.BooleanVar(value=self.runtime.state.healer_use_percent)
+        healer_hp_percent = tk.StringVar(value=str(self.runtime.state.healer_hp_percent))
+        healer_hp_value = tk.StringVar(value=str(self.runtime.state.healer_hp_value))
+        healer_min_mana = tk.StringVar(value=str(self.runtime.state.healer_min_mana))
+        self.ui_vars["healer_mode_var"] = healer_mode
+        self.ui_vars["healer_spell_key_var"] = healer_spell_key
+        self.ui_vars["healer_use_percent_var"] = healer_use_percent
+        self.ui_vars["healer_hp_percent_var"] = healer_hp_percent
+        self.ui_vars["healer_hp_value_var"] = healer_hp_value
+        self.ui_vars["healer_min_mana_var"] = healer_min_mana
+        mode_row = tk.Frame(mode_panel, bg=PANEL)
+        mode_row.pack(fill="x", pady=2)
+        tk.Label(mode_row, text="Heal with:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
+        mode_menu = tk.OptionMenu(mode_row, healer_mode, "spell", "rune")
+        mode_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
+        mode_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
+        mode_menu.pack(side="left", padx=4)
+        self._label_entry(mode_panel, "Spell hotkey:", healer_spell_key, width=6)
+        tk.Checkbutton(mode_panel, text="Use HP percentage threshold", variable=healer_use_percent, font=BOLD, bg=PANEL, fg=FG, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w", pady=(4, 2))
+        self._label_entry(mode_panel, "Heal below HP %:", healer_hp_percent, width=6)
+        self._label_entry(mode_panel, "Heal below HP value:", healer_hp_value, width=6)
+        self._label_entry(mode_panel, "Min mana to heal:", healer_min_mana, width=6)
+
+        rune_panel = tk.LabelFrame(left, text=" 🧿  Rune Healing ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        rune_panel.pack(fill="x", pady=(0, 8))
+        self.healer_char_label = tk.Label(rune_panel, text="Character center: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
+        self.healer_char_label.pack(anchor="w", pady=(0, 4))
+        self.healer_rune_label = tk.Label(rune_panel, text="Healing rune: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
+        self.healer_rune_label.pack(anchor="w", pady=(0, 4))
+        healer_mouse_speed = tk.StringVar(value=str(self.runtime.state.healer_mouse_speed))
+        healer_rune_delay = tk.StringVar(value=str(self.runtime.state.healer_rune_delay_ms))
+        self.ui_vars["healer_mouse_speed_var"] = healer_mouse_speed
+        self.ui_vars["healer_rune_delay_var"] = healer_rune_delay
+        row = tk.Frame(rune_panel, bg=PANEL)
+        row.pack(fill="x", pady=(0, 6))
+        self._btn(row, "🎯 Record Character", self.record_healer_character_pos, BLUE).pack(side="left", padx=(0, 4), expand=True, fill="x")
+        self._btn(row, "🎯 Record Rune", self.record_healer_rune_pos, PURPLE).pack(side="left", padx=4, expand=True, fill="x")
+        self._label_entry(rune_panel, "Mouse speed factor:", healer_mouse_speed, width=6)
+        self._label_entry(rune_panel, "Rune delay (ms):", healer_rune_delay, width=6)
+
+        buttons = tk.Frame(left, bg=BG)
+        buttons.pack(fill="x", pady=(0, 8))
+        self._btn(buttons, "▶ Start Auto Healer", self.healer_service.start, GREEN).pack(fill="x", pady=2)
+        self._btn(buttons, "⏹ Stop Auto Healer", self.healer_service.stop, RED).pack(fill="x", pady=2)
+
+        help_panel = tk.LabelFrame(right, text=" ℹ️  Flow ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        help_panel.pack(fill="both", expand=True, pady=(0, 8))
+        for line in [
+            "1. Character Status provides the live HP values.",
+            "2. Spell mode presses a game hotkey like F1/F2 when healing is needed.",
+            "3. Rune mode right-clicks the recorded rune and then left-clicks your recorded character center.",
+            "4. Rune healing uses the shared mouse lock so it will not fight fishing or rune maker.",
+        ]:
+            tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
 
     def _build_fish_tab(self, parent: tk.Frame) -> None:
         left = tk.Frame(parent, bg=BG)
@@ -372,6 +494,9 @@ class SystemMonitorApp:
         self._label_entry(timing_panel, "Cast delay Max (ms):", cast_max)
         self._label_entry(timing_panel, "Wait for bite Min (ms):", wait_min)
         self._label_entry(timing_panel, "Wait for bite Max (ms):", wait_max)
+        fish_min_cap = tk.StringVar(value=str(self.runtime.state.fish_min_cap))
+        self.ui_vars["fish_min_cap_var"] = fish_min_cap
+        self._label_entry(timing_panel, "Stop below cap:", fish_min_cap, width=6)
         session_panel = tk.LabelFrame(right, text=" ⏲️  Fishing Session ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         session_panel.pack(fill="x", pady=(0, 8))
         self.fish_session_value_label = tk.Label(
@@ -416,7 +541,88 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(0, 8))
         self._btn(buttons, "▶ Start Fishing Session", self.fishing_service.start, GREEN).pack(fill="x", pady=2)
         self._btn(buttons, "⏹ Stop Fishing Session", self.fishing_service.stop, RED).pack(fill="x", pady=2)
-        tk.Label(right, text="Quick stop hotkey: see Hotkeys tab (fish_stop)", font=SMALL, fg=ORANGE, bg=BG).pack(anchor="w")
+        tk.Label(right, text="Quick toggle hotkey: see Hotkeys tab (fish_stop)", font=SMALL, fg=ORANGE, bg=BG).pack(anchor="w")
+
+    def _build_character_status_tab(self, parent: tk.Frame) -> None:
+        left = tk.Frame(parent, bg=BG)
+        right = tk.Frame(parent, bg=BG)
+        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
+        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+
+        watch_panel = tk.LabelFrame(left, text=" 📊  Status Window Watch ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        watch_panel.pack(fill="x", pady=(0, 8))
+        self.char_status_region_label = tk.Label(
+            watch_panel,
+            text="Window: not selected",
+            font=MONO,
+            fg=TEAL,
+            bg=PANEL,
+        )
+        self.char_status_region_label.pack(anchor="w", pady=(0, 4))
+        char_poll = tk.StringVar(value=str(self.runtime.state.char_status_poll_ms))
+        tesseract_path = tk.StringVar(value=self.runtime.state.char_status_tesseract_path)
+        self.ui_vars["char_status_poll_var"] = char_poll
+        self.ui_vars["char_status_tesseract_var"] = tesseract_path
+        self._label_entry(watch_panel, "Refresh every (ms):", char_poll, width=6)
+        tesseract_row = tk.Frame(watch_panel, bg=PANEL)
+        tesseract_row.pack(fill="x", pady=2)
+        tk.Label(tesseract_row, text="Tesseract path:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
+        self._entry(tesseract_row, tesseract_path, 28).pack(side="left", padx=4, fill="x", expand=True)
+        self._btn(tesseract_row, "Browse", self.browse_tesseract_path, PURPLE).pack(side="left")
+        self.char_status_tesseract_label = tk.Label(watch_panel, text="", font=SMALL, fg=MUTED, bg=PANEL, anchor="w", justify="left")
+        self.char_status_tesseract_label.pack(fill="x", pady=(4, 0))
+        field_regions = tk.Frame(watch_panel, bg=PANEL)
+        field_regions.pack(fill="x", pady=(6, 0))
+        self.char_status_hp_region_label = tk.Label(field_regions, text="HP area: not selected", font=MONO, fg=TEAL, bg=PANEL, anchor="w")
+        self.char_status_hp_region_label.pack(fill="x", pady=1)
+        self.char_status_mana_region_label = tk.Label(field_regions, text="Mana area: not selected", font=MONO, fg=TEAL, bg=PANEL, anchor="w")
+        self.char_status_mana_region_label.pack(fill="x", pady=1)
+        self.char_status_cap_region_label = tk.Label(field_regions, text="Cap area: not selected", font=MONO, fg=TEAL, bg=PANEL, anchor="w")
+        self.char_status_cap_region_label.pack(fill="x", pady=1)
+        button_row = tk.Frame(watch_panel, bg=PANEL)
+        button_row.pack(fill="x", pady=(6, 0))
+        self._btn(button_row, "🖼 Select Window", self.select_character_status_region, BLUE).pack(side="left", padx=(0, 4), expand=True, fill="x")
+        self._btn(button_row, "HP", self.select_character_status_hp_region, PURPLE).pack(side="left", padx=4, expand=True, fill="x")
+        self._btn(button_row, "Mana", self.select_character_status_mana_region, PURPLE).pack(side="left", padx=4, expand=True, fill="x")
+        self._btn(button_row, "Cap", self.select_character_status_cap_region, PURPLE).pack(side="left", padx=4, expand=True, fill="x")
+        button_row2 = tk.Frame(watch_panel, bg=PANEL)
+        button_row2.pack(fill="x", pady=(6, 0))
+        self._btn(button_row2, "▶ Start", self.char_status_service.start, GREEN).pack(side="left", padx=4, expand=True, fill="x")
+        self._btn(button_row2, "⏹ Stop", self.char_status_service.stop, RED).pack(side="left", padx=4, expand=True, fill="x")
+        self._btn(button_row2, "↺ Reset", self.reset_character_status_region, ORANGE).pack(side="left", padx=(4, 0), expand=True, fill="x")
+
+        values_panel = tk.LabelFrame(left, text=" 🔎  Live Values ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        values_panel.pack(fill="both", expand=True, pady=(0, 8))
+        self.char_status_watch_label = tk.Label(values_panel, text="Watcher: idle", font=SMALL_B, fg=ORANGE, bg=PANEL)
+        self.char_status_watch_label.pack(anchor="w", pady=(0, 8))
+        self.char_status_level_label = tk.Label(values_panel, text="Level: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.char_status_level_label.pack(fill="x", pady=2)
+        self.char_status_hp_label = tk.Label(values_panel, text="HP: —", font=HEADER, fg=RED, bg=PANEL, anchor="w")
+        self.char_status_hp_label.pack(fill="x", pady=2)
+        self.char_status_mana_label = tk.Label(values_panel, text="Mana: —", font=HEADER, fg=BLUE, bg=PANEL, anchor="w")
+        self.char_status_mana_label.pack(fill="x", pady=2)
+        self.char_status_cap_label = tk.Label(values_panel, text="Cap: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.char_status_cap_label.pack(fill="x", pady=2)
+        self.char_status_food_label = tk.Label(values_panel, text="Food: —", font=HEADER, fg=GREEN, bg=PANEL, anchor="w")
+        self.char_status_food_label.pack(fill="x", pady=2)
+        self.char_status_regen_label = tk.Label(values_panel, text="Regen: HP 0.0/min | Mana 0.0/min", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.char_status_regen_label.pack(fill="x", pady=2)
+        self.char_status_seen_label = tk.Label(values_panel, text="Last update: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.char_status_seen_label.pack(fill="x", pady=(10, 2))
+        self.char_status_error_label = tk.Label(values_panel, text="OCR: waiting for a valid read", font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w")
+        self.char_status_error_label.pack(fill="x")
+
+        help_panel = tk.LabelFrame(right, text=" ℹ️  How It Works ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        help_panel.pack(fill="both", expand=True, pady=(0, 8))
+        for line in [
+            "1. Best mode: select HP, Mana, and Cap areas individually.",
+            "2. Fallback mode: select the full character status window if you want one-shot setup.",
+            "3. Values stay in memory on runtime.state as char_status_hp / mana / cap.",
+            "4. If OCR misses a frame, the last good values are kept until the next valid read.",
+        ]:
+            tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
+        dep_text = "Python OCR packages loaded" if (HAS_MSS and HAS_CV2 and HAS_TESSERACT) else "Install mss, opencv-python, and pytesseract to use this tab"
+        tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if (HAS_MSS and HAS_CV2 and HAS_TESSERACT) else ORANGE, bg=PANEL, justify="left").pack(anchor="w", pady=(10, 0))
 
     def _build_hotkeys_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
@@ -508,7 +714,7 @@ class SystemMonitorApp:
             text=(
                 f"Hotkey: {stats['hotkeys']}  |  Bursts: {stats['bursts']}  |  "
                 f"AFK: {stats['afk_moves']}  |  R-click: {stats['right_clicks']}  |  "
-                f"Fish: {stats['fish_casts']}  |  Runes: {stats['runes_made']}  |  "
+                f"Fish: {stats['fish_casts']}  |  Runes: {stats['runes_made']}  |  Heals: {stats['heals']}  |  "
                 f"Alarms: {stats['alarms']}"
             )
         )
@@ -581,6 +787,12 @@ class SystemMonitorApp:
     def record_rune_blank(self) -> None:
         self._record_rune_position("rune_blank_pos", self.rune_blank_label, "Blank rune backpack pos")
 
+    def record_healer_character_pos(self) -> None:
+        self._record_generic_position("healer_character_pos", self.healer_char_label, "Character center", "Character center")
+
+    def record_healer_rune_pos(self) -> None:
+        self._record_generic_position("healer_rune_pos", self.healer_rune_label, "Healing rune", "Healing rune")
+
     def _record_rune_position(self, attr_name: str, label: tk.Label | None, label_text: str) -> None:
         def on_done(pos: tuple[int, int]) -> None:
             setattr(self.runtime.state, attr_name, pos)
@@ -590,6 +802,16 @@ class SystemMonitorApp:
                 label.config(text=f"{label_text}: {pos[0]},{pos[1]}")
 
         self.position_capture.capture(on_done, label_text)
+
+    def _record_generic_position(self, attr_name: str, label: tk.Label | None, label_text: str, capture_label: str) -> None:
+        def on_done(pos: tuple[int, int]) -> None:
+            setattr(self.runtime.state, attr_name, pos)
+            self.runtime.ui.log(f"✅ {label_text}: {pos}")
+            self.runtime.ui.set_status(f"{label_text} captured", GREEN)
+            if label:
+                label.config(text=f"{label_text}: {pos[0]}, {pos[1]}")
+
+        self.position_capture.capture(on_done, capture_label)
 
     def add_job(self) -> None:
         self.runtime.state.job_counter += 1
@@ -617,6 +839,10 @@ class SystemMonitorApp:
             value = tk.StringVar(value=default)
             self._entry(row1, value, 6).pack(side="left", padx=4)
             outer._vars[name] = value
+        tk.Label(row1, text="Min mana:", font=BOLD, fg=FG, bg=PANEL).pack(side="left", padx=(8, 0))
+        min_mana_var = tk.StringVar(value=str(job.min_mana))
+        self._entry(row1, min_mana_var, 6).pack(side="left", padx=4)
+        outer._vars["min_mana"] = min_mana_var
         indicator = tk.Label(row1, text="●", font=BOLD, fg=MUTED, bg=PANEL)
         indicator.pack(side="right", padx=4)
         outer._indicator = indicator
@@ -662,6 +888,7 @@ class SystemMonitorApp:
             job.key = vars_map["key"].get()
             job.min_ms = int(vars_map["min"].get())
             job.max_ms = int(vars_map["max"].get())
+            job.min_mana = int(vars_map["min_mana"].get())
             job.burst_enabled = vars_map["burst"].get()
             job.burst_chance = int(vars_map["b_chance"].get()) / 100.0
             job.burst_cnt_min = int(vars_map["b_cmin"].get())
@@ -704,9 +931,9 @@ class SystemMonitorApp:
                 elif HotkeyService.matches(key, bindings.get("alarm", "f6")):
                     self.root.after(0, lambda: self.alarm_service.stop() if state.alarm_active else self.alarm_service.start())
                 elif HotkeyService.matches(key, bindings.get("fish_stop", "f9")):
-                    self.root.after(0, self.fishing_service.stop)
+                    self.root.after(0, lambda: self.fishing_service.stop() if state.fish_active else self.fishing_service.start())
                 elif HotkeyService.matches(key, bindings.get("rune_stop", "f10")):
-                    self.root.after(0, self.rune_service.stop)
+                    self.root.after(0, lambda: self.rune_service.stop() if state.rune_active else self.rune_service.start())
             except Exception:
                 pass
 
@@ -764,6 +991,7 @@ class SystemMonitorApp:
             stop_fishing=self.fishing_service.stop,
             stop_rune=self.rune_service.stop,
         )
+        self.healer_service.stop()
 
     def reset_alarm_area(self) -> None:
         self.runtime.state.alarm_region = None
@@ -771,13 +999,97 @@ class SystemMonitorApp:
             self.alarm_region_label.config(text="Area: centre 200×200 px (default)")
         self.runtime.ui.log("ℹ️  Screen watch area reset")
 
+    def reset_character_status_region(self) -> None:
+        self.char_status_service.stop()
+        state = self.runtime.state
+        state.char_status_region = None
+        state.char_status_hp_region = None
+        state.char_status_mana_region = None
+        state.char_status_cap_region = None
+        state.char_status_level = None
+        state.char_status_hp = None
+        state.char_status_mana = None
+        state.char_status_cap = None
+        state.char_status_food_seconds = None
+        state.char_status_food_text = ""
+        state.char_status_hp_peak = 0
+        state.char_status_hp_regen_per_min = 0.0
+        state.char_status_mana_regen_per_min = 0.0
+        state.char_status_last_seen = None
+        state.char_status_last_error = ""
+        self._refresh_character_status_display()
+        self.runtime.ui.log("ℹ️  Character status window reset")
+
     def browse_alarm_sound(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("Audio", "*.mp3 *.wav *.ogg"), ("All", "*.*")])
         if path:
             self.runtime.state.alarm_mp3 = path
             self.ui_vars["alarm_mp3_var"].set(path)
 
+    def browse_tesseract_path(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select tesseract.exe",
+            filetypes=[("Tesseract", "tesseract.exe"), ("Executables", "*.exe"), ("All", "*.*")],
+        )
+        if path:
+            self.runtime.state.char_status_tesseract_path = path
+            self.ui_vars["char_status_tesseract_var"].set(path)
+            self._refresh_character_status_display()
+
     def select_alarm_area(self) -> None:
+        self._select_screen_region(
+            title="Click & drag to select alarm area  |  Esc = cancel",
+            on_done=self._apply_alarm_region,
+        )
+
+    def select_character_status_region(self) -> None:
+        self._select_screen_region(
+            title="Select the full character status window  |  Esc = cancel",
+            on_done=self._apply_character_status_region,
+        )
+
+    def select_character_status_hp_region(self) -> None:
+        self._select_screen_region(
+            title="Select HP number area  |  Esc = cancel",
+            on_done=lambda region: self._apply_character_status_field_region("hp", region),
+        )
+
+    def select_character_status_mana_region(self) -> None:
+        self._select_screen_region(
+            title="Select Mana number area  |  Esc = cancel",
+            on_done=lambda region: self._apply_character_status_field_region("mana", region),
+        )
+
+    def select_character_status_cap_region(self) -> None:
+        self._select_screen_region(
+            title="Select Cap text/number area  |  Esc = cancel",
+            on_done=lambda region: self._apply_character_status_field_region("cap", region),
+        )
+
+    def _apply_alarm_region(self, region: tuple[int, int, int, int]) -> None:
+        x_val, y_val, width, height = region
+        self.runtime.state.alarm_region = region
+        text = f"Area: ({x_val},{y_val})  {width}×{height} px"
+        self.runtime.ui.log(f"✅ Screen watch area: {text}")
+        self.runtime.ui.set_status(f"Screen watch area: {text}", TEAL)
+        if self.alarm_region_label:
+            self.alarm_region_label.config(text=text)
+
+    def _apply_character_status_region(self, region: tuple[int, int, int, int]) -> None:
+        self.runtime.state.char_status_region = region
+        self._refresh_character_status_display()
+        self.runtime.ui.log(f"✅ Character status window selected: {region}")
+        self.runtime.ui.set_status("Character status window selected", TEAL)
+        self.char_status_service.restart_if_needed()
+
+    def _apply_character_status_field_region(self, key: str, region: tuple[int, int, int, int]) -> None:
+        setattr(self.runtime.state, f"char_status_{key}_region", region)
+        self._refresh_character_status_display()
+        self.runtime.ui.log(f"✅ Character status {key.upper()} area selected: {region}")
+        self.runtime.ui.set_status(f"Character status {key.upper()} area selected", TEAL)
+        self.char_status_service.restart_if_needed()
+
+    def _select_screen_region(self, title: str, on_done) -> None:
         overlay = tk.Toplevel(self.root)
         overlay.attributes("-fullscreen", True)
         overlay.attributes("-alpha", 0.30)
@@ -786,7 +1098,7 @@ class SystemMonitorApp:
         overlay.overrideredirect(True)
         canvas = tk.Canvas(overlay, cursor="crosshair", bg="black", highlightthickness=0)
         canvas.pack(fill="both", expand=True)
-        tk.Label(canvas, text="  Click & drag to select alarm area  |  Esc = cancel  ", font=BOLD, fg=TEAL, bg="black").place(x=20, y=20)
+        tk.Label(canvas, text=f"  {title}  ", font=BOLD, fg=TEAL, bg="black").place(x=20, y=20)
         start_xy = [None]
         rect_id = [None]
 
@@ -808,16 +1120,10 @@ class SystemMonitorApp:
             x2, y2 = event.x, event.y
             x_val, y_val = min(x1, x2), min(y1, y2)
             width, height = abs(x2 - x1), abs(y2 - y1)
-            if width < 10 or height < 10:
-                overlay.destroy()
-                return
-            self.runtime.state.alarm_region = (x_val, y_val, width, height)
             overlay.destroy()
-            text = f"Area: ({x_val},{y_val})  {width}×{height} px"
-            self.runtime.ui.log(f"✅ Screen watch area: {text}")
-            self.runtime.ui.set_status(f"Screen watch area: {text}", TEAL)
-            if self.alarm_region_label:
-                self.alarm_region_label.config(text=text)
+            if width < 10 or height < 10:
+                return
+            on_done((x_val, y_val, width, height))
 
         canvas.bind("<ButtonPress-1>", on_press)
         canvas.bind("<B1-Motion>", on_drag)
@@ -854,6 +1160,10 @@ class SystemMonitorApp:
             ConfigSerializer.apply_loaded(self.runtime.state, payload)
             self._sync_ui_from_state()
             self._restart_global_listener()
+            if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
+                self.char_status_service.restart_if_needed()
+            else:
+                self.char_status_service.stop()
             self.runtime.ui.log(f"📂 Loaded: {path}")
             self.runtime.ui.log("✅ Config applied")
             self.runtime.ui.set_status("Config loaded", GREEN)
@@ -869,23 +1179,42 @@ class SystemMonitorApp:
             "rclick_max_var": state.rclick_max_ms,
             "alarm_mp3_var": state.alarm_mp3,
             "alarm_thresh_var": int(state.alarm_threshold * 100),
+            "alarm_hp_percent_var": state.alarm_hp_percent,
+            "char_status_poll_var": state.char_status_poll_ms,
+            "char_status_tesseract_var": state.char_status_tesseract_path,
             "fish_cast_min_var": state.fish_cast_min_ms,
             "fish_cast_max_var": state.fish_cast_max_ms,
             "fish_wait_min_var": state.fish_wait_min_ms,
             "fish_wait_max_var": state.fish_wait_max_ms,
+            "fish_min_cap_var": state.fish_min_cap,
             "fish_rod_jit_var": state.fish_rod_jitter,
             "fish_spot_jit_var": state.fish_spot_jitter,
             "fish_session_var": state.fish_session_minutes,
+            "rclick_mode_var": state.rclick_mode,
+            "rclick_food_min_var": state.rclick_food_min_secs,
+            "rclick_food_burst_count_var": state.rclick_food_burst_count,
+            "rclick_food_burst_interval_var": state.rclick_food_burst_interval_ms,
             "rune_spell_key_var": state.rune_spell_key,
             "rune_cycle_delay_var": state.rune_cycle_delay_ms,
             "rune_jitter_var": state.rune_jitter,
             "rune_cast_delay_var": state.rune_cast_delay_ms,
+            "rune_min_mana_var": state.rune_min_mana,
+            "healer_mode_var": state.healer_mode,
+            "healer_spell_key_var": state.healer_spell_key,
+            "healer_use_percent_var": state.healer_use_percent,
+            "healer_hp_percent_var": state.healer_hp_percent,
+            "healer_hp_value_var": state.healer_hp_value,
+            "healer_min_mana_var": state.healer_min_mana,
+            "healer_mouse_speed_var": state.healer_mouse_speed,
+            "healer_rune_delay_var": state.healer_rune_delay_ms,
         }
         for name, value in mappings.items():
             if name in self.ui_vars:
                 self.ui_vars[name].set(str(value))
         if "alarm_auto_pause_var" in self.ui_vars:
             self.ui_vars["alarm_auto_pause_var"].set(state.alarm_auto_pause)
+        if "healer_use_percent_var" in self.ui_vars:
+            self.ui_vars["healer_use_percent_var"].set(state.healer_use_percent)
         if self.pos_label:
             self.pos_label.config(text=f"Pos: {state.rclick_pos[0]}, {state.rclick_pos[1]}")
         if self.rod_label:
@@ -896,12 +1225,17 @@ class SystemMonitorApp:
             self.rune_storage_label.config(text=f"Finished storage pos: {state.rune_storage_pos[0]},{state.rune_storage_pos[1]}")
         if self.rune_blank_label:
             self.rune_blank_label.config(text=f"Blank rune backpack pos: {state.rune_blank_pos[0]},{state.rune_blank_pos[1]}")
+        if self.healer_char_label:
+            self.healer_char_label.config(text=f"Character center: {state.healer_character_pos[0]}, {state.healer_character_pos[1]}")
+        if self.healer_rune_label:
+            self.healer_rune_label.config(text=f"Healing rune: {state.healer_rune_pos[0]}, {state.healer_rune_pos[1]}")
         if self.alarm_region_label:
             if state.alarm_region:
                 x_val, y_val, width, height = state.alarm_region
                 self.alarm_region_label.config(text=f"Area: ({x_val},{y_val}) {width}×{height} px")
             else:
                 self.alarm_region_label.config(text="Area: centre 200×200 px (default)")
+        self._refresh_character_status_display()
         if self.spots_listbox:
             self.spots_listbox.delete(0, "end")
             for index, spot in enumerate(state.fish_spots, start=1):
@@ -929,15 +1263,25 @@ class SystemMonitorApp:
             state.afk_max_ms = get_int("afk_max_var", state.afk_max_ms)
             state.rclick_min_ms = get_int("rclick_min_var", state.rclick_min_ms)
             state.rclick_max_ms = get_int("rclick_max_var", state.rclick_max_ms)
+            if "rclick_mode_var" in self.ui_vars:
+                state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
+            state.rclick_food_min_secs = max(0, get_int("rclick_food_min_var", state.rclick_food_min_secs))
+            state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count_var", state.rclick_food_burst_count))
+            state.rclick_food_burst_interval_ms = max(50, get_int("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
             state.alarm_threshold = get_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
+            state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent_var", state.alarm_hp_percent)))
+            state.char_status_poll_ms = max(250, get_int("char_status_poll_var", state.char_status_poll_ms))
             if "alarm_auto_pause_var" in self.ui_vars:
                 state.alarm_auto_pause = bool(self.ui_vars["alarm_auto_pause_var"].get())
             if "alarm_mp3_var" in self.ui_vars:
                 state.alarm_mp3 = str(self.ui_vars["alarm_mp3_var"].get())
+            if "char_status_tesseract_var" in self.ui_vars:
+                state.char_status_tesseract_path = str(self.ui_vars["char_status_tesseract_var"].get()).strip()
             state.fish_cast_min_ms = get_int("fish_cast_min_var", state.fish_cast_min_ms)
             state.fish_cast_max_ms = get_int("fish_cast_max_var", state.fish_cast_max_ms)
             state.fish_wait_min_ms = get_int("fish_wait_min_var", state.fish_wait_min_ms)
             state.fish_wait_max_ms = get_int("fish_wait_max_var", state.fish_wait_max_ms)
+            state.fish_min_cap = max(0, get_int("fish_min_cap_var", state.fish_min_cap))
             state.fish_rod_jitter = get_int("fish_rod_jit_var", state.fish_rod_jitter)
             state.fish_spot_jitter = get_int("fish_spot_jit_var", state.fish_spot_jitter)
             state.fish_session_minutes = max(1, min(40, get_int("fish_session_var", state.fish_session_minutes)))
@@ -946,6 +1290,22 @@ class SystemMonitorApp:
             state.rune_cycle_delay_ms = get_int("rune_cycle_delay_var", state.rune_cycle_delay_ms)
             state.rune_jitter = get_int("rune_jitter_var", state.rune_jitter)
             state.rune_cast_delay_ms = get_int("rune_cast_delay_var", state.rune_cast_delay_ms)
+            state.rune_min_mana = max(0, get_int("rune_min_mana_var", state.rune_min_mana))
+            if "healer_mode_var" in self.ui_vars:
+                state.healer_mode = str(self.ui_vars["healer_mode_var"].get()).strip().lower() or "spell"
+            if "healer_spell_key_var" in self.ui_vars:
+                state.healer_spell_key = str(self.ui_vars["healer_spell_key_var"].get()).lower().strip()
+            if "healer_use_percent_var" in self.ui_vars:
+                state.healer_use_percent = bool(self.ui_vars["healer_use_percent_var"].get())
+            state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent_var", state.healer_hp_percent)))
+            state.healer_hp_value = max(1, get_int("healer_hp_value_var", state.healer_hp_value))
+            state.healer_min_mana = max(0, get_int("healer_min_mana_var", state.healer_min_mana))
+            try:
+                state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
+            except (KeyError, ValueError):
+                pass
+            state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_var", state.healer_rune_delay_ms))
+        self._refresh_character_status_display()
         self._refresh_fish_session_display()
         self.root.after(500, self._poll_settings)
 
@@ -965,6 +1325,73 @@ class SystemMonitorApp:
             self.fish_session_remaining_label.config(
                 text=f"Session remaining: {minutes:02d}:{seconds:02d}"
             )
+
+    def _refresh_character_status_display(self) -> None:
+        state = self.runtime.state
+        if self.char_status_region_label:
+            if state.char_status_region:
+                x_val, y_val, width, height = state.char_status_region
+                self.char_status_region_label.config(
+                    text=f"Window: ({x_val},{y_val})  {width}×{height} px"
+                )
+            else:
+                self.char_status_region_label.config(text="Window: not selected")
+        self._refresh_character_status_region_label(self.char_status_hp_region_label, "HP area", state.char_status_hp_region)
+        self._refresh_character_status_region_label(self.char_status_mana_region_label, "Mana area", state.char_status_mana_region)
+        self._refresh_character_status_region_label(self.char_status_cap_region_label, "Cap area", state.char_status_cap_region)
+        if self.char_status_tesseract_label:
+            dependency_error = self.char_status_service.get_dependency_error()
+            if dependency_error == "Tesseract executable not found":
+                self.char_status_tesseract_label.config(
+                    text="Tesseract: not found automatically. Set the full path to tesseract.exe here.",
+                    fg=ORANGE,
+                )
+            elif dependency_error:
+                self.char_status_tesseract_label.config(text=f"Tesseract: {dependency_error}", fg=ORANGE)
+            else:
+                active_path = self.runtime.state.char_status_tesseract_path.strip() or "auto-detected"
+                self.char_status_tesseract_label.config(text=f"Tesseract: ready ({active_path})", fg=TEAL)
+        if self.char_status_watch_label:
+            watch_text = "Watcher: active" if state.char_status_active else "Watcher: idle"
+            watch_color = GREEN if state.char_status_active else ORANGE
+            self.char_status_watch_label.config(text=watch_text, fg=watch_color)
+        if self.char_status_level_label:
+            self.char_status_level_label.config(text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}")
+        if self.char_status_hp_label:
+            self.char_status_hp_label.config(text=f"HP: {state.char_status_hp if state.char_status_hp is not None else '—'}")
+        if self.char_status_mana_label:
+            self.char_status_mana_label.config(text=f"Mana: {state.char_status_mana if state.char_status_mana is not None else '—'}")
+        if self.char_status_cap_label:
+            self.char_status_cap_label.config(text=f"Cap: {state.char_status_cap if state.char_status_cap is not None else '—'}")
+        if self.char_status_food_label:
+            self.char_status_food_label.config(text=f"Food: {state.char_status_food_text or '—'}")
+        if self.char_status_regen_label:
+            self.char_status_regen_label.config(
+                text=f"Regen: HP {state.char_status_hp_regen_per_min:.1f}/min | Mana {state.char_status_mana_regen_per_min:.1f}/min"
+            )
+        if self.char_status_seen_label:
+            if state.char_status_last_seen:
+                seen = time.strftime("%H:%M:%S", time.localtime(state.char_status_last_seen))
+                peak_text = f"  |  HP max: {state.char_status_hp_peak}" if state.char_status_hp_peak else ""
+                self.char_status_seen_label.config(
+                    text=f"Last update: {seen}  |  Reads: {state.char_status_reads}  |  Misses: {state.char_status_failures}{peak_text}"
+                )
+            else:
+                self.char_status_seen_label.config(text="Last update: —")
+        if self.char_status_error_label:
+            message = state.char_status_last_error or "OCR locked on the last good frame"
+            color = ORANGE if state.char_status_last_error else MUTED
+            self.char_status_error_label.config(text=f"OCR: {message}", fg=color)
+
+    @staticmethod
+    def _refresh_character_status_region_label(label: tk.Label | None, title: str, region: tuple[int, int, int, int] | None) -> None:
+        if not label:
+            return
+        if region:
+            x_val, y_val, width, height = region
+            label.config(text=f"{title}: ({x_val},{y_val}) {width}×{height}")
+        else:
+            label.config(text=f"{title}: not selected")
 
     def on_close(self) -> None:
         self.root.withdraw()
@@ -992,6 +1419,7 @@ class SystemMonitorApp:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift(), self.root.focus_force()))
 
     def exit_app(self, *args) -> None:
+        self.char_status_service.stop()
         if self.tray_icon:
             self.tray_icon.stop()
         if self.root:

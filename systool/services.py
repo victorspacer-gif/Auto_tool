@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -12,15 +13,20 @@ from collections.abc import Callable
 from .models import HotkeyJob
 from .runtime import (
     AppRuntime,
+    HAS_CV2,
     HAS_MSS,
     HAS_PYGAME,
     HAS_PYNPUT,
+    HAS_TESSERACT,
     HAS_WIN32,
+    cv2,
     mss,
     np,
     pygame,
     pynput_kb,
     pynput_mouse,
+    pytesseract,
+    resolve_tesseract_cmd,
     win32con,
     win32gui,
 )
@@ -266,21 +272,42 @@ class RightClickService:
                 min_ms = state.rclick_min_ms
                 max_ms = state.rclick_max_ms
                 target = state.rclick_pos
-            if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
-                break
+                mode = state.rclick_mode
+                food_seconds = state.char_status_food_seconds
+                food_min_secs = state.rclick_food_min_secs
+                burst_count = state.rclick_food_burst_count
+                burst_interval_ms = state.rclick_food_burst_interval_ms
+            if mode == "food":
+                if food_seconds is not None and food_seconds >= food_min_secs:
+                    if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rclick_stop):
+                        break
+                    continue
+                clicks_to_send = max(1, burst_count)
+            else:
+                if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
+                    break
+                clicks_to_send = 1
             if not self.runtime.mouse.acquire(self.runtime.rclick_stop):
                 break
             try:
                 HumanMouse.move(mouse, target)
-                time.sleep(random.uniform(0.06, 0.14))
-                mouse.click(pynput_mouse.Button.right, 1)
+                for click_index in range(clicks_to_send):
+                    time.sleep(random.uniform(0.06, 0.14))
+                    mouse.click(pynput_mouse.Button.right, 1)
+                    if click_index + 1 < clicks_to_send:
+                        time.sleep(max(0.05, burst_interval_ms / 1000.0))
             except Exception as exc:
                 self.runtime.ui.log(f"❌ R-click: {exc}")
             finally:
                 self.runtime.mouse.release()
             with self.runtime.record_lock:
-                state.stats["right_clicks"] += 1
-            self.runtime.ui.log(f"🖱️  Right-click at {target}")
+                state.stats["right_clicks"] += clicks_to_send
+            if mode == "food":
+                self.runtime.ui.log(f"🖱️  Food burst at {target} ×{clicks_to_send}")
+                if not self.runtime.pause.wait_interruptible(1.5, self.runtime.rclick_stop):
+                    break
+            else:
+                self.runtime.ui.log(f"🖱️  Right-click at {target}")
             self.runtime.ui.refresh_stats()
         self.runtime.ui.log("⏹ Right-click end")
 
@@ -347,17 +374,34 @@ class AlarmService:
             cooldown_until = 0.0
             while not self.runtime.alarm_stop.is_set():
                 time.sleep(0.1)
+                now = time.monotonic()
+                with self.runtime.settings_lock:
+                    hp_percent = state.alarm_hp_percent
+                    hp_value = state.char_status_hp
+                    hp_peak = state.char_status_hp_peak
+                    auto_pause = state.alarm_auto_pause
+                    threshold = state.alarm_threshold
+                if hp_percent > 0 and hp_value is not None and hp_peak > 0 and now >= cooldown_until:
+                    hp_ratio = (hp_value / hp_peak) * 100.0
+                    if hp_ratio <= hp_percent:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW HP — {hp_value}/{hp_peak} ({hp_ratio:.1f}%)")
+                        self.runtime.ui.set_status(f"⚠️  LOW HP — {hp_ratio:.1f}% remaining", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
+                        continue
                 try:
                     frame = np.array(sct.grab(get_region()))[:, :, :3]
                 except Exception as exc:
                     self.runtime.ui.log(f"❌ Capture: {exc}")
                     continue
                 if last_frame is not None and last_frame.shape == frame.shape:
-                    now = time.monotonic()
                     if now >= cooldown_until:
-                        with self.runtime.settings_lock:
-                            threshold = state.alarm_threshold
-                            auto_pause = state.alarm_auto_pause
                         diff = np.abs(frame.astype(np.int16) - last_frame.astype(np.int16))
                         changed = float(np.mean(diff.sum(axis=2) > 30))
                         if changed >= threshold:
@@ -375,6 +419,303 @@ class AlarmService:
         self.runtime.ui.log("⏹ Screen watch end")
 
 
+class CharacterStatusService:
+    BASE_SIZE = (170, 203)
+    ROI_MAP = {
+        "hp": [(132, 1, 169, 19), (124, 0, 169, 21)],
+        "mana": [(136, 21, 169, 39), (128, 20, 169, 41)],
+        "cap": [(0, 180, 42, 203), (0, 164, 44, 203)],
+    }
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self._regen_history: dict[str, list[tuple[float, int]]] = {"hp": [], "mana": []}
+
+    def get_dependency_error(self) -> str | None:
+        state = self.runtime.state
+        if not HAS_MSS:
+            return "mss is not installed"
+        if not HAS_CV2:
+            return "opencv-python is not installed"
+        if not HAS_TESSERACT:
+            return "pytesseract is not installed"
+        tesseract_cmd = resolve_tesseract_cmd(state.char_status_tesseract_path)
+        if not tesseract_cmd:
+            return "Tesseract executable not found"
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        return None
+
+    def start(self) -> None:
+        state = self.runtime.state
+        if state.char_status_active:
+            return
+        dependency_error = self.get_dependency_error()
+        if dependency_error:
+            state.char_status_last_error = dependency_error
+            self.runtime.ui.log(f"❌ Character status OCR unavailable: {dependency_error}")
+            self.runtime.ui.set_status(f"Character status OCR unavailable: {dependency_error}", RED)
+            return
+        has_window = bool(state.char_status_region)
+        has_field_regions = all([state.char_status_hp_region, state.char_status_mana_region, state.char_status_cap_region])
+        if not has_window and not has_field_regions:
+            self.runtime.ui.log("⚠️  Select HP, Mana, and Cap areas or select the full character status window first")
+            self.runtime.ui.set_status("Select stat areas or a full status window first", ORANGE)
+            return
+        state.char_status_active = True
+        state.char_status_last_error = ""
+        self.runtime.char_status_stop.clear()
+        threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.set_status("Character status watcher active", GREEN)
+
+    def stop(self) -> None:
+        state = self.runtime.state
+        if not state.char_status_active:
+            return
+        self.runtime.char_status_stop.set()
+        state.char_status_active = False
+        self.runtime.ui.set_status("Character status watcher stopped", RED)
+
+    def restart_if_needed(self) -> None:
+        self.stop()
+        if self.runtime.state.char_status_region:
+            self.start()
+
+    def _worker(self) -> None:
+        state = self.runtime.state
+        self.runtime.ui.log("▶ Character status watcher start")
+        try:
+            with mss.mss() as sct:
+                while not self.runtime.char_status_stop.is_set():
+                    with self.runtime.settings_lock:
+                        region = state.char_status_region
+                        hp_region = state.char_status_hp_region
+                        mana_region = state.char_status_mana_region
+                        cap_region = state.char_status_cap_region
+                        poll_ms = max(250, state.char_status_poll_ms)
+                    if not region and not all([hp_region, mana_region, cap_region]):
+                        break
+                    try:
+                        parsed: dict[str, int | None] = {}
+                        if region:
+                            monitor = {
+                                "left": region[0],
+                                "top": region[1],
+                                "width": region[2],
+                                "height": region[3],
+                                "mon": 1,
+                            }
+                            frame = np.array(sct.grab(monitor))[:, :, :3]
+                            parsed = self._extract_values(frame)
+                        if all([hp_region, mana_region, cap_region]):
+                            parsed.update(
+                                self._extract_values_from_regions(
+                                    sct,
+                                    {
+                                        "hp": hp_region,
+                                        "mana": mana_region,
+                                        "cap": cap_region,
+                                    },
+                                )
+                            )
+                    except pytesseract.TesseractNotFoundError:
+                        with self.runtime.settings_lock:
+                            state.char_status_last_error = "Tesseract executable not found"
+                        self.runtime.ui.log("❌ Tesseract executable not found for character status OCR")
+                        self.runtime.ui.set_status("Configure a Tesseract path in Character Status", RED)
+                        self.runtime.char_status_stop.set()
+                        break
+                    except Exception as exc:
+                        with self.runtime.settings_lock:
+                            state.char_status_failures += 1
+                            state.char_status_last_error = str(exc)
+                        time.sleep(0.5)
+                        continue
+
+                    if parsed:
+                        with self.runtime.settings_lock:
+                            for key, value in parsed.items():
+                                if value is not None or key == "food_text":
+                                    setattr(state, f"char_status_{key}", value)
+                            if state.char_status_hp is not None:
+                                state.char_status_hp_peak = max(state.char_status_hp_peak, state.char_status_hp)
+                            self._update_regen(state)
+                            state.char_status_reads += 1
+                            state.char_status_last_seen = time.time()
+                            state.char_status_last_error = ""
+                    else:
+                        with self.runtime.settings_lock:
+                            state.char_status_failures += 1
+                            state.char_status_last_error = "No digits recognized"
+                    if self.runtime.char_status_stop.wait(poll_ms / 1000.0):
+                        break
+        finally:
+            state.char_status_active = False
+            self.runtime.ui.log("⏹ Character status watcher end")
+
+    def _extract_values(self, frame) -> dict[str, int | None]:
+        values: dict[str, int | None] = self._extract_values_from_text(frame)
+        for key, boxes in self.ROI_MAP.items():
+            if values.get(key) is not None:
+                continue
+            for box in boxes:
+                crop = self._crop(frame, box)
+                value = self._ocr_digits(crop, key)
+                if value is not None:
+                    values[key] = value
+                    break
+        return values if any(value is not None for value in values.values()) else {}
+
+    def _extract_values_from_regions(self, sct, regions: dict[str, tuple[int, int, int, int]]) -> dict[str, int | None]:
+        values: dict[str, int | None] = {}
+        for key, region in regions.items():
+            monitor = {
+                "left": region[0],
+                "top": region[1],
+                "width": region[2],
+                "height": region[3],
+                "mon": 1,
+            }
+            frame = np.array(sct.grab(monitor))[:, :, :3]
+            values[key] = self._ocr_digits(frame, key)
+        return values if any(value is not None for value in values.values()) else {}
+
+    def _update_regen(self, state) -> None:
+        now = time.monotonic()
+        self._push_regen_sample("hp", now, state.char_status_hp)
+        self._push_regen_sample("mana", now, state.char_status_mana)
+        state.char_status_hp_regen_per_min = self._compute_regen_rate("hp")
+        state.char_status_mana_regen_per_min = self._compute_regen_rate("mana")
+
+    def _push_regen_sample(self, key: str, now: float, value: int | None) -> None:
+        if value is None:
+            return
+        history = self._regen_history[key]
+        if not history or history[-1][1] != value:
+            history.append((now, value))
+        cutoff = now - 180.0
+        while len(history) > 1 and history[0][0] < cutoff:
+            history.pop(0)
+
+    def _compute_regen_rate(self, key: str) -> float:
+        history = self._regen_history[key]
+        if len(history) < 2:
+            return 0.0
+        gained = 0
+        for index in range(1, len(history)):
+            delta = history[index][1] - history[index - 1][1]
+            if delta > 0:
+                gained += delta
+        elapsed_minutes = max((history[-1][0] - history[0][0]) / 60.0, 1e-6)
+        return gained / elapsed_minutes
+
+    @staticmethod
+    def _extract_values_from_text(frame) -> dict[str, int | None]:
+        values: dict[str, int | None] = {
+            "level": None,
+            "hp": None,
+            "mana": None,
+            "cap": None,
+            "food_seconds": None,
+            "food_text": "",
+        }
+        enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        variants = []
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(binary)
+        variants.append(cv2.bitwise_not(binary))
+        adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
+        variants.append(adaptive)
+        variants.append(cv2.bitwise_not(adaptive))
+        field_patterns = {
+            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],
+            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],
+            "mana": [r"mana\s+(\d+)"],
+            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],
+            "food": [r"food\s+(\d{1,2}:\d{2})"],
+        }
+        for image_variant in variants:
+            text = pytesseract.image_to_string(image_variant, config="--psm 6")
+            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
+            for key, patterns in field_patterns.items():
+                if key == "food" and values["food_seconds"] is not None:
+                    continue
+                if key != "food" and values[key] is not None:
+                    continue
+                for pattern in patterns:
+                    match = re.search(pattern, normalized)
+                    if not match:
+                        continue
+                    if key == "food":
+                        food_text = match.group(1)
+                        values["food_text"] = food_text
+                        values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
+                    else:
+                        values[key] = int(match.group(1))
+                    break
+        return values
+
+    @staticmethod
+    def _parse_food_seconds(text: str) -> int | None:
+        match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
+        if not match:
+            return None
+        return int(match.group(1)) * 60 + int(match.group(2))
+
+    def _crop(self, frame, box: tuple[int, int, int, int]):
+        base_w, base_h = self.BASE_SIZE
+        frame_h, frame_w = frame.shape[:2]
+        x1 = max(0, int(round(box[0] / base_w * frame_w)))
+        y1 = max(0, int(round(box[1] / base_h * frame_h)))
+        x2 = min(frame_w, int(round(box[2] / base_w * frame_w)))
+        y2 = min(frame_h, int(round(box[3] / base_h * frame_h)))
+        return frame[y1:y2, x1:x2]
+
+    @staticmethod
+    def _ocr_digits(crop, key: str) -> int | None:
+        if crop is None or crop.size == 0:
+            return None
+        scale = 7 if key == "cap" else 6
+        enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        variants = []
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(binary)
+        variants.append(cv2.bitwise_not(binary))
+        adaptive = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            7,
+        )
+        variants.append(adaptive)
+        variants.append(cv2.bitwise_not(adaptive))
+        kernel = np.ones((2, 2), np.uint8)
+        variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
+        psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6", "8"]
+        best_digits = ""
+        for image_variant in variants:
+            for psm in psm_modes:
+                config = f"--psm {psm} -c tessedit_char_whitelist=0123456789"
+                text = pytesseract.image_to_string(image_variant, config=config)
+                groups = [group for group in re.findall(r"\d+", text) if group]
+                if groups:
+                    candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
+                    if len(candidate) > len(best_digits):
+                        best_digits = candidate
+                    if key in {"hp", "mana"} and len(candidate) >= 2:
+                        return int(candidate)
+                    if key == "cap" and len(candidate) >= 1:
+                        return int(candidate)
+        if best_digits:
+            return int(best_digits)
+        return None
+
+
 class FishingService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
@@ -390,6 +731,10 @@ class FishingService:
         if not state.fish_spots:
             self.runtime.ui.log("❌ Record at least one spot")
             self.runtime.ui.set_status("Record at least one fishing spot", ORANGE)
+            return
+        if state.fish_min_cap > 0 and state.char_status_cap is not None and state.char_status_cap <= state.fish_min_cap:
+            self.runtime.ui.log("⚠️  Capacity is already at or below the fishing stop threshold")
+            self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
             return
         self.runtime.fish_stop.clear()
         state.fish_session_remaining_secs = max(1, state.fish_session_minutes * 60)
@@ -458,6 +803,13 @@ class FishingService:
                 cast_max = state.fish_cast_max_ms
                 wait_min = state.fish_wait_min_ms
                 wait_max = state.fish_wait_max_ms
+                min_cap = state.fish_min_cap
+                current_cap = state.char_status_cap
+            if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
+                self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
+                self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
+                self.runtime.fish_stop.set()
+                break
             if not self.runtime.mouse.acquire(self.runtime.fish_stop):
                 break
             try:
@@ -499,6 +851,121 @@ class FishingService:
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
         self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
+
+
+class AutoHealerService:
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+
+    def start(self) -> None:
+        state = self.runtime.state
+        if state.healer_active:
+            return
+        if state.healer_mode == "rune" and (
+            state.healer_character_pos == (0, 0) or state.healer_rune_pos == (0, 0)
+        ):
+            self.runtime.ui.log("⚠️  Record character center and healing rune position first")
+            self.runtime.ui.set_status("Record healer positions first", ORANGE)
+            return
+        self.runtime.healer_stop.clear()
+        state.healer_active = True
+        threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.set_status("Auto healer active", GREEN)
+
+    def stop(self) -> None:
+        state = self.runtime.state
+        if not state.healer_active:
+            return
+        self.runtime.healer_stop.set()
+        state.healer_active = False
+        self.runtime.ui.set_status("Auto healer stopped", RED)
+
+    def _worker(self) -> None:
+        state = self.runtime.state
+        self.runtime.ui.log("▶ Auto healer start")
+        if not HAS_PYNPUT:
+            self.runtime.ui.log("❌ pynput missing")
+            state.healer_active = False
+            return
+        keyboard = pynput_kb.Controller()
+        mouse = pynput_mouse.Controller()
+        cooldown_until = 0.0
+        while not self.runtime.healer_stop.is_set():
+            self.runtime.pause.wait()
+            if self.runtime.healer_stop.is_set():
+                break
+            now = time.monotonic()
+            if now < cooldown_until:
+                if not self.runtime.pause.wait_interruptible(min(0.1, cooldown_until - now), self.runtime.healer_stop):
+                    break
+                continue
+            with self.runtime.settings_lock:
+                hp_value = state.char_status_hp
+                hp_peak = state.char_status_hp_peak
+                mana_value = state.char_status_mana
+                mode = state.healer_mode
+                spell_key_name = state.healer_spell_key
+                use_percent = state.healer_use_percent
+                hp_percent = state.healer_hp_percent
+                hp_fixed = state.healer_hp_value
+                min_mana = state.healer_min_mana
+                character_pos = state.healer_character_pos
+                rune_pos = state.healer_rune_pos
+                mouse_speed = state.healer_mouse_speed
+                rune_delay_ms = state.healer_rune_delay_ms
+            if hp_value is None:
+                if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
+                    break
+                continue
+            should_heal = False
+            if use_percent:
+                if hp_peak > 0 and (hp_value / hp_peak) * 100.0 <= hp_percent:
+                    should_heal = True
+            elif hp_value <= hp_fixed:
+                should_heal = True
+            if not should_heal:
+                if not self.runtime.pause.wait_interruptible(0.12, self.runtime.healer_stop):
+                    break
+                continue
+            if min_mana > 0 and mana_value is not None and mana_value < min_mana:
+                if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
+                    break
+                continue
+            try:
+                if mode == "spell":
+                    spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
+                    if not spell_key:
+                        self.runtime.ui.log(f"❌ Unknown healer spell key: {spell_key_name}")
+                        break
+                    keyboard.press(spell_key)
+                    time.sleep(0.03)
+                    keyboard.release(spell_key)
+                    cooldown_until = time.monotonic() + 0.35
+                    self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
+                else:
+                    if not self.runtime.mouse.acquire(self.runtime.healer_stop):
+                        break
+                    try:
+                        HumanMouse.move(mouse, rune_pos, duration=max(0.05, 0.20 / max(mouse_speed, 0.2)))
+                        time.sleep(0.04)
+                        mouse.click(pynput_mouse.Button.right, 1)
+                        if not self.runtime.pause.wait_interruptible(rune_delay_ms / 1000.0, self.runtime.healer_stop):
+                            break
+                        HumanMouse.move(mouse, character_pos, duration=max(0.05, 0.20 / max(mouse_speed, 0.2)))
+                        time.sleep(0.04)
+                        mouse.click(pynput_mouse.Button.left, 1)
+                    finally:
+                        self.runtime.mouse.release()
+                    cooldown_until = time.monotonic() + max(0.45, rune_delay_ms / 1000.0 + 0.15)
+                    self.runtime.ui.log(f"❤️ Rune heal at HP {hp_value}")
+                with self.runtime.record_lock:
+                    state.stats["heals"] += 1
+                self.runtime.ui.refresh_stats()
+            except Exception as exc:
+                self.runtime.ui.log(f"❌ Auto healer: {exc}")
+                break
+        state.healer_active = False
+        self.runtime.ui.log("⏹ Auto healer end")
 
 
 class RuneMakerService:
@@ -549,6 +1016,12 @@ class RuneMakerService:
                 jitter = state.rune_jitter
                 cast_delay_ms = state.rune_cast_delay_ms
                 cycle_delay_ms = state.rune_cycle_delay_ms
+                min_mana = state.rune_min_mana
+                current_mana = state.char_status_mana
+            if min_mana > 0 and current_mana is not None and current_mana < min_mana:
+                if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
+                    break
+                continue
             try:
                 keyboard.press(spell)
                 time.sleep(0.04)
@@ -657,6 +1130,10 @@ class HotkeyJobService:
             if not self.runtime.pause.wait_interruptible(delay, job.stop_evt):
                 break
             prev_hwnd = None
+            if job.min_mana > 0:
+                current_mana = self.runtime.state.char_status_mana
+                if current_mana is not None and current_mana < job.min_mana:
+                    continue
             if job.use_focus and job.window_name.strip():
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):
