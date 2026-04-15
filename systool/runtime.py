@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -38,6 +41,22 @@ except ImportError:
     mss = None
     np = None
     HAS_MSS = False
+
+try:
+    import cv2
+
+    HAS_CV2 = True
+except ImportError:
+    cv2 = None
+    HAS_CV2 = False
+
+try:
+    import pytesseract
+
+    HAS_TESSERACT = True
+except ImportError:
+    pytesseract = None
+    HAS_TESSERACT = False
 
 try:
     import pygame
@@ -187,5 +206,30 @@ class AppRuntime:
         self.afk_stop = threading.Event()
         self.rclick_stop = threading.Event()
         self.alarm_stop = threading.Event()
+        self.char_status_stop = threading.Event()
         self.fish_stop = threading.Event()
+        self.healer_stop = threading.Event()
         self.rune_stop = threading.Event()
+
+
+def resolve_tesseract_cmd(explicit_path: str = "") -> str | None:
+    candidates: list[str] = []
+    explicit_path = explicit_path.strip()
+    if explicit_path:
+        candidates.append(explicit_path)
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidates.append(os.path.join(meipass, "tesseract", "tesseract.exe"))
+    app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates.append(os.path.join(app_root, "vendor", "tesseract", "tesseract.exe"))
+    which_path = shutil.which("tesseract")
+    if which_path:
+        candidates.append(which_path)
+    for env_name in ("ProgramFiles", "ProgramFiles(x86)", "LocalAppData"):
+        root = os.environ.get(env_name)
+        if root:
+            candidates.append(os.path.join(root, "Tesseract-OCR", "tesseract.exe"))
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return None

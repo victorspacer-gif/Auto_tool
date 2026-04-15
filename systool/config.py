@@ -18,6 +18,7 @@ class ConfigSerializer:
                 "key": job.key,
                 "min_ms": job.min_ms,
                 "max_ms": job.max_ms,
+                "min_mana": job.min_mana,
                 "burst": job.burst_enabled,
                 "burst_chance": job.burst_chance,
                 "burst_cnt_min": job.burst_cnt_min,
@@ -38,11 +39,22 @@ class ConfigSerializer:
             "rclick_pos_y": state.rclick_pos[1],
             "rclick_min_ms": state.rclick_min_ms,
             "rclick_max_ms": state.rclick_max_ms,
+            "rclick_mode": state.rclick_mode,
+            "rclick_food_min_secs": state.rclick_food_min_secs,
+            "rclick_food_burst_count": state.rclick_food_burst_count,
+            "rclick_food_burst_interval_ms": state.rclick_food_burst_interval_ms,
             "alarm_mp3": state.alarm_mp3,
             "alarm_threshold": state.alarm_threshold,
             "alarm_cooldown": state.alarm_cooldown,
             "alarm_auto_pause": state.alarm_auto_pause,
+            "alarm_hp_percent": state.alarm_hp_percent,
             "alarm_region": list(state.alarm_region) if state.alarm_region else None,
+            "char_status_region": list(state.char_status_region) if state.char_status_region else None,
+            "char_status_hp_region": list(state.char_status_hp_region) if state.char_status_hp_region else None,
+            "char_status_mana_region": list(state.char_status_mana_region) if state.char_status_mana_region else None,
+            "char_status_cap_region": list(state.char_status_cap_region) if state.char_status_cap_region else None,
+            "char_status_poll_ms": state.char_status_poll_ms,
+            "char_status_tesseract_path": state.char_status_tesseract_path,
             "fish_rod_x": state.fish_rod_pos[0],
             "fish_rod_y": state.fish_rod_pos[1],
             "fish_spots": [[x, y] for x, y in state.fish_spots],
@@ -53,6 +65,7 @@ class ConfigSerializer:
             "fish_rod_jitter": state.fish_rod_jitter,
             "fish_spot_jitter": state.fish_spot_jitter,
             "fish_session_minutes": state.fish_session_minutes,
+            "fish_min_cap": state.fish_min_cap,
             "rune_spell_key": state.rune_spell_key,
             "rune_cycle_delay_ms": state.rune_cycle_delay_ms,
             "rune_hand_x": state.rune_hand_pos[0],
@@ -63,6 +76,19 @@ class ConfigSerializer:
             "rune_blank_y": state.rune_blank_pos[1],
             "rune_jitter": state.rune_jitter,
             "rune_cast_delay_ms": state.rune_cast_delay_ms,
+            "rune_min_mana": state.rune_min_mana,
+            "healer_mode": state.healer_mode,
+            "healer_spell_key": state.healer_spell_key,
+            "healer_use_percent": state.healer_use_percent,
+            "healer_hp_percent": state.healer_hp_percent,
+            "healer_hp_value": state.healer_hp_value,
+            "healer_min_mana": state.healer_min_mana,
+            "healer_character_x": state.healer_character_pos[0],
+            "healer_character_y": state.healer_character_pos[1],
+            "healer_rune_x": state.healer_rune_pos[0],
+            "healer_rune_y": state.healer_rune_pos[1],
+            "healer_mouse_speed": state.healer_mouse_speed,
+            "healer_rune_delay_ms": state.healer_rune_delay_ms,
         }
 
     @staticmethod
@@ -106,10 +132,14 @@ class ConfigSerializer:
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
         return {
-            "cfg": {key: str(value) for key, value in raw.items() if key not in {"jobs", "fish_spots", "alarm_region", "hotkey_bindings"}},
+            "cfg": {key: str(value) for key, value in raw.items() if key not in {"jobs", "fish_spots", "alarm_region", "char_status_region", "char_status_hp_region", "char_status_mana_region", "char_status_cap_region", "hotkey_bindings"}},
             "jobs": raw.get("jobs", []),
             "spots": [tuple(item) for item in raw.get("fish_spots", [])],
             "alarm_region": tuple(raw["alarm_region"]) if raw.get("alarm_region") else None,
+            "char_status_region": tuple(raw["char_status_region"]) if raw.get("char_status_region") else None,
+            "char_status_hp_region": tuple(raw["char_status_hp_region"]) if raw.get("char_status_hp_region") else None,
+            "char_status_mana_region": tuple(raw["char_status_mana_region"]) if raw.get("char_status_mana_region") else None,
+            "char_status_cap_region": tuple(raw["char_status_cap_region"]) if raw.get("char_status_cap_region") else None,
             "hotkeys": raw.get("hotkey_bindings", {}),
         }
 
@@ -120,6 +150,10 @@ class ConfigSerializer:
         jobs: list[dict] = []
         spots: list[tuple[int, int]] = []
         alarm_region = None
+        char_status_region = None
+        char_status_hp_region = None
+        char_status_mana_region = None
+        char_status_cap_region = None
         hotkeys: dict[str, str] = {}
         for child in root:
             if child.tag == "jobs":
@@ -134,11 +168,27 @@ class ConfigSerializer:
                 parts = child.text.split(",")
                 if len(parts) == 4:
                     alarm_region = tuple(int(part) for part in parts)
+            elif child.tag == "char_status_region" and child.text:
+                parts = child.text.split(",")
+                if len(parts) == 4:
+                    char_status_region = tuple(int(part) for part in parts)
+            elif child.tag == "char_status_hp_region" and child.text:
+                parts = child.text.split(",")
+                if len(parts) == 4:
+                    char_status_hp_region = tuple(int(part) for part in parts)
+            elif child.tag == "char_status_mana_region" and child.text:
+                parts = child.text.split(",")
+                if len(parts) == 4:
+                    char_status_mana_region = tuple(int(part) for part in parts)
+            elif child.tag == "char_status_cap_region" and child.text:
+                parts = child.text.split(",")
+                if len(parts) == 4:
+                    char_status_cap_region = tuple(int(part) for part in parts)
             elif child.tag == "hotkey_bindings":
                 hotkeys = {field.tag: field.text or "" for field in child}
             else:
                 cfg[child.tag] = child.text or ""
-        return {"cfg": cfg, "jobs": jobs, "spots": spots, "alarm_region": alarm_region, "hotkeys": hotkeys}
+        return {"cfg": cfg, "jobs": jobs, "spots": spots, "alarm_region": alarm_region, "char_status_region": char_status_region, "char_status_hp_region": char_status_hp_region, "char_status_mana_region": char_status_mana_region, "char_status_cap_region": char_status_cap_region, "hotkeys": hotkeys}
 
     @staticmethod
     def apply_loaded(state: AppState, payload: dict) -> None:
@@ -146,6 +196,10 @@ class ConfigSerializer:
         jobs = payload["jobs"]
         spots = payload["spots"]
         alarm_region = payload["alarm_region"]
+        char_status_region = payload.get("char_status_region")
+        char_status_hp_region = payload.get("char_status_hp_region")
+        char_status_mana_region = payload.get("char_status_mana_region")
+        char_status_cap_region = payload.get("char_status_cap_region")
         hotkeys = payload["hotkeys"]
 
         def get_int(name: str, default: int) -> int:
@@ -174,11 +228,22 @@ class ConfigSerializer:
         )
         state.rclick_min_ms = get_int("rclick_min_ms", state.rclick_min_ms)
         state.rclick_max_ms = get_int("rclick_max_ms", state.rclick_max_ms)
+        state.rclick_mode = get_str("rclick_mode", state.rclick_mode)
+        state.rclick_food_min_secs = max(0, get_int("rclick_food_min_secs", state.rclick_food_min_secs))
+        state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count", state.rclick_food_burst_count))
+        state.rclick_food_burst_interval_ms = max(50, get_int("rclick_food_burst_interval_ms", state.rclick_food_burst_interval_ms))
         state.alarm_mp3 = get_str("alarm_mp3", state.alarm_mp3)
         state.alarm_threshold = get_float("alarm_threshold", state.alarm_threshold)
         state.alarm_cooldown = get_int("alarm_cooldown", state.alarm_cooldown)
         state.alarm_auto_pause = get_bool("alarm_auto_pause", state.alarm_auto_pause)
+        state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent", state.alarm_hp_percent)))
         state.alarm_region = alarm_region
+        state.char_status_region = char_status_region
+        state.char_status_hp_region = char_status_hp_region
+        state.char_status_mana_region = char_status_mana_region
+        state.char_status_cap_region = char_status_cap_region
+        state.char_status_poll_ms = max(250, get_int("char_status_poll_ms", state.char_status_poll_ms))
+        state.char_status_tesseract_path = get_str("char_status_tesseract_path", state.char_status_tesseract_path)
         state.fish_rod_pos = (
             get_int("fish_rod_x", state.fish_rod_pos[0]),
             get_int("fish_rod_y", state.fish_rod_pos[1]),
@@ -190,6 +255,7 @@ class ConfigSerializer:
         state.fish_rod_jitter = get_int("fish_rod_jitter", state.fish_rod_jitter)
         state.fish_spot_jitter = get_int("fish_spot_jitter", state.fish_spot_jitter)
         state.fish_session_minutes = max(1, min(40, get_int("fish_session_minutes", state.fish_session_minutes)))
+        state.fish_min_cap = max(0, get_int("fish_min_cap", state.fish_min_cap))
         state.fish_spots = list(spots)
         state.rune_spell_key = get_str("rune_spell_key", state.rune_spell_key)
         state.rune_cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune_cycle_delay_ms)
@@ -207,6 +273,23 @@ class ConfigSerializer:
         )
         state.rune_jitter = get_int("rune_jitter", state.rune_jitter)
         state.rune_cast_delay_ms = get_int("rune_cast_delay_ms", state.rune_cast_delay_ms)
+        state.rune_min_mana = max(0, get_int("rune_min_mana", state.rune_min_mana))
+        state.healer_mode = get_str("healer_mode", state.healer_mode)
+        state.healer_spell_key = get_str("healer_spell_key", state.healer_spell_key)
+        state.healer_use_percent = get_bool("healer_use_percent", state.healer_use_percent)
+        state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent", state.healer_hp_percent)))
+        state.healer_hp_value = max(1, get_int("healer_hp_value", state.healer_hp_value))
+        state.healer_min_mana = max(0, get_int("healer_min_mana", state.healer_min_mana))
+        state.healer_character_pos = (
+            get_int("healer_character_x", state.healer_character_pos[0]),
+            get_int("healer_character_y", state.healer_character_pos[1]),
+        )
+        state.healer_rune_pos = (
+            get_int("healer_rune_x", state.healer_rune_pos[0]),
+            get_int("healer_rune_y", state.healer_rune_pos[1]),
+        )
+        state.healer_mouse_speed = max(0.2, min(3.0, get_float("healer_mouse_speed", state.healer_mouse_speed)))
+        state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_ms", state.healer_rune_delay_ms))
 
         for action, binding in hotkeys.items():
             if action in state.hotkey_bindings:
@@ -220,6 +303,7 @@ class ConfigSerializer:
                 key=job_data.get("key", "F1"),
                 min_ms=int(float(job_data.get("min_ms", 1000))),
                 max_ms=int(float(job_data.get("max_ms", 3000))),
+                min_mana=int(float(job_data.get("min_mana", 0) or 0)),
                 burst_enabled=str(job_data.get("burst", "false")).lower() == "true",
                 burst_chance=float(job_data.get("burst_chance", 0.2)),
                 burst_cnt_min=int(job_data.get("burst_cnt_min", 3)),

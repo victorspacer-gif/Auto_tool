@@ -13,6 +13,7 @@ class HotkeyJob:
     key: str = "F1"
     min_ms: int = 1_000
     max_ms: int = 3_000
+    min_mana: int = 0
     burst_enabled: bool = False
     burst_chance: float = 0.20
     burst_cnt_min: int = 3
@@ -46,8 +47,8 @@ class AppState:
             "alarm": "Toggle Screen Watch",
             "rclick": "Toggle Right-Click Monitor",
             "afk": "Toggle Activity Monitor",
-            "fish_stop": "Stop Fishing Session",
-            "rune_stop": "Stop Rune Session",
+            "fish_stop": "Toggle Fishing Session",
+            "rune_stop": "Toggle Rune Session",
             "record_pos": "Record Position",
             "stop_all": "Stop All Activities",
         }
@@ -63,6 +64,10 @@ class AppState:
     rclick_pos: tuple[int, int] = (0, 0)
     rclick_min_ms: int = 5_000
     rclick_max_ms: int = 15_000
+    rclick_mode: str = "timer"
+    rclick_food_min_secs: int = 600
+    rclick_food_burst_count: int = 3
+    rclick_food_burst_interval_ms: int = 700
 
     alarm_active: bool = False
     alarm_mp3: str = ""
@@ -70,6 +75,27 @@ class AppState:
     alarm_cooldown: int = 10
     alarm_region: tuple[int, int, int, int] | None = None
     alarm_auto_pause: bool = False
+    alarm_hp_percent: int = 0
+    char_status_active: bool = False
+    char_status_region: tuple[int, int, int, int] | None = None
+    char_status_hp_region: tuple[int, int, int, int] | None = None
+    char_status_mana_region: tuple[int, int, int, int] | None = None
+    char_status_cap_region: tuple[int, int, int, int] | None = None
+    char_status_poll_ms: int = 800
+    char_status_tesseract_path: str = ""
+    char_status_level: int | None = None
+    char_status_hp: int | None = None
+    char_status_mana: int | None = None
+    char_status_cap: int | None = None
+    char_status_food_seconds: int | None = None
+    char_status_food_text: str = ""
+    char_status_hp_peak: int = 0
+    char_status_hp_regen_per_min: float = 0.0
+    char_status_mana_regen_per_min: float = 0.0
+    char_status_reads: int = 0
+    char_status_failures: int = 0
+    char_status_last_seen: float | None = None
+    char_status_last_error: str = ""
 
     fish_active: bool = False
     fish_rod_pos: tuple[int, int] = (0, 0)
@@ -83,6 +109,7 @@ class AppState:
     fish_session_minutes: int = 10
     fish_session_remaining_secs: int = 0
     fish_session_deadline: float | None = None
+    fish_min_cap: int = 0
 
     rune_active: bool = False
     rune_spell_key: str = "f1"
@@ -92,6 +119,19 @@ class AppState:
     rune_blank_pos: tuple[int, int] = (0, 0)
     rune_jitter: int = 6
     rune_cast_delay_ms: int = 900
+    rune_min_mana: int = 0
+
+    healer_active: bool = False
+    healer_mode: str = "spell"
+    healer_spell_key: str = "f1"
+    healer_use_percent: bool = True
+    healer_hp_percent: int = 60
+    healer_hp_value: int = 120
+    healer_min_mana: int = 0
+    healer_character_pos: tuple[int, int] = (0, 0)
+    healer_rune_pos: tuple[int, int] = (0, 0)
+    healer_mouse_speed: float = 1.0
+    healer_rune_delay_ms: int = 250
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
@@ -102,6 +142,7 @@ class AppState:
             "alarms": 0,
             "fish_casts": 0,
             "runes_made": 0,
+            "heals": 0,
         }
     )
     jobs: list[HotkeyJob] = dataclasses.field(default_factory=list)
