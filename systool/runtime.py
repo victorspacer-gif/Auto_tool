@@ -7,6 +7,7 @@ import shutil
 import sys
 import threading
 import time
+from dataclasses import dataclass, field
 from collections.abc import Callable
 
 from .models import AppState, HotkeyJob
@@ -173,26 +174,78 @@ class PauseController:
             time.sleep(0.01)
 
 
+@dataclass(slots=True)
+class CursorRequest:
+    token: object = field(default_factory=object)
+    expires_at: float | None = None
+
+
 class MouseGate:
     def __init__(self, pause: PauseController) -> None:
         self._pause = pause
-        self._lock = threading.Lock()
+        self._owner: object | None = None
+        self._queue: list[CursorRequest] = []
+        self._condition = threading.Condition()
 
-    def acquire(self, stop_evt: threading.Event) -> bool:
+    def acquire(self, stop_evt: threading.Event, max_wait: float | None = None) -> bool:
+        request = CursorRequest(
+            expires_at=None if max_wait is None else time.monotonic() + max(0.0, max_wait)
+        )
+        with self._condition:
+            self._queue_request_locked(request)
+            self._condition.notify_all()
         while True:
             if stop_evt.is_set():
+                self._discard_request(request)
                 return False
             self._pause.wait()
-            if stop_evt.is_set():
-                return False
-            if self._lock.acquire(blocking=True, timeout=0.05):
-                return True
+            with self._condition:
+                self._prune_expired_locked()
+                if not self._is_request_queued_locked(request):
+                    return False
+                if self._owner is None and self._is_next_request_locked(request):
+                    self._owner = request.token
+                    self._remove_request_locked(request)
+                    return True
+                wait_time = self._wait_timeout_locked(request)
+                self._condition.wait(timeout=wait_time)
 
     def release(self) -> None:
-        try:
-            self._lock.release()
-        except RuntimeError:
-            pass
+        with self._condition:
+            self._owner = None
+            self._prune_expired_locked()
+            self._condition.notify_all()
+
+    def _queue_request_locked(self, request: CursorRequest) -> None:
+        self._queue.append(request)
+
+    def _prune_expired_locked(self) -> None:
+        now = time.monotonic()
+        self._queue = [
+            request
+            for request in self._queue
+            if request.expires_at is None or request.expires_at > now
+        ]
+
+    def _remove_request_locked(self, request: CursorRequest) -> None:
+        self._queue = [queued for queued in self._queue if queued.token is not request.token]
+
+    def _discard_request(self, request: CursorRequest) -> None:
+        with self._condition:
+            self._remove_request_locked(request)
+            self._condition.notify_all()
+
+    def _is_request_queued_locked(self, request: CursorRequest) -> bool:
+        return any(queued.token is request.token for queued in self._queue)
+
+    def _is_next_request_locked(self, request: CursorRequest) -> bool:
+        return bool(self._queue) and self._queue[0].token is request.token
+
+    @staticmethod
+    def _wait_timeout_locked(request: CursorRequest) -> float:
+        if request.expires_at is None:
+            return 0.05
+        return max(0.01, min(0.05, request.expires_at - time.monotonic()))
 
 
 class AppRuntime:
