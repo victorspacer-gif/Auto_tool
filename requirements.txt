@@ -1,0 +1,10 @@
+pynput 
+pywin32 
+pystray 
+pillow 
+mss 
+numpy 
+pygame 
+pyautogui 
+opencv-python
+pytesseract

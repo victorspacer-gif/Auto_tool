@@ -283,12 +283,19 @@ class RightClickService:
                         break
                     continue
                 clicks_to_send = max(1, burst_count)
+                queue_window = max(
+                    0.35,
+                    clicks_to_send * 0.14 + max(0, clicks_to_send - 1) * max(0.05, burst_interval_ms / 1000.0),
+                )
             else:
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
                     break
                 clicks_to_send = 1
-            if not self.runtime.mouse.acquire(self.runtime.rclick_stop):
-                break
+                queue_window = 0.80
+            if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window):
+                if self.runtime.rclick_stop.is_set():
+                    break
+                continue
             try:
                 HumanMouse.move(mouse, target)
                 for click_index in range(clicks_to_send):
@@ -810,8 +817,10 @@ class FishingService:
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
                 self.runtime.fish_stop.set()
                 break
-            if not self.runtime.mouse.acquire(self.runtime.fish_stop):
-                break
+            if not self.runtime.mouse.acquire(self.runtime.fish_stop, max_wait=2.5):
+                if self.runtime.fish_stop.is_set():
+                    break
+                continue
             try:
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
                 HumanMouse.move(mouse, rod_target)
@@ -943,8 +952,11 @@ class AutoHealerService:
                     cooldown_until = time.monotonic() + 0.35
                     self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
                 else:
-                    if not self.runtime.mouse.acquire(self.runtime.healer_stop):
-                        break
+                    if not self.runtime.mouse.acquire(self.runtime.healer_stop, max_wait=0.35):
+                        if self.runtime.healer_stop.is_set():
+                            break
+                        cooldown_until = time.monotonic() + 0.08
+                        continue
                     try:
                         HumanMouse.move(mouse, rune_pos, duration=max(0.05, 0.20 / max(mouse_speed, 0.2)))
                         time.sleep(0.04)
@@ -1032,8 +1044,12 @@ class RuneMakerService:
             self.runtime.ui.log(f"✨ Spell cast ({state.rune_spell_key.upper()})")
             if not self.runtime.pause.wait_interruptible(cast_delay_ms / 1000.0, self.runtime.rune_stop):
                 break
-            if not self.runtime.mouse.acquire(self.runtime.rune_stop):
-                break
+            if not self.runtime.mouse.acquire(self.runtime.rune_stop, max_wait=0.90):
+                if self.runtime.rune_stop.is_set():
+                    break
+                if not self.runtime.pause.wait_interruptible(0.15, self.runtime.rune_stop):
+                    break
+                continue
             try:
                 HumanMouse.drag(mouse, HumanMouse.jitter(hand, jitter), HumanMouse.jitter(storage, jitter))
                 self.runtime.ui.log("📦 Rune moved → storage")
