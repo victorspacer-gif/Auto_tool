@@ -328,7 +328,7 @@ class AntiAfkService:
             if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.afk_stop):
                 break
             direction_name, direction_key = random.choice(list(directions.items()))
-            if not self.runtime.execution.acquire(self.runtime.afk_stop, max_wait=0.50):
+            if not self.runtime.execution.acquire(self.runtime.afk_stop, max_wait=0.50, module_id="afk"):
                 if self.runtime.afk_stop.is_set():
                     break
                 continue
@@ -414,7 +414,7 @@ class RightClickService:
                     break
                 clicks_to_send = 1
                 queue_window = 0.80
-            if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window):
+            if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window, module_id="right_click"):
                 if self.runtime.rclick_stop.is_set():
                     break
                 continue
@@ -939,11 +939,18 @@ class FishingService:
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
                 self.runtime.fish_stop.set()
                 break
-            if not self.runtime.mouse.acquire(self.runtime.fish_stop, max_wait=2.5):
-                if self.runtime.fish_stop.is_set():
-                    break
-                continue
+            cycle_locked = False
             try:
+                cycle_window = max(0.90, max(cast_max, 0) / 1000.0 + 1.20)
+                cycle_locked = self.runtime.mouse.acquire(
+                    self.runtime.fish_stop,
+                    max_wait=cycle_window,
+                    module_id="fishing",
+                )
+                if not cycle_locked:
+                    if self.runtime.fish_stop.is_set():
+                        break
+                    continue
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
                 HumanMouse.move(mouse, rod_target)
                 time.sleep(random.uniform(0.07, 0.17))
@@ -969,7 +976,8 @@ class FishingService:
                 self.runtime.fish_stop.set()
                 break
             finally:
-                self.runtime.mouse.release()
+                if cycle_locked:
+                    self.runtime.mouse.release()
             if not update_remaining():
                 self.runtime.ui.log("⏲️ Fishing session complete")
                 self.runtime.ui.set_status("Fishing session finished", ORANGE)
@@ -1068,7 +1076,7 @@ class AutoHealerService:
                     if not spell_key:
                         self.runtime.ui.log(f"❌ Unknown healer spell key: {spell_key_name}")
                         break
-                    if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=0.25):
+                    if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=0.25, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
                             break
                         cooldown_until = time.monotonic() + 0.05
@@ -1082,7 +1090,7 @@ class AutoHealerService:
                     cooldown_until = time.monotonic() + 0.35
                     self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
                 else:
-                    if not self.runtime.mouse.acquire(self.runtime.healer_stop, max_wait=0.35):
+                    if not self.runtime.mouse.acquire(self.runtime.healer_stop, max_wait=0.35, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
                             break
                         cooldown_until = time.monotonic() + 0.08
@@ -1188,7 +1196,7 @@ class RuneMakerService:
                 + (move_max_ms * 2 + press_max_ms * 2 + settle_max_ms * 2) / 1000.0
                 + 0.40,
             )
-            if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window):
+            if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window, module_id="rune"):
                 if self.runtime.rune_stop.is_set():
                     break
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.rune_stop):
@@ -1330,7 +1338,7 @@ class HotkeyJobService:
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):
                     self.runtime.ui.log(f"⚠️  Job #{job.job_id}: window '{job.window_name}' not found")
-            if not self.runtime.execution.acquire(job.stop_evt, max_wait=0.45):
+            if not self.runtime.execution.acquire(job.stop_evt, max_wait=0.45, module_id=f"job:{job.job_id}"):
                 if job.stop_evt.is_set():
                     break
                 continue
