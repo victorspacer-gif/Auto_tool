@@ -29,8 +29,10 @@ from .services import (
     AutoHealerService,
     CharacterStatusService,
     FishingService,
+    HAS_LIGHT_MODULE,
     HotkeyJobService,
     HotkeyService,
+    LightControlService,
     PositionCaptureService,
     RightClickService,
     RuneMakerService,
@@ -48,6 +50,7 @@ class SystemMonitorApp:
         self.char_status_service = CharacterStatusService(self.runtime)
         self.fishing_service = FishingService(self.runtime)
         self.healer_service = AutoHealerService(self.runtime)
+        self.light_service = LightControlService(self.runtime)
         self.rune_service = RuneMakerService(self.runtime)
         self.job_service = HotkeyJobService(self.runtime)
 
@@ -78,6 +81,7 @@ class SystemMonitorApp:
         self.rune_blank_label: tk.Label | None = None
         self.healer_char_label: tk.Label | None = None
         self.healer_rune_label: tk.Label | None = None
+        self.light_status_label: tk.Label | None = None
         self.spots_listbox: tk.Listbox | None = None
         self.fish_session_value_label: tk.Label | None = None
         self.fish_session_remaining_label: tk.Label | None = None
@@ -180,6 +184,7 @@ class SystemMonitorApp:
         automation_tab = tk.Frame(notebook, bg=BG)
         rune_tab = tk.Frame(notebook, bg=BG)
         healer_tab = tk.Frame(notebook, bg=BG)
+        light_tab = tk.Frame(notebook, bg=BG)
         alarm_tab = tk.Frame(notebook, bg=BG)
         char_status_tab = tk.Frame(notebook, bg=BG)
         fish_tab = tk.Frame(notebook, bg=BG)
@@ -189,6 +194,7 @@ class SystemMonitorApp:
         notebook.add(automation_tab, text="🎮  Activity Control")
         notebook.add(rune_tab, text="✨  Rune Session")
         notebook.add(healer_tab, text="❤️  Auto Healer")
+        notebook.add(light_tab, text="💡  Light Control")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
         notebook.add(char_status_tab, text="📊  Character Status")
         notebook.add(fish_tab, text="🎣  Fishing Session")
@@ -198,6 +204,7 @@ class SystemMonitorApp:
         self._build_automation_tab(automation_tab)
         self._build_rune_tab(rune_tab)
         self._build_healer_tab(healer_tab)
+        self._build_light_tab(light_tab)
         self._build_alarm_tab(alarm_tab)
         self._build_character_status_tab(char_status_tab)
         self._build_fish_tab(fish_tab)
@@ -440,6 +447,34 @@ class SystemMonitorApp:
             "4. Rune healing uses the shared mouse lock so it will not fight fishing or rune maker.",
         ]:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
+
+    def _build_light_tab(self, parent: tk.Frame) -> None:
+        wrapper = tk.Frame(parent, bg=BG)
+        wrapper.pack(fill="both", expand=True, padx=16, pady=10)
+        panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
+        panel.pack(fill="x")
+        light_process = tk.StringVar(value=self.runtime.state.light_process_name)
+        light_address = tk.StringVar(value=self.runtime.state.light_address_hex)
+        light_default = tk.StringVar(value=self.runtime.state.light_default_value_hex)
+        light_boosted = tk.StringVar(value=self.runtime.state.light_boosted_value_hex)
+        self.ui_vars["light_process_name_var"] = light_process
+        self.ui_vars["light_address_hex_var"] = light_address
+        self.ui_vars["light_default_value_hex_var"] = light_default
+        self.ui_vars["light_boosted_value_hex_var"] = light_boosted
+        self._label_entry(panel, "Process name:", light_process, width=22)
+        self._label_entry(panel, "Address (hex):", light_address, width=14)
+        self._label_entry(panel, "Default value (hex):", light_default, width=10)
+        self._label_entry(panel, "Boosted value (hex):", light_boosted, width=10)
+        buttons = tk.Frame(panel, bg=PANEL)
+        buttons.pack(fill="x", pady=(8, 0))
+        self._btn(buttons, "Attach", self.attach_light_process, BLUE).pack(side="left", padx=2, expand=True, fill="x")
+        self._btn(buttons, "Read Current", self.read_light_value, PURPLE).pack(side="left", padx=2, expand=True, fill="x")
+        self._btn(buttons, "Apply Default", self.apply_light_default, ORANGE).pack(side="left", padx=2, expand=True, fill="x")
+        self._btn(buttons, "Apply Boosted", self.apply_light_boosted, GREEN).pack(side="left", padx=2, expand=True, fill="x")
+        tk.Label(panel, text="Current implementation uses the imported raw address workflow. Switch this to pointer-chain resolution later once you have stable pointers.", font=SMALL, fg=MUTED, bg=PANEL, justify="left", wraplength=860).pack(anchor="w", pady=(10, 6))
+        dep_text = "Light module ready" if HAS_LIGHT_MODULE else "Install psutil and pymem to use this tab"
+        self.light_status_label = tk.Label(panel, text=dep_text, font=SMALL_B, fg=TEAL if HAS_LIGHT_MODULE else ORANGE, bg=PANEL, anchor="w", justify="left")
+        self.light_status_label.pack(fill="x")
 
     def _build_fish_tab(self, parent: tk.Frame) -> None:
         left = tk.Frame(parent, bg=BG)
@@ -1036,6 +1071,28 @@ class SystemMonitorApp:
             self.ui_vars["char_status_tesseract_var"].set(path)
             self._refresh_character_status_display()
 
+    def attach_light_process(self) -> None:
+        ok, message = self.light_service.attach()
+        self._set_light_status(ok, message)
+
+    def read_light_value(self) -> None:
+        ok, message = self.light_service.read_current()
+        self._set_light_status(ok, message)
+
+    def apply_light_default(self) -> None:
+        ok, message = self.light_service.apply_default()
+        self._set_light_status(ok, message)
+
+    def apply_light_boosted(self) -> None:
+        ok, message = self.light_service.apply_boosted()
+        self._set_light_status(ok, message)
+
+    def _set_light_status(self, success: bool, message: str) -> None:
+        color = TEAL if success else ORANGE
+        if self.light_status_label:
+            self.light_status_label.config(text=message, fg=color)
+        self.runtime.ui.log(("✅ " if success else "❌ ") + message)
+
     def select_alarm_area(self) -> None:
         self._select_screen_region(
             title="Click & drag to select alarm area  |  Esc = cancel",
@@ -1207,6 +1264,10 @@ class SystemMonitorApp:
             "healer_min_mana_var": state.healer_min_mana,
             "healer_mouse_speed_var": state.healer_mouse_speed,
             "healer_rune_delay_var": state.healer_rune_delay_ms,
+            "light_process_name_var": state.light_process_name,
+            "light_address_hex_var": state.light_address_hex,
+            "light_default_value_hex_var": state.light_default_value_hex,
+            "light_boosted_value_hex_var": state.light_boosted_value_hex,
         }
         for name, value in mappings.items():
             if name in self.ui_vars:
@@ -1305,6 +1366,14 @@ class SystemMonitorApp:
             except (KeyError, ValueError):
                 pass
             state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_var", state.healer_rune_delay_ms))
+            if "light_process_name_var" in self.ui_vars:
+                state.light_process_name = str(self.ui_vars["light_process_name_var"].get()).strip()
+            if "light_address_hex_var" in self.ui_vars:
+                state.light_address_hex = str(self.ui_vars["light_address_hex_var"].get()).strip()
+            if "light_default_value_hex_var" in self.ui_vars:
+                state.light_default_value_hex = str(self.ui_vars["light_default_value_hex_var"].get()).strip()
+            if "light_boosted_value_hex_var" in self.ui_vars:
+                state.light_boosted_value_hex = str(self.ui_vars["light_boosted_value_hex_var"].get()).strip()
         self._refresh_character_status_display()
         self._refresh_fish_session_display()
         self.root.after(500, self._poll_settings)

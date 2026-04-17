@@ -16,7 +16,7 @@ venv/
 # =========================
 build/
 dist/
-*.spec
+#*.spec
 
 # PyInstaller cache
 *.manifest
@@ -39,6 +39,7 @@ Thumbs.db
 # =========================
 *.log
 *.tmp
+.Pointer_study/
 
 # =========================
 # Executables
@@ -46,3 +47,4 @@ Thumbs.db
 *.exe
 *.dll
 *.so
+/Pointer_study
