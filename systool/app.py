@@ -55,6 +55,7 @@ class SystemMonitorApp:
         self.job_service = HotkeyJobService(self.runtime)
 
         self.root: tk.Tk | None = None
+        self.log_window: tk.Toplevel | None = None
         self.log_widget: scrolledtext.ScrolledText | None = None
         self.status_label: tk.Label | None = None
         self.stats_label: tk.Label | None = None
@@ -86,11 +87,16 @@ class SystemMonitorApp:
         self.fish_session_value_label: tk.Label | None = None
         self.fish_session_remaining_label: tk.Label | None = None
         self.jobs_frame: tk.Frame | None = None
+        self.notebook_canvas: tk.Canvas | None = None
+        self.notebook_container: tk.Frame | None = None
+        self.notebook_window_id: int | None = None
+        self.notebook_widget: ttk.Notebook | None = None
         self.tray_icon = None
         self.listener = None
 
         self.ui_vars: dict[str, tk.Variable] = {}
         self.hotkey_vars: dict[str, tk.StringVar] = {}
+        self.log_history: list[str] = []
 
     def run(self) -> None:
         self.build_ui()
@@ -104,6 +110,7 @@ class SystemMonitorApp:
         self.root.resizable(True, True)
         self.root.minsize(960, 720)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.bind("<Configure>", self._on_root_resize)
 
         self.runtime.ui.configure(
             dispatch=lambda fn: self.root.after(0, fn),
@@ -116,7 +123,6 @@ class SystemMonitorApp:
 
         self._build_header()
         self._build_notebook()
-        self._build_log()
         self._start_global_hotkeys()
         self._poll_settings()
         self._refresh_stats()
@@ -169,6 +175,7 @@ class SystemMonitorApp:
         pause_bar = tk.Frame(self.root, bg=BG)
         pause_bar.pack(fill="x", padx=14, pady=(2, 0))
         self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
+        self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
         tk.Frame(self.root, bg=PANEL, height=1).pack(fill="x", padx=14, pady=4)
 
     def _build_notebook(self) -> None:
@@ -178,8 +185,21 @@ class SystemMonitorApp:
         style.configure("TNotebook.Tab", background=PANEL, foreground=MUTED, font=BOLD, padding=[12, 6])
         style.map("TNotebook.Tab", background=[("selected", BG)], foreground=[("selected", FG)])
 
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=14, pady=6)
+        wrapper = tk.Frame(self.root, bg=BG)
+        wrapper.pack(fill="both", expand=True, padx=14, pady=6)
+        self.notebook_canvas = tk.Canvas(wrapper, bg=BG, highlightthickness=0)
+        h_scroll = tk.Scrollbar(wrapper, orient="horizontal", command=self.notebook_canvas.xview)
+        self.notebook_canvas.configure(xscrollcommand=h_scroll.set)
+        self.notebook_canvas.pack(fill="both", expand=True)
+        h_scroll.pack(fill="x")
+        self.notebook_container = tk.Frame(self.notebook_canvas, bg=BG)
+        self.notebook_window_id = self.notebook_canvas.create_window((0, 0), window=self.notebook_container, anchor="nw")
+
+        notebook = ttk.Notebook(self.notebook_container)
+        notebook.pack(fill="both", expand=True)
+        self.notebook_widget = notebook
+        self.notebook_container.bind("<Configure>", self._sync_notebook_layout)
+        self.notebook_canvas.bind("<Configure>", self._sync_notebook_layout)
 
         automation_tab = tk.Frame(notebook, bg=BG)
         rune_tab = tk.Frame(notebook, bg=BG)
@@ -296,30 +316,54 @@ class SystemMonitorApp:
         spell_panel.pack(fill="x", pady=(0, 8))
         rune_spell = tk.StringVar(value=self.runtime.state.rune_spell_key)
         rune_cycle = tk.StringVar(value=str(self.runtime.state.rune_cycle_delay_ms))
+        rune_cycle_variation = tk.StringVar(value=str(self.runtime.state.rune_cycle_delay_variation_ms))
         rune_jitter = tk.StringVar(value=str(self.runtime.state.rune_jitter))
         rune_cast = tk.StringVar(value=str(self.runtime.state.rune_cast_delay_ms))
+        rune_blank_cycles = tk.StringVar(value=str(self.runtime.state.rune_available_blank_runes))
+        rune_move_min = tk.StringVar(value=str(self.runtime.state.rune_mouse_move_min_ms))
+        rune_move_max = tk.StringVar(value=str(self.runtime.state.rune_mouse_move_max_ms))
+        rune_press_min = tk.StringVar(value=str(self.runtime.state.rune_mouse_press_min_ms))
+        rune_press_max = tk.StringVar(value=str(self.runtime.state.rune_mouse_press_max_ms))
+        rune_settle_min = tk.StringVar(value=str(self.runtime.state.rune_mouse_settle_min_ms))
+        rune_settle_max = tk.StringVar(value=str(self.runtime.state.rune_mouse_settle_max_ms))
         self.ui_vars["rune_spell_key_var"] = rune_spell
         self.ui_vars["rune_cycle_delay_var"] = rune_cycle
+        self.ui_vars["rune_cycle_variation_var"] = rune_cycle_variation
         self.ui_vars["rune_jitter_var"] = rune_jitter
         self.ui_vars["rune_cast_delay_var"] = rune_cast
+        self.ui_vars["rune_blank_cycles_var"] = rune_blank_cycles
+        self.ui_vars["rune_move_min_var"] = rune_move_min
+        self.ui_vars["rune_move_max_var"] = rune_move_max
+        self.ui_vars["rune_press_min_var"] = rune_press_min
+        self.ui_vars["rune_press_max_var"] = rune_press_max
+        self.ui_vars["rune_settle_min_var"] = rune_settle_min
+        self.ui_vars["rune_settle_max_var"] = rune_settle_max
         self._label_entry(spell_panel, "Spell hotkey:", rune_spell, width=6)
         self._label_entry(spell_panel, "Cast settle delay (ms):", rune_cast, width=7)
-        self._label_entry(spell_panel, "Cycle delay (ms):", rune_cycle, width=7)
+        self._label_entry(spell_panel, "Cycle delay base (ms):", rune_cycle, width=7)
+        self._label_entry(spell_panel, "Cycle variation (ms):", rune_cycle_variation, width=7)
         self._label_entry(spell_panel, "Position jitter (px ±):", rune_jitter, width=5)
         rune_min_mana = tk.StringVar(value=str(self.runtime.state.rune_min_mana))
         self.ui_vars["rune_min_mana_var"] = rune_min_mana
         self._label_entry(spell_panel, "Min mana to cast:", rune_min_mana, width=7)
+        self._label_entry(spell_panel, "avb blank runes:", rune_blank_cycles, width=7)
         cycle_label = tk.Label(spell_panel, text="≈ Cycle time: —", font=SMALL_B, fg=TEAL, bg=PANEL)
         cycle_label.pack(anchor="w", pady=(6, 0))
 
         def update_cycle_preview(*_args):
             try:
-                seconds = int(rune_cycle.get()) / 1000.0
-                cycle_label.config(text=f"≈ {seconds:.1f} s between casts  ({seconds / 60:.2f} min)")
+                base_seconds = int(rune_cycle.get()) / 1000.0
+                variation_seconds = int(rune_cycle_variation.get()) / 1000.0
+                min_seconds = max(0.0, base_seconds - variation_seconds)
+                max_seconds = base_seconds + variation_seconds
+                cycle_label.config(
+                    text=f"≈ {min_seconds:.1f}–{max_seconds:.1f} s between casts"
+                )
             except ValueError:
                 cycle_label.config(text="≈ Cycle time: —")
 
         rune_cycle.trace_add("write", update_cycle_preview)
+        rune_cycle_variation.trace_add("write", update_cycle_preview)
         update_cycle_preview()
 
         positions_panel = tk.LabelFrame(left, text=" 🎯  Position Recording ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -341,6 +385,14 @@ class SystemMonitorApp:
             "8.  Repeat",
         ]:
             tk.Label(how_panel, text=step, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x")
+        timing_panel = tk.LabelFrame(right, text=" 🖱️  Mouse Timing ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        timing_panel.pack(fill="x", pady=(0, 8))
+        self._label_entry(timing_panel, "Move min (ms):", rune_move_min, width=6)
+        self._label_entry(timing_panel, "Move max (ms):", rune_move_max, width=6)
+        self._label_entry(timing_panel, "Press min (ms):", rune_press_min, width=6)
+        self._label_entry(timing_panel, "Press max (ms):", rune_press_max, width=6)
+        self._label_entry(timing_panel, "Settle min (ms):", rune_settle_min, width=6)
+        self._label_entry(timing_panel, "Settle max (ms):", rune_settle_max, width=6)
         buttons = tk.Frame(right, bg=BG)
         buttons.pack(fill="x", pady=(0, 8))
         self._btn(buttons, "▶ Start Rune Session", self.rune_service.start, GREEN).pack(fill="x", pady=2)
@@ -684,13 +736,54 @@ class SystemMonitorApp:
         self._btn(buttons, "💾 Save XML", self.save_config_xml, PURPLE).pack(side="left", padx=8, ipadx=12)
         self._btn(buttons, "📂 Load", self.load_config, ORANGE).pack(side="left", padx=8, ipadx=12)
 
-    def _build_log(self) -> None:
-        tk.Frame(self.root, bg=PANEL, height=1).pack(fill="x", padx=14, pady=2)
-        frame = tk.Frame(self.root, bg=BG)
-        frame.pack(fill="both", expand=False, padx=14, pady=(0, 10))
-        tk.Label(frame, text="Activity Log", font=BOLD, fg=MUTED, bg=BG).pack(anchor="w")
-        self.log_widget = scrolledtext.ScrolledText(frame, height=8, bg=PANEL, fg=FG, font=MONO, relief="flat", bd=4, state="disabled")
-        self.log_widget.pack(fill="both", expand=True)
+    def toggle_log_window(self) -> None:
+        if self.log_window and self.log_window.winfo_exists() and self.log_window.state() != "withdrawn":
+            self._hide_log_window()
+            return
+        self._show_log_window()
+
+    def _show_log_window(self) -> None:
+        if not self.root:
+            return
+        if not self.log_window or not self.log_window.winfo_exists():
+            self.log_window = tk.Toplevel(self.root)
+            self.log_window.title("SystemMonitor Live Log")
+            self.log_window.configure(bg=BG)
+            self.log_window.geometry("780x320")
+            self.log_window.minsize(520, 220)
+            self.log_window.protocol("WM_DELETE_WINDOW", self._hide_log_window)
+            frame = tk.Frame(self.log_window, bg=BG)
+            frame.pack(fill="both", expand=True, padx=12, pady=12)
+            tk.Label(frame, text="Live Activity Log", font=BOLD, fg=MUTED, bg=BG).pack(anchor="w")
+            self.log_widget = scrolledtext.ScrolledText(
+                frame,
+                height=14,
+                bg=PANEL,
+                fg=FG,
+                font=MONO,
+                relief="flat",
+                bd=4,
+                state="disabled",
+            )
+            self.log_widget.pack(fill="both", expand=True, pady=(6, 0))
+            for line in self.log_history:
+                self._append_log_line(line)
+        else:
+            self.log_window.deiconify()
+        self.log_window.lift()
+        self.log_window.focus_force()
+
+    def _hide_log_window(self) -> None:
+        if self.log_window and self.log_window.winfo_exists():
+            self.log_window.withdraw()
+
+    def _append_log_line(self, line: str) -> None:
+        if not self.log_widget or not self.log_widget.winfo_exists():
+            return
+        self.log_widget.configure(state="normal")
+        self.log_widget.insert("end", f"{line}\n")
+        self.log_widget.see("end")
+        self.log_widget.configure(state="disabled")
 
     def _btn(self, parent, text, command, bg=GREEN, **kwargs):
         return tk.Button(parent, text=text, command=command, font=BOLD, bg=bg, fg="white", activebackground=bg, activeforeground="white", bd=0, relief="flat", cursor="hand2", pady=6, **kwargs)
@@ -719,17 +812,32 @@ class SystemMonitorApp:
         self._btn(frame, f"📍 {title}", command, BLUE).pack(side="left", padx=6)
 
     def _write_log(self, message: str) -> None:
-        if not self.log_widget:
-            return
         timestamp = time.strftime("%H:%M:%S")
-        self.log_widget.configure(state="normal")
-        self.log_widget.insert("end", f"[{timestamp}] {message}\n")
-        self.log_widget.see("end")
-        self.log_widget.configure(state="disabled")
+        line = f"[{timestamp}] {message}"
+        self.log_history.append(line)
+        self._append_log_line(line)
 
     def _set_status(self, text: str, color: str) -> None:
         if self.status_label:
             self.status_label.config(text=text, fg=color)
+            self.status_label.config(wraplength=max(320, self.root.winfo_width() - 48))
+
+    def _on_root_resize(self, event) -> None:
+        if event.widget is not self.root:
+            return
+        if self.status_label:
+            self.status_label.config(wraplength=max(320, event.width - 48))
+        self._sync_notebook_layout()
+
+    def _sync_notebook_layout(self, _event=None) -> None:
+        if not self.notebook_canvas or not self.notebook_container or self.notebook_window_id is None:
+            return
+        self.notebook_canvas.update_idletasks()
+        required_width = self.notebook_container.winfo_reqwidth()
+        viewport_width = self.notebook_canvas.winfo_width()
+        target_width = max(viewport_width, required_width)
+        self.notebook_canvas.itemconfigure(self.notebook_window_id, width=target_width)
+        self.notebook_canvas.configure(scrollregion=self.notebook_canvas.bbox("all"))
 
     def _sync_pause_state(self, paused: bool) -> None:
         if paused:
@@ -1253,9 +1361,17 @@ class SystemMonitorApp:
             "rclick_food_burst_interval_var": state.rclick_food_burst_interval_ms,
             "rune_spell_key_var": state.rune_spell_key,
             "rune_cycle_delay_var": state.rune_cycle_delay_ms,
+            "rune_cycle_variation_var": state.rune_cycle_delay_variation_ms,
             "rune_jitter_var": state.rune_jitter,
             "rune_cast_delay_var": state.rune_cast_delay_ms,
             "rune_min_mana_var": state.rune_min_mana,
+            "rune_blank_cycles_var": state.rune_available_blank_runes,
+            "rune_move_min_var": state.rune_mouse_move_min_ms,
+            "rune_move_max_var": state.rune_mouse_move_max_ms,
+            "rune_press_min_var": state.rune_mouse_press_min_ms,
+            "rune_press_max_var": state.rune_mouse_press_max_ms,
+            "rune_settle_min_var": state.rune_mouse_settle_min_ms,
+            "rune_settle_max_var": state.rune_mouse_settle_max_ms,
             "healer_mode_var": state.healer_mode,
             "healer_spell_key_var": state.healer_spell_key,
             "healer_use_percent_var": state.healer_use_percent,
@@ -1349,9 +1465,17 @@ class SystemMonitorApp:
             if "rune_spell_key_var" in self.ui_vars:
                 state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
             state.rune_cycle_delay_ms = get_int("rune_cycle_delay_var", state.rune_cycle_delay_ms)
+            state.rune_cycle_delay_variation_ms = max(0, get_int("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
             state.rune_jitter = get_int("rune_jitter_var", state.rune_jitter)
             state.rune_cast_delay_ms = get_int("rune_cast_delay_var", state.rune_cast_delay_ms)
             state.rune_min_mana = max(0, get_int("rune_min_mana_var", state.rune_min_mana))
+            state.rune_available_blank_runes = max(0, get_int("rune_blank_cycles_var", state.rune_available_blank_runes))
+            state.rune_mouse_move_min_ms = max(20, get_int("rune_move_min_var", state.rune_mouse_move_min_ms))
+            state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, get_int("rune_move_max_var", state.rune_mouse_move_max_ms))
+            state.rune_mouse_press_min_ms = max(10, get_int("rune_press_min_var", state.rune_mouse_press_min_ms))
+            state.rune_mouse_press_max_ms = max(state.rune_mouse_press_min_ms, get_int("rune_press_max_var", state.rune_mouse_press_max_ms))
+            state.rune_mouse_settle_min_ms = max(10, get_int("rune_settle_min_var", state.rune_mouse_settle_min_ms))
+            state.rune_mouse_settle_max_ms = max(state.rune_mouse_settle_min_ms, get_int("rune_settle_max_var", state.rune_mouse_settle_max_ms))
             if "healer_mode_var" in self.ui_vars:
                 state.healer_mode = str(self.ui_vars["healer_mode_var"].get()).strip().lower() or "spell"
             if "healer_spell_key_var" in self.ui_vars:
@@ -1463,6 +1587,7 @@ class SystemMonitorApp:
             label.config(text=f"{title}: not selected")
 
     def on_close(self) -> None:
+        self._hide_log_window()
         self.root.withdraw()
 
     def _make_tray_image(self):
@@ -1491,6 +1616,8 @@ class SystemMonitorApp:
         self.char_status_service.stop()
         if self.tray_icon:
             self.tray_icon.stop()
+        if self.log_window and self.log_window.winfo_exists():
+            self.log_window.destroy()
         if self.root:
             self.root.after(0, self.root.destroy)
 

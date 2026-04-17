@@ -180,7 +180,7 @@ class CursorRequest:
     expires_at: float | None = None
 
 
-class MouseGate:
+class ExecutionGate:
     def __init__(self, pause: PauseController) -> None:
         self._pause = pause
         self._owner: object | None = None
@@ -248,6 +248,17 @@ class MouseGate:
         return max(0.01, min(0.05, request.expires_at - time.monotonic()))
 
 
+class MouseGate:
+    def __init__(self, execution: ExecutionGate) -> None:
+        self._execution = execution
+
+    def acquire(self, stop_evt: threading.Event, max_wait: float | None = None) -> bool:
+        return self._execution.acquire(stop_evt, max_wait=max_wait)
+
+    def release(self) -> None:
+        self._execution.release()
+
+
 class AppRuntime:
     def __init__(self) -> None:
         self.state = AppState()
@@ -255,7 +266,8 @@ class AppRuntime:
         self.record_lock = threading.Lock()
         self.ui = UINotifier()
         self.pause = PauseController(self.ui)
-        self.mouse = MouseGate(self.pause)
+        self.execution = ExecutionGate(self.pause)
+        self.mouse = MouseGate(self.execution)
         self.afk_stop = threading.Event()
         self.rclick_stop = threading.Event()
         self.alarm_stop = threading.Event()

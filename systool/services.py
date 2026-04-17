@@ -86,14 +86,55 @@ class HumanMouse:
         mouse.position = (int(ex), int(ey))
 
     @staticmethod
-    def drag(mouse, source: tuple[int, int], dest: tuple[int, int]) -> None:
-        HumanMouse.move(mouse, source)
-        time.sleep(random.uniform(0.06, 0.14))
+    def drag(
+        mouse,
+        source: tuple[int, int],
+        dest: tuple[int, int],
+        *,
+        move_duration: float | None = None,
+        press_delay_range: tuple[float, float] = (0.06, 0.14),
+        hold_delay_range: tuple[float, float] = (0.05, 0.10),
+        settle_delay_range: tuple[float, float] = (0.04, 0.09),
+    ) -> None:
+        HumanMouse.move(mouse, source, duration=move_duration)
+        time.sleep(random.uniform(*press_delay_range))
         mouse.press(pynput_mouse.Button.left)
-        time.sleep(random.uniform(0.05, 0.10))
-        HumanMouse.move(mouse, dest)
-        time.sleep(random.uniform(0.04, 0.09))
+        time.sleep(random.uniform(*hold_delay_range))
+        HumanMouse.move(mouse, dest, duration=move_duration)
+        time.sleep(random.uniform(*settle_delay_range))
         mouse.release(pynput_mouse.Button.left)
+
+
+class SafeKeyboardSession:
+    """Tracks pressed keys and guarantees they are released in reverse order."""
+
+    def __init__(self, keyboard) -> None:
+        self.keyboard = keyboard
+        self._pressed: list[object] = []
+
+    def tap(self, key, hold_seconds: float = 0.03) -> None:
+        self.press(key)
+        time.sleep(max(0.0, hold_seconds))
+        self.release(key)
+
+    def press(self, key) -> None:
+        self.keyboard.press(key)
+        self._pressed.append(key)
+
+    def release(self, key) -> None:
+        self.keyboard.release(key)
+        for index in range(len(self._pressed) - 1, -1, -1):
+            if self._pressed[index] == key:
+                del self._pressed[index]
+                break
+
+    def release_all(self) -> None:
+        while self._pressed:
+            key = self._pressed.pop()
+            try:
+                self.keyboard.release(key)
+            except Exception:
+                pass
 
 
 class WindowService:
@@ -268,6 +309,7 @@ class AntiAfkService:
         self.runtime.ui.log(f"▶ Activity monitor start — {state.afk_min_ms}–{state.afk_max_ms} ms")
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
+            state.afk_active = False
             return
         keyboard = pynput_kb.Controller()
         directions = {
@@ -286,24 +328,28 @@ class AntiAfkService:
             if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.afk_stop):
                 break
             direction_name, direction_key = random.choice(list(directions.items()))
+            if not self.runtime.execution.acquire(self.runtime.afk_stop, max_wait=0.50):
+                if self.runtime.afk_stop.is_set():
+                    break
+                continue
+            session = SafeKeyboardSession(keyboard)
             try:
-                keyboard.press(pynput_kb.Key.ctrl)
+                session.press(pynput_kb.Key.ctrl)
                 time.sleep(random.uniform(0.04, 0.08))
-                keyboard.press(direction_key)
+                session.press(direction_key)
                 time.sleep(random.uniform(0.03, 0.06))
-                keyboard.release(direction_key)
+                session.release(direction_key)
                 time.sleep(random.uniform(0.02, 0.04))
-                keyboard.release(pynput_kb.Key.ctrl)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ AFK: {exc}")
-                try:
-                    keyboard.release(pynput_kb.Key.ctrl)
-                except Exception:
-                    pass
+            finally:
+                session.release_all()
+                self.runtime.execution.release()
             with self.runtime.record_lock:
                 state.stats["afk_moves"] += 1
             self.runtime.ui.log(f"🚶 AFK Ctrl+{direction_name}")
             self.runtime.ui.refresh_stats()
+        state.afk_active = False
         self.runtime.ui.log("⏹ Activity monitor end")
 
 
@@ -337,6 +383,7 @@ class RightClickService:
         self.runtime.ui.log("▶ Right-click macro start")
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
+            state.rclick_active = False
             return
         mouse = pynput_mouse.Controller()
         while not self.runtime.rclick_stop.is_set():
@@ -1021,9 +1068,17 @@ class AutoHealerService:
                     if not spell_key:
                         self.runtime.ui.log(f"❌ Unknown healer spell key: {spell_key_name}")
                         break
-                    keyboard.press(spell_key)
-                    time.sleep(0.03)
-                    keyboard.release(spell_key)
+                    if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=0.25):
+                        if self.runtime.healer_stop.is_set():
+                            break
+                        cooldown_until = time.monotonic() + 0.05
+                        continue
+                    session = SafeKeyboardSession(keyboard)
+                    try:
+                        session.tap(spell_key, hold_seconds=0.03)
+                    finally:
+                        session.release_all()
+                        self.runtime.execution.release()
                     cooldown_until = time.monotonic() + 0.35
                     self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
                 else:
@@ -1087,15 +1142,21 @@ class RuneMakerService:
         )
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
+            state.rune_active = False
             return
         keyboard = pynput_kb.Controller()
         mouse = pynput_mouse.Controller()
         spell = HotkeyService.key_str_to_pynput(state.rune_spell_key)
         if not spell:
             self.runtime.ui.log(f"❌ Unknown spell key: {state.rune_spell_key}")
+            state.rune_active = False
             return
+
+        cycles_completed = 0
         while not self.runtime.rune_stop.is_set():
             self.runtime.pause.wait()
+            if self.runtime.rune_stop.is_set():
+                break
             with self.runtime.settings_lock:
                 hand = state.rune_hand_pos
                 storage = state.rune_storage_pos
@@ -1103,46 +1164,86 @@ class RuneMakerService:
                 jitter = state.rune_jitter
                 cast_delay_ms = state.rune_cast_delay_ms
                 cycle_delay_ms = state.rune_cycle_delay_ms
+                cycle_variation_ms = state.rune_cycle_delay_variation_ms
                 min_mana = state.rune_min_mana
                 current_mana = state.char_status_mana
+                blank_rune_limit = state.rune_available_blank_runes
+                move_min_ms = state.rune_mouse_move_min_ms
+                move_max_ms = state.rune_mouse_move_max_ms
+                press_min_ms = state.rune_mouse_press_min_ms
+                press_max_ms = state.rune_mouse_press_max_ms
+                settle_min_ms = state.rune_mouse_settle_min_ms
+                settle_max_ms = state.rune_mouse_settle_max_ms
+            if blank_rune_limit > 0 and cycles_completed >= blank_rune_limit:
+                self.runtime.ui.log(f"⏲️ Rune session stopped — avb blank runes limit reached ({blank_rune_limit})")
+                self.runtime.ui.set_status("Rune session finished by avb blank runes limit", ORANGE)
+                break
             if min_mana > 0 and current_mana is not None and current_mana < min_mana:
                 if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
                     break
                 continue
-            try:
-                keyboard.press(spell)
-                time.sleep(0.04)
-                keyboard.release(spell)
-            except Exception as exc:
-                self.runtime.ui.log(f"❌ Spell cast: {exc}")
-                break
-            self.runtime.ui.log(f"✨ Spell cast ({state.rune_spell_key.upper()})")
-            if not self.runtime.pause.wait_interruptible(cast_delay_ms / 1000.0, self.runtime.rune_stop):
-                break
-            if not self.runtime.mouse.acquire(self.runtime.rune_stop, max_wait=0.90):
+            queue_window = max(
+                0.90,
+                cast_delay_ms / 1000.0
+                + (move_max_ms * 2 + press_max_ms * 2 + settle_max_ms * 2) / 1000.0
+                + 0.40,
+            )
+            if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window):
                 if self.runtime.rune_stop.is_set():
                     break
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.rune_stop):
                     break
                 continue
+            session = SafeKeyboardSession(keyboard)
             try:
-                HumanMouse.drag(mouse, HumanMouse.jitter(hand, jitter), HumanMouse.jitter(storage, jitter))
+                session.tap(spell, hold_seconds=0.04)
+                self.runtime.ui.log(f"✨ Spell cast ({state.rune_spell_key.upper()})")
+                if not self.runtime.pause.wait_interruptible(cast_delay_ms / 1000.0, self.runtime.rune_stop):
+                    break
+
+                move_duration = random.uniform(move_min_ms, move_max_ms) / 1000.0
+                press_delay_range = (press_min_ms / 1000.0, press_max_ms / 1000.0)
+                settle_delay_range = (settle_min_ms / 1000.0, settle_max_ms / 1000.0)
+
+                HumanMouse.drag(
+                    mouse,
+                    HumanMouse.jitter(hand, jitter),
+                    HumanMouse.jitter(storage, jitter),
+                    move_duration=move_duration,
+                    press_delay_range=press_delay_range,
+                    hold_delay_range=press_delay_range,
+                    settle_delay_range=settle_delay_range,
+                )
                 self.runtime.ui.log("📦 Rune moved → storage")
-                time.sleep(random.uniform(0.12, 0.22))
-                HumanMouse.drag(mouse, HumanMouse.jitter(blank, jitter), HumanMouse.jitter(hand, jitter))
+                time.sleep(random.uniform(*settle_delay_range))
+                HumanMouse.drag(
+                    mouse,
+                    HumanMouse.jitter(blank, jitter),
+                    HumanMouse.jitter(hand, jitter),
+                    move_duration=random.uniform(move_min_ms, move_max_ms) / 1000.0,
+                    press_delay_range=press_delay_range,
+                    hold_delay_range=press_delay_range,
+                    settle_delay_range=settle_delay_range,
+                )
                 self.runtime.ui.log("📥 Blank rune → hand slot")
             except Exception as exc:
-                self.runtime.ui.log(f"❌ Rune drag: {exc}")
+                self.runtime.ui.log(f"❌ Rune cycle: {exc}")
                 break
             finally:
-                self.runtime.mouse.release()
+                session.release_all()
+                self.runtime.execution.release()
             with self.runtime.record_lock:
                 state.stats["runes_made"] += 1
+            cycles_completed += 1
             self.runtime.ui.refresh_stats()
-            wait_s = cycle_delay_ms / 1000.0
+            wait_s = random.randint(
+                max(0, cycle_delay_ms - cycle_variation_ms),
+                max(0, cycle_delay_ms + cycle_variation_ms),
+            ) / 1000.0
             self.runtime.ui.log(f"⏳ Waiting {wait_s:.1f}s before next cast…")
             if not self.runtime.pause.wait_interruptible(wait_s, self.runtime.rune_stop):
                 break
+        state.rune_active = False
         self.runtime.ui.log(f"⏹ Rune session stopped — {state.stats['runes_made']} runes moved")
 
 
@@ -1229,19 +1330,33 @@ class HotkeyJobService:
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):
                     self.runtime.ui.log(f"⚠️  Job #{job.job_id}: window '{job.window_name}' not found")
+            if not self.runtime.execution.acquire(job.stop_evt, max_wait=0.45):
+                if job.stop_evt.is_set():
+                    break
+                continue
             if job.burst_enabled and random.random() < job.burst_chance:
                 count = random.randint(job.burst_cnt_min, job.burst_cnt_max)
-                for _ in range(count):
-                    if job.stop_evt.is_set():
-                        break
-                    self._press_key(keyboard, pressed_key)
-                    time.sleep(job.burst_int_ms / 1000.0)
+                sent = 0
+                try:
+                    for _ in range(count):
+                        if job.stop_evt.is_set():
+                            break
+                        self._press_key(keyboard, pressed_key)
+                        sent += 1
+                        time.sleep(job.burst_int_ms / 1000.0)
+                finally:
+                    self.runtime.execution.release()
                 with self.runtime.record_lock:
-                    self.runtime.state.stats["hotkeys"] += count
-                    self.runtime.state.stats["bursts"] += 1
-                self.runtime.ui.log(f"⚡ Job #{job.job_id} burst {job.key} ×{count}")
+                    self.runtime.state.stats["hotkeys"] += sent
+                    if sent:
+                        self.runtime.state.stats["bursts"] += 1
+                if sent:
+                    self.runtime.ui.log(f"⚡ Job #{job.job_id} burst {job.key} ×{sent}")
             else:
-                self._press_key(keyboard, pressed_key)
+                try:
+                    self._press_key(keyboard, pressed_key)
+                finally:
+                    self.runtime.execution.release()
                 with self.runtime.record_lock:
                     self.runtime.state.stats["hotkeys"] += 1
                 self.runtime.ui.log(f"🎮 Job #{job.job_id} pressed {job.key}")
@@ -1255,11 +1370,11 @@ class HotkeyJobService:
 
     @staticmethod
     def _press_key(keyboard, pressed_key) -> None:
+        session = SafeKeyboardSession(keyboard)
         try:
-            keyboard.press(pressed_key)
-            keyboard.release(pressed_key)
-        except Exception:
-            pass
+            session.tap(pressed_key, hold_seconds=0.03)
+        finally:
+            session.release_all()
 
 
 class HotkeyService:

@@ -68,6 +68,7 @@ class ConfigSerializer:
             "fish_min_cap": state.fish_min_cap,
             "rune_spell_key": state.rune_spell_key,
             "rune_cycle_delay_ms": state.rune_cycle_delay_ms,
+            "rune_cycle_delay_variation_ms": state.rune_cycle_delay_variation_ms,
             "rune_hand_x": state.rune_hand_pos[0],
             "rune_hand_y": state.rune_hand_pos[1],
             "rune_storage_x": state.rune_storage_pos[0],
@@ -77,6 +78,13 @@ class ConfigSerializer:
             "rune_jitter": state.rune_jitter,
             "rune_cast_delay_ms": state.rune_cast_delay_ms,
             "rune_min_mana": state.rune_min_mana,
+            "rune_available_blank_runes": state.rune_available_blank_runes,
+            "rune_mouse_move_min_ms": state.rune_mouse_move_min_ms,
+            "rune_mouse_move_max_ms": state.rune_mouse_move_max_ms,
+            "rune_mouse_press_min_ms": state.rune_mouse_press_min_ms,
+            "rune_mouse_press_max_ms": state.rune_mouse_press_max_ms,
+            "rune_mouse_settle_min_ms": state.rune_mouse_settle_min_ms,
+            "rune_mouse_settle_max_ms": state.rune_mouse_settle_max_ms,
             "healer_mode": state.healer_mode,
             "healer_spell_key": state.healer_spell_key,
             "healer_use_percent": state.healer_use_percent,
@@ -263,6 +271,10 @@ class ConfigSerializer:
         state.fish_spots = list(spots)
         state.rune_spell_key = get_str("rune_spell_key", state.rune_spell_key)
         state.rune_cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune_cycle_delay_ms)
+        state.rune_cycle_delay_variation_ms = max(
+            0,
+            get_int("rune_cycle_delay_variation_ms", state.rune_cycle_delay_variation_ms),
+        )
         state.rune_hand_pos = (
             get_int("rune_hand_x", state.rune_hand_pos[0]),
             get_int("rune_hand_y", state.rune_hand_pos[1]),
@@ -278,6 +290,28 @@ class ConfigSerializer:
         state.rune_jitter = get_int("rune_jitter", state.rune_jitter)
         state.rune_cast_delay_ms = get_int("rune_cast_delay_ms", state.rune_cast_delay_ms)
         state.rune_min_mana = max(0, get_int("rune_min_mana", state.rune_min_mana))
+        state.rune_available_blank_runes = max(
+            0,
+            get_int("rune_available_blank_runes", state.rune_available_blank_runes),
+        )
+        state.rune_mouse_move_min_ms = max(20, get_int("rune_mouse_move_min_ms", state.rune_mouse_move_min_ms))
+        state.rune_mouse_move_max_ms = max(
+            state.rune_mouse_move_min_ms,
+            get_int("rune_mouse_move_max_ms", state.rune_mouse_move_max_ms),
+        )
+        state.rune_mouse_press_min_ms = max(10, get_int("rune_mouse_press_min_ms", state.rune_mouse_press_min_ms))
+        state.rune_mouse_press_max_ms = max(
+            state.rune_mouse_press_min_ms,
+            get_int("rune_mouse_press_max_ms", state.rune_mouse_press_max_ms),
+        )
+        state.rune_mouse_settle_min_ms = max(
+            10,
+            get_int("rune_mouse_settle_min_ms", state.rune_mouse_settle_min_ms),
+        )
+        state.rune_mouse_settle_max_ms = max(
+            state.rune_mouse_settle_min_ms,
+            get_int("rune_mouse_settle_max_ms", state.rune_mouse_settle_max_ms),
+        )
         state.healer_mode = get_str("healer_mode", state.healer_mode)
         state.healer_spell_key = get_str("healer_spell_key", state.healer_spell_key)
         state.healer_use_percent = get_bool("healer_use_percent", state.healer_use_percent)
