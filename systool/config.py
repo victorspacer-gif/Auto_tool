@@ -89,6 +89,10 @@ class ConfigSerializer:
             "healer_rune_y": state.healer_rune_pos[1],
             "healer_mouse_speed": state.healer_mouse_speed,
             "healer_rune_delay_ms": state.healer_rune_delay_ms,
+            "light_process_name": state.light_process_name,
+            "light_address_hex": state.light_address_hex,
+            "light_default_value_hex": state.light_default_value_hex,
+            "light_boosted_value_hex": state.light_boosted_value_hex,
         }
 
     @staticmethod
@@ -290,6 +294,10 @@ class ConfigSerializer:
         )
         state.healer_mouse_speed = max(0.2, min(3.0, get_float("healer_mouse_speed", state.healer_mouse_speed)))
         state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_ms", state.healer_rune_delay_ms))
+        state.light_process_name = get_str("light_process_name", state.light_process_name)
+        state.light_address_hex = get_str("light_address_hex", state.light_address_hex)
+        state.light_default_value_hex = get_str("light_default_value_hex", state.light_default_value_hex)
+        state.light_boosted_value_hex = get_str("light_boosted_value_hex", state.light_boosted_value_hex)
 
         for action, binding in hotkeys.items():
             if action in state.hotkey_bindings:

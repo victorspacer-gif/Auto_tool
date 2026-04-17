@@ -12,6 +12,8 @@ pystray_datas, pystray_binaries, pystray_hiddenimports = collect_all("pystray")
 pil_datas, pil_binaries, pil_hiddenimports = collect_all("PIL")
 pyautogui_datas, pyautogui_binaries, pyautogui_hiddenimports = collect_all("pyautogui")
 pytesseract_datas, pytesseract_binaries, pytesseract_hiddenimports = collect_all("pytesseract")
+psutil_datas, psutil_binaries, psutil_hiddenimports = collect_all("psutil")
+pymem_datas, pymem_binaries, pymem_hiddenimports = collect_all("pymem")
 win32_hiddenimports = collect_submodules("win32com")
 vendor_tesseract_dir = Path("vendor") / "tesseract"
 vendor_tesseract_datas = []
@@ -29,6 +31,8 @@ datas = (
     + pil_datas
     + pyautogui_datas
     + pytesseract_datas
+    + psutil_datas
+    + pymem_datas
     + vendor_tesseract_datas
 )
 
@@ -41,6 +45,8 @@ binaries = (
     + pil_binaries
     + pyautogui_binaries
     + pytesseract_binaries
+    + psutil_binaries
+    + pymem_binaries
 )
 
 hiddenimports = (
@@ -52,6 +58,8 @@ hiddenimports = (
     + pil_hiddenimports
     + pyautogui_hiddenimports
     + pytesseract_hiddenimports
+    + psutil_hiddenimports
+    + pymem_hiddenimports
     + win32_hiddenimports
     + [
         "pynput.keyboard",
