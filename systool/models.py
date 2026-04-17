@@ -133,6 +133,11 @@ class AppState:
     healer_mouse_speed: float = 1.0
     healer_rune_delay_ms: int = 250
 
+    light_process_name: str = "miracle_gl.exe"
+    light_address_hex: str = "133AA965"
+    light_default_value_hex: str = "07"
+    light_boosted_value_hex: str = "11"
+
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
             "hotkeys": 0,

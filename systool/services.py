@@ -10,6 +10,22 @@ import threading
 import time
 from collections.abc import Callable
 
+try:
+    from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as DEFAULT_LIGHT_PROFILE
+    from studiomemuer_light_module.memory_backend import (
+        LightMemoryController,
+        MemoryWriteError,
+        ProcessNotFoundError,
+    )
+
+    HAS_LIGHT_MODULE = True
+except ImportError:
+    DEFAULT_LIGHT_PROFILE = None
+    LightMemoryController = None
+    MemoryWriteError = RuntimeError
+    ProcessNotFoundError = RuntimeError
+    HAS_LIGHT_MODULE = False
+
 from .models import HotkeyJob
 from .runtime import (
     AppRuntime,
@@ -125,6 +141,65 @@ class WindowService:
             win32gui.SetForegroundWindow(hwnd)
         except Exception:
             pass
+
+
+class LightControlService:
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller = None
+
+    def is_available(self) -> bool:
+        return HAS_LIGHT_MODULE
+
+    def attach(self) -> tuple[bool, str]:
+        if not HAS_LIGHT_MODULE:
+            return False, "Install psutil and pymem to use light control"
+        process_name = self.runtime.state.light_process_name.strip()
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+            return True, f"Attached to {process_name}"
+        except ProcessNotFoundError as exc:
+            return False, str(exc)
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+    def detach(self) -> tuple[bool, str]:
+        if self.controller is not None:
+            try:
+                self.controller.detach()
+            except Exception:
+                pass
+            self.controller = None
+        return True, "Detached"
+
+    def read_current(self) -> tuple[bool, str]:
+        try:
+            ctrl = self._require_controller()
+            address = int(self.runtime.state.light_address_hex.strip(), 16)
+            value = ctrl.read_byte(address)
+            return True, f"Current light byte: 0x{value:02X}"
+        except Exception as exc:
+            return False, str(exc)
+
+    def apply_default(self) -> tuple[bool, str]:
+        return self._apply(self.runtime.state.light_default_value_hex.strip())
+
+    def apply_boosted(self) -> tuple[bool, str]:
+        return self._apply(self.runtime.state.light_boosted_value_hex.strip())
+
+    def _apply(self, value_hex: str) -> tuple[bool, str]:
+        try:
+            ctrl = self._require_controller()
+            result = ctrl.apply_light_value(self.runtime.state.light_address_hex.strip(), value_hex)
+            return True, f"Patched 0x{result.address:X}: 0x{result.old_value:02X} -> 0x{result.new_value:02X}"
+        except Exception as exc:
+            return False, str(exc)
+
+    def _require_controller(self):
+        if self.controller is None:
+            raise ProcessNotFoundError("Attach to the game process first.")
+        return self.controller
 
 
 class PositionCaptureService:

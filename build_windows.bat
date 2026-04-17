@@ -14,7 +14,7 @@ echo [2/5] Installing runtime and build dependencies...
 py -m pip install --upgrade pip
 if errorlevel 1 exit /b 1
 
-py -m pip install pyinstaller pynput pywin32 pystray pillow mss numpy pygame pyautogui pytesseract
+py -m pip install pyinstaller pynput pywin32 pystray pillow mss numpy pygame pyautogui pytesseract psutil pymem
 if errorlevel 1 exit /b 1
 
 echo [3/5] Cleaning previous build artifacts...
