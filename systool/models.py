@@ -114,12 +114,20 @@ class AppState:
     rune_active: bool = False
     rune_spell_key: str = "f1"
     rune_cycle_delay_ms: int = 5_000
+    rune_cycle_delay_variation_ms: int = 0
     rune_hand_pos: tuple[int, int] = (0, 0)
     rune_storage_pos: tuple[int, int] = (0, 0)
     rune_blank_pos: tuple[int, int] = (0, 0)
     rune_jitter: int = 6
     rune_cast_delay_ms: int = 900
     rune_min_mana: int = 0
+    rune_available_blank_runes: int = 0
+    rune_mouse_move_min_ms: int = 110
+    rune_mouse_move_max_ms: int = 240
+    rune_mouse_press_min_ms: int = 45
+    rune_mouse_press_max_ms: int = 90
+    rune_mouse_settle_min_ms: int = 80
+    rune_mouse_settle_max_ms: int = 180
 
     healer_active: bool = False
     healer_mode: str = "spell"
