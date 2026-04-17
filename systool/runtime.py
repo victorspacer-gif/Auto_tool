@@ -178,6 +178,7 @@ class PauseController:
 class CursorRequest:
     token: object = field(default_factory=object)
     expires_at: float | None = None
+    module_id: str = "anonymous"
 
 
 class ExecutionGate:
@@ -186,10 +187,19 @@ class ExecutionGate:
         self._owner: object | None = None
         self._queue: list[CursorRequest] = []
         self._condition = threading.Condition()
+        self._last_module_id: str | None = None
+        self._consecutive_grants = 0
+        self._max_consecutive_grants = 2
 
-    def acquire(self, stop_evt: threading.Event, max_wait: float | None = None) -> bool:
+    def acquire(
+        self,
+        stop_evt: threading.Event,
+        max_wait: float | None = None,
+        module_id: str = "anonymous",
+    ) -> bool:
         request = CursorRequest(
-            expires_at=None if max_wait is None else time.monotonic() + max(0.0, max_wait)
+            expires_at=None if max_wait is None else time.monotonic() + max(0.0, max_wait),
+            module_id=module_id,
         )
         with self._condition:
             self._queue_request_locked(request)
@@ -201,10 +211,16 @@ class ExecutionGate:
             self._pause.wait()
             with self._condition:
                 self._prune_expired_locked()
+                self._rebalance_queue_for_fairness_locked()
                 if not self._is_request_queued_locked(request):
                     return False
                 if self._owner is None and self._is_next_request_locked(request):
                     self._owner = request.token
+                    if request.module_id == self._last_module_id:
+                        self._consecutive_grants += 1
+                    else:
+                        self._last_module_id = request.module_id
+                        self._consecutive_grants = 1
                     self._remove_request_locked(request)
                     return True
                 wait_time = self._wait_timeout_locked(request)
@@ -226,6 +242,21 @@ class ExecutionGate:
             for request in self._queue
             if request.expires_at is None or request.expires_at > now
         ]
+
+    def _rebalance_queue_for_fairness_locked(self) -> None:
+        if (
+            len(self._queue) < 2
+            or self._last_module_id is None
+            or self._consecutive_grants < self._max_consecutive_grants
+        ):
+            return
+        if self._queue[0].module_id != self._last_module_id:
+            return
+        for index, request in enumerate(self._queue[1:], start=1):
+            if request.module_id != self._last_module_id:
+                self._queue.append(self._queue.pop(0))
+                self._condition.notify_all()
+                return
 
     def _remove_request_locked(self, request: CursorRequest) -> None:
         self._queue = [queued for queued in self._queue if queued.token is not request.token]
@@ -252,8 +283,13 @@ class MouseGate:
     def __init__(self, execution: ExecutionGate) -> None:
         self._execution = execution
 
-    def acquire(self, stop_evt: threading.Event, max_wait: float | None = None) -> bool:
-        return self._execution.acquire(stop_evt, max_wait=max_wait)
+    def acquire(
+        self,
+        stop_evt: threading.Event,
+        max_wait: float | None = None,
+        module_id: str = "anonymous",
+    ) -> bool:
+        return self._execution.acquire(stop_evt, max_wait=max_wait, module_id=module_id)
 
     def release(self) -> None:
         self._execution.release()
