@@ -30,6 +30,7 @@ class ConfigSerializer:
             for job in state.jobs
         ]
         return {
+            "time_unit": state.time_unit,
             "jobs": jobs_data,
             "hotkey_bindings": dict(state.hotkey_bindings),
             "afk_min_ms": state.afk_min_ms,
@@ -209,6 +210,7 @@ class ConfigSerializer:
         def get_bool(name: str, default: bool) -> bool:
             return str(cfg.get(name, str(default))).lower() == "true"
 
+        state.time_unit = get_str("time_unit", state.time_unit)
         state.afk_min_ms = get_int("afk_min_ms", state.afk_min_ms)
         state.afk_max_ms = get_int("afk_max_ms", state.afk_max_ms)
         state.rclick_pos = (
