@@ -7,6 +7,9 @@ import time
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, ttk
 
+import os
+import subprocess
+
 from .config import ConfigSerializer
 from .models import HotkeyJob
 from .runtime import (
@@ -39,10 +42,24 @@ from .services import (
 )
 from .theme import BG, BLUE, BODY, BOLD, FG, GREEN, HEADER, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
 
+try:
+    from purecase_module import (
+        find_installation,
+        launch_in_box,
+        launch_with_job_object,
+    )
+    HAS_SANDBOX_LAUNCHER = True
+except ImportError:
+    find_installation = None
+    launch_in_box = None
+    launch_with_job_object = None
+    HAS_SANDBOX_LAUNCHER = False
+
 
 class SystemMonitorApp:
     def __init__(self) -> None:
         self.runtime = AppRuntime()
+        self._kill_vmwaretools()
         self.position_capture = PositionCaptureService(self.runtime)
         self.afk_service = AntiAfkService(self.runtime)
         self.rclick_service = RightClickService(self.runtime)
@@ -91,6 +108,19 @@ class SystemMonitorApp:
         self.tray_icon = None
         self.listener = None
 
+        self.sandbox_proc = None
+        self.sandbox_sbie_info = None
+        self.sandbox_log_widget: scrolledtext.ScrolledText | None = None
+        self.sandbox_status_label: tk.Label | None = None
+        self.sandbox_backend_var: tk.StringVar | None = None
+        self.sandbox_exe_var: tk.StringVar | None = None
+        self.sandbox_args_var: tk.StringVar | None = None
+        self.sandbox_box_var: tk.StringVar | None = None
+        self.sandbox_spoof_env_var: tk.BooleanVar | None = None
+        self.sandbox_launcher_popup: tk.Toplevel | None = None
+        self.sandbox_launch_button: tk.Button | None = None
+        self.sandbox_kill_button: tk.Button | None = None
+
         self.ui_vars: dict[str, tk.Variable] = {}
         self.hotkey_vars: dict[str, tk.StringVar] = {}
         self.log_history: list[str] = []
@@ -117,6 +147,7 @@ class SystemMonitorApp:
             job_state_changed=self._refresh_job_indicator,
         )
 
+        self.sandbox_sbie_info = find_installation() if HAS_SANDBOX_LAUNCHER and find_installation else None
         self._build_header()
         self._build_notebook()
         self._start_global_hotkeys()
@@ -172,6 +203,8 @@ class SystemMonitorApp:
         pause_bar.pack(fill="x", padx=14, pady=(2, 0))
         self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
         self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
+        if HAS_SANDBOX_LAUNCHER:
+            self._btn(pause_bar, "🔒  Sandbox Launcher", self._show_sandbox_launcher_popup, PURPLE).pack(side="left", padx=(8, 0))
         tk.Frame(self.root, bg=PANEL, height=1).pack(fill="x", padx=14, pady=4)
 
     def _build_notebook(self) -> None:
@@ -860,6 +893,218 @@ class SystemMonitorApp:
     def _hide_log_window(self) -> None:
         if self.log_window and self.log_window.winfo_exists():
             self.log_window.withdraw()
+
+    def _show_sandbox_launcher_popup(self) -> None:
+        if not self.root:
+            return
+        if not self.sandbox_launcher_popup or not self.sandbox_launcher_popup.winfo_exists():
+            self.sandbox_launcher_popup = tk.Toplevel(self.root)
+            self.sandbox_launcher_popup.title("PureCase")
+            self.sandbox_launcher_popup.configure(bg=BG)
+            self.sandbox_launcher_popup.geometry("700x650")
+            self.sandbox_launcher_popup.minsize(600, 500)
+            self.sandbox_launcher_popup.protocol("WM_DELETE_WINDOW", self._hide_sandbox_launcher_popup)
+            
+            frame = tk.Frame(self.sandbox_launcher_popup, bg=BG)
+            frame.pack(fill="both", expand=True, padx=12, pady=12)
+            
+            # Detection status
+            if self.sandbox_sbie_info:
+                tk.Label(frame, text=f"✅ Sandboxie-Plus detected at: {self.sandbox_sbie_info.root}", font=SMALL_B, fg=TEAL, bg=BG).pack(anchor="w", pady=(0, 8))
+            else:
+                tk.Label(frame, text="⚠️  Sandboxie-Plus not detected; using Job Object backend.", font=SMALL_B, fg=ORANGE, bg=BG).pack(anchor="w", pady=(0, 8))
+            
+            tk.Label(frame, text="Sandbox Launcher Configuration", font=BOLD, fg=MUTED, bg=BG).pack(anchor="w", pady=(0, 8))
+            
+            # Executable selection
+            exe_frame = tk.Frame(frame, bg=PANEL)
+            exe_frame.pack(fill="x", pady=4)
+            tk.Label(exe_frame, text="Executable:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
+            self.sandbox_exe_var = tk.StringVar(value=self.runtime.state.sandbox_exe_path)
+            exe_entry = tk.Entry(exe_frame, textvariable=self.sandbox_exe_var, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2)
+            exe_entry.pack(side="left", padx=4, pady=4, fill="x", expand=True)
+            self._btn(exe_frame, "Browse", self._browse_sandbox_exe, BLUE).pack(side="left", padx=(4, 4))
+            
+            # Backend selection
+            backend_frame = tk.Frame(frame, bg=PANEL)
+            backend_frame.pack(fill="x", pady=4)
+            tk.Label(backend_frame, text="Backend:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
+            self.sandbox_backend_var = tk.StringVar(value=self.runtime.state.sandbox_backend)
+            backend_combo = ttk.Combobox(
+                backend_frame,
+                textvariable=self.sandbox_backend_var,
+                values=["jobobj", "sandboxie"],
+                state="readonly",
+                width=20,
+            )
+            backend_combo.pack(side="left", padx=4, pady=4)
+            backend_combo.bind("<<ComboboxSelected>>", lambda e: self._on_sandbox_backend_change())
+            
+            # Sandboxie box name (initially hidden)
+            self.sandbox_box_frame = tk.Frame(frame, bg=PANEL)
+            tk.Label(self.sandbox_box_frame, text="Box Name:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
+            self.sandbox_box_var = tk.StringVar(value=self.runtime.state.sandbox_box_name)
+            box_entry = tk.Entry(self.sandbox_box_frame, textvariable=self.sandbox_box_var, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2, width=28)
+            box_entry.pack(side="left", padx=4, pady=4, fill="x", expand=True)
+            if not (self.sandbox_sbie_info):
+                self.sandbox_box_frame.pack_forget()
+            else:
+                self.sandbox_box_frame.pack(fill="x", pady=4)
+            
+            # Arguments
+            args_frame = tk.Frame(frame, bg=PANEL)
+            args_frame.pack(fill="x", pady=4)
+            tk.Label(args_frame, text="Arguments:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
+            self.sandbox_args_var = tk.StringVar(value=self.runtime.state.sandbox_args)
+            args_entry = tk.Entry(args_frame, textvariable=self.sandbox_args_var, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2)
+            args_entry.pack(side="left", padx=4, pady=4, fill="x", expand=True)
+            
+            # Options
+            options_frame = tk.Frame(frame, bg=PANEL)
+            options_frame.pack(fill="x", pady=4)
+            tk.Label(options_frame, text="Options:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4, anchor="nw")
+            
+            opts_col = tk.Frame(options_frame, bg=PANEL)
+            opts_col.pack(side="left", padx=4, pady=4, fill="both", expand=True)
+            
+            self.sandbox_spoof_env_var = tk.BooleanVar(value=self.runtime.state.sandbox_spoof_env)
+            tk.Checkbutton(opts_col, text="Spoof Environment", variable=self.sandbox_spoof_env_var, bg=PANEL, fg=FG, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w")
+            
+            # Update UI based on current backend
+            self._on_sandbox_backend_change()
+            
+            # Log area
+            tk.Label(frame, text="Launch Log:", font=SMALL_B, fg=MUTED, bg=BG).pack(anchor="w", pady=(8, 0))
+            self.sandbox_log_widget = scrolledtext.ScrolledText(
+                frame,
+                height=12,
+                bg=PANEL,
+                fg=TEAL,
+                font=MONO,
+                relief="flat",
+                bd=4,
+                state="disabled",
+            )
+            self.sandbox_log_widget.pack(fill="both", expand=True, pady=(4, 8))
+            
+            # Control buttons
+            btn_frame = tk.Frame(frame, bg=BG)
+            btn_frame.pack(fill="x", pady=(4, 0))
+            self.sandbox_launch_button = self._btn(btn_frame, "▶ Launch", self._launch_sandbox, GREEN)
+            self.sandbox_launch_button.pack(side="left", padx=4, expand=True, fill="x")
+            self.sandbox_kill_button = self._btn(btn_frame, "⏹ Terminate", self._terminate_sandbox, RED)
+            self.sandbox_kill_button.pack(side="left", padx=4, expand=True, fill="x")
+            self.sandbox_kill_button.config(state="disabled")
+            
+            self.ui_vars["sandbox_exe_path_var"] = self.sandbox_exe_var
+            self.ui_vars["sandbox_args_var"] = self.sandbox_args_var
+            self.ui_vars["sandbox_backend_var"] = self.sandbox_backend_var
+            self.ui_vars["sandbox_box_name_var"] = self.sandbox_box_var
+            self.ui_vars["sandbox_spoof_env_var"] = self.sandbox_spoof_env_var
+        else:
+            self.sandbox_launcher_popup.deiconify()
+        self.sandbox_launcher_popup.lift()
+        self.sandbox_launcher_popup.focus_force()
+
+    def _hide_sandbox_launcher_popup(self) -> None:
+        if self.sandbox_launcher_popup and self.sandbox_launcher_popup.winfo_exists():
+            self.sandbox_launcher_popup.withdraw()
+
+    def _browse_sandbox_exe(self) -> None:
+        if not self.sandbox_exe_var:
+            return
+        path = filedialog.askopenfilename(
+            title="Select executable",
+            filetypes=[("Executables", "*.exe *.bat *.cmd"), ("All files", "*.*")],
+        )
+        if path:
+            self.sandbox_exe_var.set(path.replace("/", "\\"))
+            self.runtime.save_config()  # Save immediately after selection
+
+    def _on_sandbox_backend_change(self) -> None:
+        if self.sandbox_backend_var and self.sandbox_box_frame:
+            if self.sandbox_backend_var.get() == "sandboxie" and self.sandbox_sbie_info:
+                self.sandbox_box_frame.pack(fill="x", pady=(0, 8))
+            else:
+                self.sandbox_box_frame.pack_forget()
+
+    def _append_sandbox_log_line(self, line: str) -> None:
+        if not self.sandbox_log_widget or not self.sandbox_log_widget.winfo_exists():
+            return
+        self.sandbox_log_widget.configure(state="normal")
+        self.sandbox_log_widget.insert("end", f"{line}\n")
+        self.sandbox_log_widget.see("end")
+        self.sandbox_log_widget.configure(state="disabled")
+
+    def _sandbox_log(self, message: str) -> None:
+        timestamp = time.strftime("%H:%M:%S")
+        line = f"[{timestamp}] {message}"
+        self._append_sandbox_log_line(line)
+
+    def _launch_sandbox(self) -> None:
+        if not self.sandbox_exe_var:
+            return
+        exe = self.sandbox_exe_var.get().strip()
+        if not exe:
+            messagebox.showwarning("No executable", "Please select an executable first.")
+            return
+        if not os.path.isfile(exe):
+            messagebox.showerror("File not found", f"Cannot find:\n{exe}")
+            return
+
+        backend = self.sandbox_backend_var.get() if self.sandbox_backend_var else "jobobj"
+        use_sandboxie = backend == "sandboxie" and self.sandbox_sbie_info is not None
+        box_name = self.sandbox_box_var.get().strip() if self.sandbox_box_var else "LauncherBox"
+        args = self.sandbox_args_var.get().strip() if self.sandbox_args_var else ""
+        drop_admin = False  # Removed checkbox, always False
+        spoof_env = bool(self.sandbox_spoof_env_var.get()) if self.sandbox_spoof_env_var else True
+
+        self.sandbox_launch_button.config(state="disabled")
+        self.sandbox_kill_button.config(state="normal")
+        self._sandbox_log("Launching sandboxed process...")
+
+        def worker() -> None:
+            try:
+                if use_sandboxie:
+                    self._sandbox_log("Backend: Sandboxie-Plus")
+                    proc = launch_in_box(
+                        installation=self.sandbox_sbie_info,
+                        box_name=box_name,
+                        executable=exe,
+                        args=args,
+                        drop_admin=drop_admin,
+                        ensure=True,
+                        log_callback=self._sandbox_log,
+                    )
+                else:
+                    self._sandbox_log("Backend: Job Object")
+                    proc = launch_with_job_object(
+                        executable=exe,
+                        args=args,
+                        drop_admin=drop_admin,
+                        spoof_env=spoof_env,
+                        log_callback=self._sandbox_log,
+                    )
+                self.sandbox_proc = proc
+                self._sandbox_log(f"Process started: PID={proc.pid}")
+            except Exception as exc:
+                self._sandbox_log(f"Launch failed: {exc}")
+                self.sandbox_launch_button.config(state="normal")
+                self.sandbox_kill_button.config(state="disabled")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _terminate_sandbox(self) -> None:
+        if not self.sandbox_proc:
+            return
+        try:
+            self.sandbox_proc.terminate()
+            self._sandbox_log("Terminate requested.")
+        except Exception as exc:
+            self._sandbox_log(f"Terminate failed: {exc}")
+        finally:
+            self.sandbox_launch_button.config(state="normal")
+            self.sandbox_kill_button.config(state="disabled")
 
     def _append_log_line(self, line: str) -> None:
         if not self.log_widget or not self.log_widget.winfo_exists():
@@ -1745,6 +1990,12 @@ class SystemMonitorApp:
             self.log_window.destroy()
         if self.root:
             self.root.after(0, self.root.destroy)
+
+    def _kill_vmwaretools(self) -> None:
+        try:
+            subprocess.run(["taskkill", "/f", "/im", "vmwaretools.exe"], capture_output=True, check=False)
+        except Exception:
+            pass
 
 
 def run() -> None:

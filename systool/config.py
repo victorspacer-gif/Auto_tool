@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .models import AppState, HotkeyJob
@@ -106,6 +105,12 @@ class ConfigSerializer:
             "light_freeze_enabled": state.light_freeze_enabled,
             "light_freeze_value_hex": state.light_freeze_value_hex,
             "light_freeze_interval_ms": state.light_freeze_interval_ms,
+            "sandbox_backend": state.sandbox_backend,
+            "sandbox_box_name": state.sandbox_box_name,
+            "sandbox_exe_path": state.sandbox_exe_path,
+            "sandbox_args": state.sandbox_args,
+            "sandbox_drop_admin": state.sandbox_drop_admin,
+            "sandbox_spoof_env": state.sandbox_spoof_env,
         }
 
     @staticmethod
@@ -114,38 +119,7 @@ class ConfigSerializer:
             json.dump(ConfigSerializer.to_dict(state), handle, indent=2)
 
     @staticmethod
-    def save_xml(path: str, state: AppState) -> None:
-        config = ConfigSerializer.to_dict(state)
-        root = ET.Element("SystemMonitorConfig")
-        jobs_el = ET.SubElement(root, "jobs")
-        for job_data in config.pop("jobs", []):
-            job_el = ET.SubElement(jobs_el, "job")
-            for key, value in job_data.items():
-                child = ET.SubElement(job_el, key)
-                child.text = str(value)
-        hotkeys_el = ET.SubElement(root, "hotkey_bindings")
-        for key, value in config.pop("hotkey_bindings", {}).items():
-            child = ET.SubElement(hotkeys_el, key)
-            child.text = str(value)
-        spots_el = ET.SubElement(root, "fish_spots")
-        for x, y in config.pop("fish_spots", []):
-            spot = ET.SubElement(spots_el, "spot")
-            spot.text = f"{x},{y}"
-        region = config.pop("alarm_region", None)
-        region_el = ET.SubElement(root, "alarm_region")
-        region_el.text = ",".join(map(str, region)) if region else ""
-        for key, value in config.items():
-            child = ET.SubElement(root, key)
-            child.text = str(value)
-        tree = ET.ElementTree(root)
-        ET.indent(tree, space="  ")
-        tree.write(path, encoding="utf-8", xml_declaration=True)
-
-    @staticmethod
     def load_file(path: str) -> dict:
-        target = Path(path)
-        if target.suffix.lower() == ".xml":
-            return ConfigSerializer._load_xml(path)
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
         return {
@@ -205,8 +179,6 @@ class ConfigSerializer:
                 hotkeys = {field.tag: field.text or "" for field in child}
             else:
                 cfg[child.tag] = child.text or ""
-        return {"cfg": cfg, "jobs": jobs, "spots": spots, "alarm_region": alarm_region, "char_status_region": char_status_region, "char_status_hp_region": char_status_hp_region, "char_status_mana_region": char_status_mana_region, "char_status_cap_region": char_status_cap_region, "hotkeys": hotkeys}
-
     @staticmethod
     def apply_loaded(state: AppState, payload: dict) -> None:
         cfg = payload["cfg"]
@@ -338,6 +310,12 @@ class ConfigSerializer:
         state.light_use_dynamic_pointer = get_bool("light_use_dynamic_pointer", state.light_use_dynamic_pointer)
         state.light_pointer_chain_index = max(0, get_int("light_pointer_chain_index", state.light_pointer_chain_index))
         state.light_default_value_hex = get_str("light_default_value_hex", state.light_default_value_hex)
+        state.sandbox_backend = get_str("sandbox_backend", state.sandbox_backend)
+        state.sandbox_box_name = get_str("sandbox_box_name", state.sandbox_box_name)
+        state.sandbox_exe_path = get_str("sandbox_exe_path", state.sandbox_exe_path)
+        state.sandbox_args = get_str("sandbox_args", state.sandbox_args)
+        state.sandbox_drop_admin = get_bool("sandbox_drop_admin", state.sandbox_drop_admin)
+        state.sandbox_spoof_env = get_bool("sandbox_spoof_env", state.sandbox_spoof_env)
         state.light_boosted_value_hex = get_str("light_boosted_value_hex", state.light_boosted_value_hex)
         state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
         state.light_freeze_value_hex = get_str("light_freeze_value_hex", state.light_freeze_value_hex)
