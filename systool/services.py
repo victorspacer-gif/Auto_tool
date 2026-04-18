@@ -923,6 +923,8 @@ class CharacterStatusService:
                 if text_values:
                     aggregated[key] = Counter(text_values).most_common(1)[0][0]
         return aggregated
+
+    def _extract_values_from_text(self, frame) -> dict[str, int | None | str]:
         values: dict[str, int | None] = {
             "level": None,
             "hp": None,
