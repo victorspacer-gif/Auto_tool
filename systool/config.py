@@ -99,8 +99,13 @@ class ConfigSerializer:
             "healer_rune_delay_ms": state.healer_rune_delay_ms,
             "light_process_name": state.light_process_name,
             "light_address_hex": state.light_address_hex,
+            "light_use_dynamic_pointer": state.light_use_dynamic_pointer,
+            "light_pointer_chain_index": state.light_pointer_chain_index,
             "light_default_value_hex": state.light_default_value_hex,
             "light_boosted_value_hex": state.light_boosted_value_hex,
+            "light_freeze_enabled": state.light_freeze_enabled,
+            "light_freeze_value_hex": state.light_freeze_value_hex,
+            "light_freeze_interval_ms": state.light_freeze_interval_ms,
         }
 
     @staticmethod
@@ -330,8 +335,13 @@ class ConfigSerializer:
         state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_ms", state.healer_rune_delay_ms))
         state.light_process_name = get_str("light_process_name", state.light_process_name)
         state.light_address_hex = get_str("light_address_hex", state.light_address_hex)
+        state.light_use_dynamic_pointer = get_bool("light_use_dynamic_pointer", state.light_use_dynamic_pointer)
+        state.light_pointer_chain_index = max(0, get_int("light_pointer_chain_index", state.light_pointer_chain_index))
         state.light_default_value_hex = get_str("light_default_value_hex", state.light_default_value_hex)
         state.light_boosted_value_hex = get_str("light_boosted_value_hex", state.light_boosted_value_hex)
+        state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
+        state.light_freeze_value_hex = get_str("light_freeze_value_hex", state.light_freeze_value_hex)
+        state.light_freeze_interval_ms = max(30, get_int("light_freeze_interval_ms", state.light_freeze_interval_ms))
 
         for action, binding in hotkeys.items():
             if action in state.hotkey_bindings:
@@ -357,3 +367,4 @@ class ConfigSerializer:
             )
             state.jobs.append(job)
             state.job_counter = max(state.job_counter, job.job_id)
+

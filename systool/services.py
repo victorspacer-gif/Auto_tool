@@ -188,24 +188,56 @@ class LightControlService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller = None
+        self._freeze_stop = threading.Event()
+        self._freeze_thread: threading.Thread | None = None
 
     def is_available(self) -> bool:
         return HAS_LIGHT_MODULE
 
+    def _profile(self):
+        if DEFAULT_LIGHT_PROFILE is None:
+            raise RuntimeError("Light profile unavailable")
+        return DEFAULT_LIGHT_PROFILE
+
+    def _selected_chain(self) -> list[int]:
+        profile = self._profile()
+        chains = list(profile.pointer_chains)
+        if not chains:
+            return []
+        idx = max(0, min(self.runtime.state.light_pointer_chain_index, len(chains) - 1))
+        return list(chains[idx])
+
+    def describe_selected_chain(self) -> str:
+        chain = self._selected_chain()
+        if not chain:
+            return "(no pointer chains configured)"
+        return " -> ".join(f"0x{v:X}" for v in chain)
+
+    def set_chain_index(self, index: int) -> tuple[bool, str]:
+        profile = self._profile()
+        if index < 0 or index >= len(profile.pointer_chains):
+            return False, f"Invalid chain index: {index}"
+        self.runtime.state.light_pointer_chain_index = index
+        return True, f"Selected chain #{index + 1}: {self.describe_selected_chain()}"
+
     def attach(self) -> tuple[bool, str]:
         if not HAS_LIGHT_MODULE:
             return False, "Install psutil and pymem to use light control"
+
         process_name = self.runtime.state.light_process_name.strip()
         try:
             self.controller = LightMemoryController(process_name)
             self.controller.attach()
-            return True, f"Attached to {process_name}"
+            if self.runtime.state.light_use_dynamic_pointer:
+                return True, f"Attached to {process_name} | chain #{self.runtime.state.light_pointer_chain_index + 1}"
+            return True, f"Attached to {process_name} | raw address mode"
         except ProcessNotFoundError as exc:
             return False, str(exc)
         except Exception as exc:
             return False, f"Attach failed: {exc}"
 
     def detach(self) -> tuple[bool, str]:
+        self.stop_freeze()
         if self.controller is not None:
             try:
                 self.controller.detach()
@@ -217,23 +249,146 @@ class LightControlService:
     def read_current(self) -> tuple[bool, str]:
         try:
             ctrl = self._require_controller()
+            if self.runtime.state.light_use_dynamic_pointer:
+                profile = self._profile()
+                target = ctrl.resolve_light_address(
+                    module_name=profile.module_name,
+                    pointer_chains=[self._selected_chain()] if self._selected_chain() else [],
+                    structure_value_offset=profile.structure_value_offset,
+                    signature_pattern=profile.signature_pattern,
+                    signature_offset_to_base=profile.signature_offset_to_base,
+                )
+                value = ctrl.read_byte(target)
+                return True, f"Dyn read [chain #{self.runtime.state.light_pointer_chain_index + 1}] 0x{target:X} = 0x{value:02X}"
+
             address = int(self.runtime.state.light_address_hex.strip(), 16)
             value = ctrl.read_byte(address)
-            return True, f"Current light byte: 0x{value:02X}"
+            return True, f"Raw read 0x{address:X} = 0x{value:02X}"
         except Exception as exc:
             return False, str(exc)
 
     def apply_default(self) -> tuple[bool, str]:
-        return self._apply(self.runtime.state.light_default_value_hex.strip())
+        value_hex = self.runtime.state.light_default_value_hex.strip()
+        ok, message = self._apply(value_hex)
+        if ok:
+            self.runtime.state.light_freeze_value_hex = value_hex
+        return ok, message
 
     def apply_boosted(self) -> tuple[bool, str]:
-        return self._apply(self.runtime.state.light_boosted_value_hex.strip())
+        value_hex = self.runtime.state.light_boosted_value_hex.strip()
+        ok, message = self._apply(value_hex)
+        if ok:
+            self.runtime.state.light_freeze_value_hex = value_hex
+        return ok, message
+
+    def toggle_mode(self) -> tuple[bool, str]:
+        self.runtime.state.light_use_dynamic_pointer = not self.runtime.state.light_use_dynamic_pointer
+        mode = "dynamic pointer" if self.runtime.state.light_use_dynamic_pointer else "raw address"
+        return True, f"Light mode: {mode}"
+
+    def validate_selected_chain(self) -> tuple[bool, str]:
+        try:
+            ctrl = self._require_controller()
+            profile = self._profile()
+            chain = self._selected_chain()
+            if not chain:
+                return False, "No pointer chains configured in light profile."
+
+            target = ctrl.resolve_light_address(
+                module_name=profile.module_name,
+                pointer_chains=[chain],
+                structure_value_offset=profile.structure_value_offset,
+                signature_pattern=profile.signature_pattern,
+                signature_offset_to_base=profile.signature_offset_to_base,
+            )
+            value = ctrl.read_byte(target)
+            return True, (
+                f"Chain #{self.runtime.state.light_pointer_chain_index + 1} OK | "
+                f"addr=0x{target:X} value=0x{value:02X} chain={self.describe_selected_chain()}"
+            )
+        except Exception as exc:
+            return False, f"Chain validation failed: {exc}"
+
+    def validate_all_chains(self) -> tuple[bool, str]:
+        try:
+            ctrl = self._require_controller()
+            profile = self._profile()
+            lines: list[str] = []
+            all_ok = True
+            for index, chain in enumerate(profile.pointer_chains, start=1):
+                try:
+                    target = ctrl.resolve_light_address(
+                        module_name=profile.module_name,
+                        pointer_chains=[list(chain)],
+                        structure_value_offset=profile.structure_value_offset,
+                        signature_pattern=profile.signature_pattern,
+                        signature_offset_to_base=profile.signature_offset_to_base,
+                    )
+                    value = ctrl.read_byte(target)
+                    lines.append(f"#{index}: OK addr=0x{target:X} value=0x{value:02X}")
+                except Exception as exc:
+                    all_ok = False
+                    lines.append(f"#{index}: FAIL ({exc})")
+            return all_ok, " | ".join(lines)
+        except Exception as exc:
+            return False, f"All-chain validation failed: {exc}"
+
+    def set_freeze_enabled(self, enabled: bool) -> tuple[bool, str]:
+        self.runtime.state.light_freeze_enabled = bool(enabled)
+        if enabled:
+            return self.start_freeze()
+        self.stop_freeze()
+        return True, "Light freeze disabled."
+
+    def start_freeze(self) -> tuple[bool, str]:
+        if self._freeze_thread is not None and self._freeze_thread.is_alive():
+            return True, "Light freeze already running."
+        if self.controller is None:
+            return False, "Attach to the game process first."
+        self._freeze_stop.clear()
+        self._freeze_thread = threading.Thread(target=self._freeze_worker, daemon=True)
+        self._freeze_thread.start()
+        return True, (
+            f"Light freeze enabled: value=0x{self.runtime.state.light_freeze_value_hex.strip()} "
+            f"every {max(30, self.runtime.state.light_freeze_interval_ms)}ms"
+        )
+
+    def stop_freeze(self) -> None:
+        self._freeze_stop.set()
+
+    def _freeze_worker(self) -> None:
+        while not self._freeze_stop.is_set():
+            if not self.runtime.state.light_freeze_enabled:
+                break
+            if self.controller is None:
+                break
+            value_hex = self.runtime.state.light_freeze_value_hex.strip()
+            self._apply(value_hex)
+            delay = max(30, self.runtime.state.light_freeze_interval_ms) / 1000.0
+            if self._freeze_stop.wait(delay):
+                break
 
     def _apply(self, value_hex: str) -> tuple[bool, str]:
         try:
             ctrl = self._require_controller()
+            if self.runtime.state.light_use_dynamic_pointer:
+                profile = self._profile()
+                chain = self._selected_chain()
+                result = ctrl.apply_light_by_resolver(
+                    module_name=profile.module_name,
+                    pointer_chains=[chain] if chain else [],
+                    structure_value_offset=profile.structure_value_offset,
+                    value_hex=value_hex,
+                    signature_pattern=profile.signature_pattern,
+                    signature_offset_to_base=profile.signature_offset_to_base,
+                )
+                return True, (
+                    f"Dyn patch [chain #{self.runtime.state.light_pointer_chain_index + 1}] "
+                    f"0x{result.address:X}: 0x{result.old_value:02X} -> 0x{result.new_value:02X}"
+                )
+
             result = ctrl.apply_light_value(self.runtime.state.light_address_hex.strip(), value_hex)
-            return True, f"Patched 0x{result.address:X}: 0x{result.old_value:02X} -> 0x{result.new_value:02X}"
+            return True, f"Raw patch 0x{result.address:X}: 0x{result.old_value:02X} -> 0x{result.new_value:02X}"
         except Exception as exc:
             return False, str(exc)
 
@@ -1442,3 +1597,4 @@ class HotkeyService:
     def matches(pressed_key, binding_str: str) -> bool:
         target = HotkeyService.key_str_to_pynput(binding_str)
         return target is not None and pressed_key == target
+

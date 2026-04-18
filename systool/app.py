@@ -503,27 +503,74 @@ class SystemMonitorApp:
     def _build_light_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
         wrapper.pack(fill="both", expand=True, padx=16, pady=10)
-        panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
+        panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control - Alpha test ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
         panel.pack(fill="x")
         light_process = tk.StringVar(value=self.runtime.state.light_process_name)
         light_address = tk.StringVar(value=self.runtime.state.light_address_hex)
+        light_use_dynamic = tk.BooleanVar(value=self.runtime.state.light_use_dynamic_pointer)
+        light_chain_index = tk.StringVar(value=str(self.runtime.state.light_pointer_chain_index + 1))
+        light_freeze_enabled = tk.BooleanVar(value=self.runtime.state.light_freeze_enabled)
+        light_freeze_value = tk.StringVar(value=self.runtime.state.light_freeze_value_hex)
+        light_freeze_interval = tk.StringVar(value=str(self.runtime.state.light_freeze_interval_ms))
         light_default = tk.StringVar(value=self.runtime.state.light_default_value_hex)
         light_boosted = tk.StringVar(value=self.runtime.state.light_boosted_value_hex)
         self.ui_vars["light_process_name_var"] = light_process
         self.ui_vars["light_address_hex_var"] = light_address
+        self.ui_vars["light_use_dynamic_pointer_var"] = light_use_dynamic
+        self.ui_vars["light_pointer_chain_index_var"] = light_chain_index
+        self.ui_vars["light_freeze_enabled_var"] = light_freeze_enabled
+        self.ui_vars["light_freeze_value_hex_var"] = light_freeze_value
+        self.ui_vars["light_freeze_interval_ms_var"] = light_freeze_interval
         self.ui_vars["light_default_value_hex_var"] = light_default
         self.ui_vars["light_boosted_value_hex_var"] = light_boosted
         self._label_entry(panel, "Process name:", light_process, width=22)
-        self._label_entry(panel, "Address (hex):", light_address, width=14)
+        self._label_entry(panel, "Fallback address (hex):", light_address, width=14)
+        mode_row = tk.Frame(panel, bg=PANEL)
+        mode_row.pack(fill="x", pady=2)
+        tk.Checkbutton(
+            mode_row,
+            text="Use dynamic pointer mode - experimental testing",
+            variable=light_use_dynamic,
+            font=BOLD,
+            fg=FG,
+            bg=PANEL,
+            selectcolor=PANEL,
+            activebackground=PANEL,
+            activeforeground=FG,
+        ).pack(side="left")
+        chain_row = tk.Frame(panel, bg=PANEL)
+        chain_row.pack(fill="x", pady=2)
+        tk.Label(chain_row, text="Pointer chain #:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
+        chain_menu = tk.OptionMenu(chain_row, light_chain_index, "1", "2", "3")
+        chain_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
+        chain_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
+        chain_menu.pack(side="left", padx=4)
+        self._btn(chain_row, "Select Chain", self.select_light_chain, BLUE).pack(side="left", padx=4)
         self._label_entry(panel, "Default value (hex):", light_default, width=10)
         self._label_entry(panel, "Boosted value (hex):", light_boosted, width=10)
+        self._label_entry(panel, "Freeze value (hex):", light_freeze_value, width=10)
+        self._label_entry(panel, "Freeze interval (ms):", light_freeze_interval, width=8)
+        tk.Checkbutton(
+            panel,
+            text="Freeze applied hex value",
+            variable=light_freeze_enabled,
+            command=self.toggle_light_freeze,
+            font=BOLD,
+            fg=FG,
+            bg=PANEL,
+            selectcolor=PANEL,
+            activebackground=PANEL,
+            activeforeground=FG,
+        ).pack(anchor="w", pady=(4, 2))
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(8, 0))
         self._btn(buttons, "Attach", self.attach_light_process, BLUE).pack(side="left", padx=2, expand=True, fill="x")
+        self._btn(buttons, "Test Chain", self.test_light_chain, PURPLE).pack(side="left", padx=2, expand=True, fill="x")
+        self._btn(buttons, "Test All Chains", self.test_all_light_chains, BLUE).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Read Current", self.read_light_value, PURPLE).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Apply Default", self.apply_light_default, ORANGE).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Apply Boosted", self.apply_light_boosted, GREEN).pack(side="left", padx=2, expand=True, fill="x")
-        tk.Label(panel, text="Current implementation uses the imported raw address workflow. Switch this to pointer-chain resolution later once you have stable pointers.", font=SMALL, fg=MUTED, bg=PANEL, justify="left", wraplength=860).pack(anchor="w", pady=(10, 6))
+        tk.Label(panel, text="Manual process name is preserved. Use dynamic pointer mode + chain selector to test pointer behavior across sessions. Fallback raw address remains available.", font=SMALL, fg=MUTED, bg=PANEL, justify="left", wraplength=860).pack(anchor="w", pady=(10, 6))
         dep_text = "Light module ready" if HAS_LIGHT_MODULE else "Install psutil and pymem to use this tab"
         self.light_status_label = tk.Label(panel, text=dep_text, font=SMALL_B, fg=TEAL if HAS_LIGHT_MODULE else ORANGE, bg=PANEL, anchor="w", justify="left")
         self.light_status_label.pack(fill="x")
@@ -1183,6 +1230,28 @@ class SystemMonitorApp:
         ok, message = self.light_service.attach()
         self._set_light_status(ok, message)
 
+    def select_light_chain(self) -> None:
+        try:
+            selected = int(str(self.ui_vars["light_pointer_chain_index_var"].get()).strip()) - 1
+        except Exception:
+            self._set_light_status(False, "Invalid pointer chain selection.")
+            return
+        ok, message = self.light_service.set_chain_index(selected)
+        self._set_light_status(ok, message)
+
+    def test_light_chain(self) -> None:
+        ok, message = self.light_service.validate_selected_chain()
+        self._set_light_status(ok, message)
+
+    def test_all_light_chains(self) -> None:
+        ok, message = self.light_service.validate_all_chains()
+        self._set_light_status(ok, message)
+
+    def toggle_light_freeze(self) -> None:
+        enabled = bool(self.ui_vars.get("light_freeze_enabled_var").get()) if "light_freeze_enabled_var" in self.ui_vars else False
+        ok, message = self.light_service.set_freeze_enabled(enabled)
+        self._set_light_status(ok, message)
+
     def read_light_value(self) -> None:
         ok, message = self.light_service.read_current()
         self._set_light_status(ok, message)
@@ -1382,6 +1451,9 @@ class SystemMonitorApp:
             "healer_rune_delay_var": state.healer_rune_delay_ms,
             "light_process_name_var": state.light_process_name,
             "light_address_hex_var": state.light_address_hex,
+            "light_pointer_chain_index_var": state.light_pointer_chain_index + 1,
+            "light_freeze_value_hex_var": state.light_freeze_value_hex,
+            "light_freeze_interval_ms_var": state.light_freeze_interval_ms,
             "light_default_value_hex_var": state.light_default_value_hex,
             "light_boosted_value_hex_var": state.light_boosted_value_hex,
         }
@@ -1392,6 +1464,10 @@ class SystemMonitorApp:
             self.ui_vars["alarm_auto_pause_var"].set(state.alarm_auto_pause)
         if "healer_use_percent_var" in self.ui_vars:
             self.ui_vars["healer_use_percent_var"].set(state.healer_use_percent)
+        if "light_use_dynamic_pointer_var" in self.ui_vars:
+            self.ui_vars["light_use_dynamic_pointer_var"].set(state.light_use_dynamic_pointer)
+        if "light_freeze_enabled_var" in self.ui_vars:
+            self.ui_vars["light_freeze_enabled_var"].set(state.light_freeze_enabled)
         if self.pos_label:
             self.pos_label.config(text=f"Pos: {state.rclick_pos[0]}, {state.rclick_pos[1]}")
         if self.rod_label:
@@ -1494,6 +1570,20 @@ class SystemMonitorApp:
                 state.light_process_name = str(self.ui_vars["light_process_name_var"].get()).strip()
             if "light_address_hex_var" in self.ui_vars:
                 state.light_address_hex = str(self.ui_vars["light_address_hex_var"].get()).strip()
+            if "light_use_dynamic_pointer_var" in self.ui_vars:
+                state.light_use_dynamic_pointer = bool(self.ui_vars["light_use_dynamic_pointer_var"].get())
+            if "light_pointer_chain_index_var" in self.ui_vars:
+                try:
+                    chain_idx = int(str(self.ui_vars["light_pointer_chain_index_var"].get()).strip()) - 1
+                except ValueError:
+                    chain_idx = state.light_pointer_chain_index
+                state.light_pointer_chain_index = max(0, min(2, chain_idx))
+            if "light_freeze_enabled_var" in self.ui_vars:
+                state.light_freeze_enabled = bool(self.ui_vars["light_freeze_enabled_var"].get())
+            if "light_freeze_value_hex_var" in self.ui_vars:
+                state.light_freeze_value_hex = str(self.ui_vars["light_freeze_value_hex_var"].get()).strip()
+            if "light_freeze_interval_ms_var" in self.ui_vars:
+                state.light_freeze_interval_ms = max(30, get_int("light_freeze_interval_ms_var", state.light_freeze_interval_ms))
             if "light_default_value_hex_var" in self.ui_vars:
                 state.light_default_value_hex = str(self.ui_vars["light_default_value_hex_var"].get()).strip()
             if "light_boosted_value_hex_var" in self.ui_vars:
@@ -1587,6 +1677,10 @@ class SystemMonitorApp:
             label.config(text=f"{title}: not selected")
 
     def on_close(self) -> None:
+        try:
+            self.light_service.detach()
+        except Exception:
+            pass
         self._hide_log_window()
         self.root.withdraw()
 
@@ -1624,3 +1718,7 @@ class SystemMonitorApp:
 
 def run() -> None:
     SystemMonitorApp().run()
+
+
+
+
