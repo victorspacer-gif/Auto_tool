@@ -87,6 +87,13 @@ class AppState:
     char_status_tesseract_path: str = ""
     char_status_level: int | None = None
     char_status_hp: int | None = None
+    sandbox_backend: str = "jobobj"
+    sandbox_box_name: str = "LauncherBox"
+    sandbox_exe_path: str = ""
+    sandbox_args: str = ""
+    sandbox_drop_admin: bool = False
+    sandbox_spoof_env: bool = True
+
     char_status_mana: int | None = None
     char_status_cap: int | None = None
     char_status_food_seconds: int | None = None
@@ -167,4 +174,11 @@ class AppState:
     )
     jobs: list[HotkeyJob] = dataclasses.field(default_factory=list)
     job_counter: int = 0
+
+    sandbox_backend: str = "job_object"
+    sandbox_box_name: str = "DefaultBox"
+    sandbox_exe_path: str = ""
+    sandbox_args: str = ""
+    sandbox_drop_admin: bool = False
+    sandbox_spoof_env: bool = False
 

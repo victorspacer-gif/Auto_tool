@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
 
+from .config import ConfigSerializer
 from .models import AppState, HotkeyJob
 
 try:
@@ -298,6 +299,13 @@ class MouseGate:
 class AppRuntime:
     def __init__(self) -> None:
         self.state = AppState()
+        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+        if os.path.exists(config_path):
+            try:
+                payload = ConfigSerializer.load_file(config_path)
+                ConfigSerializer.apply_loaded(self.state, payload)
+            except Exception as e:
+                print(f"Failed to load config: {e}")
         self.settings_lock = threading.Lock()
         self.record_lock = threading.Lock()
         self.ui = UINotifier()
@@ -311,6 +319,10 @@ class AppRuntime:
         self.fish_stop = threading.Event()
         self.healer_stop = threading.Event()
         self.rune_stop = threading.Event()
+
+    def save_config(self) -> None:
+        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+        ConfigSerializer.save_json(config_path, self.state)
 
 
 def resolve_tesseract_cmd(explicit_path: str = "") -> str | None:
