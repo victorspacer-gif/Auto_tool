@@ -143,8 +143,13 @@ class AppState:
 
     light_process_name: str = "miracle_gl.exe"
     light_address_hex: str = "133AA965"
+    light_use_dynamic_pointer: bool = True
+    light_pointer_chain_index: int = 0
     light_default_value_hex: str = "07"
     light_boosted_value_hex: str = "11"
+    light_freeze_enabled: bool = False
+    light_freeze_value_hex: str = "11"
+    light_freeze_interval_ms: int = 120
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
@@ -160,3 +165,4 @@ class AppState:
     )
     jobs: list[HotkeyJob] = dataclasses.field(default_factory=list)
     job_counter: int = 0
+

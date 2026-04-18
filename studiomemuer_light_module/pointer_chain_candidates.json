@@ -1,5 +1,13 @@
 {
   "value_offset_hex": "0xAD",
+  "code_anchors": [
+    {
+      "instruction": "miracle_gl.exe+18664A",
+      "operation": "mov [eax+0xAD], cl",
+      "base_register": "EAX",
+      "confidence": "high"
+    }
+  ],
   "runs": [
     {
       "file": "Pointer_study\\study1.scandata.addresslist",
@@ -12,19 +20,16 @@
         "0x39E2A2B8"
       ],
       "pointer_literals": []
-    },
+    }
+  ],
+  "validated_structures": [
     {
-      "file": "Pointer_study\\study2.scandata.addresslist",
-      "absolute_addresses": [
-        "0x39DAF4F4",
-        "0x39DAF555"
-      ],
-      "structure_base_candidates": [
-        "0x39DAF447",
-        "0x39DAF4A8"
-      ],
-      "pointer_literals": [
-        "0x7"
+      "base": "0x217AFC90",
+      "score": 0.95,
+      "matches": [
+        "ASCII:Deprived",
+        "Pattern:CE07",
+        "FloatBlock"
       ]
     }
   ],
@@ -36,7 +41,6 @@
     "0x39E2A2B8"
   ],
   "pointer_chain_templates": [
-    "[0x<module_relative_offset>, 0xAD]"
-  ],
-  "profile_snippet": "DEFAULT_PROFILE = LightProfile(\n    process_name=\"miracle_gl\",\n    module_name=\"miracle_gl\",\n    pointer_chains=[\n        # Replace with CE chains in module-relative form.\n        # Example: [0x01ABCDEF, 0x20, 0x10, 0xAD]\n    ],\n    structure_value_offset=0xAD,\n    signature_pattern=\"AA BB CC ?? DD\",\n    signature_offset_to_base=0,\n    default_value_hex=\"07\",\n    boosted_value_hex=\"11\",\n    description=\"Dynamic light resolver: pointer chain first, signature fallback.\",\n)\n"
+    "[0x<module_relative_offset>, ..., 0xAD]"
+  ]
 }
