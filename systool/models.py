@@ -29,6 +29,7 @@ class HotkeyJob:
 
 @dataclasses.dataclass
 class AppState:
+    time_unit: str = "ms"
     hotkey_bindings: dict[str, str] = dataclasses.field(
         default_factory=lambda: {
             "pause": "f5",

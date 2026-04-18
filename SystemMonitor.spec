@@ -3,7 +3,7 @@
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 from pathlib import Path
 
-
+# Collect packages
 pynput_datas, pynput_binaries, pynput_hiddenimports = collect_all("pynput")
 mss_datas, mss_binaries, mss_hiddenimports = collect_all("mss")
 numpy_datas, numpy_binaries, numpy_hiddenimports = collect_all("numpy")
@@ -14,14 +14,22 @@ pyautogui_datas, pyautogui_binaries, pyautogui_hiddenimports = collect_all("pyau
 pytesseract_datas, pytesseract_binaries, pytesseract_hiddenimports = collect_all("pytesseract")
 psutil_datas, psutil_binaries, psutil_hiddenimports = collect_all("psutil")
 pymem_datas, pymem_binaries, pymem_hiddenimports = collect_all("pymem")
+
+# Collect win32com submodules and jaraco namespace packages
 win32_hiddenimports = collect_submodules("win32com")
+jaraco_hiddenimports = collect_submodules("jaraco")
+
+# Vendor tesseract (copied into vendor/tesseract by your build script)
 vendor_tesseract_dir = Path("vendor") / "tesseract"
 vendor_tesseract_datas = []
 if vendor_tesseract_dir.exists():
     for item in vendor_tesseract_dir.rglob("*"):
         if item.is_file():
-            vendor_tesseract_datas.append((str(item), str(Path("tesseract") / item.relative_to(vendor_tesseract_dir).parent)))
+            vendor_tesseract_datas.append(
+                (str(item), str(Path("tesseract") / item.relative_to(vendor_tesseract_dir).parent))
+            )
 
+# Aggregate datas, binaries, hiddenimports
 datas = (
     pynput_datas
     + mss_datas
@@ -61,6 +69,7 @@ hiddenimports = (
     + psutil_hiddenimports
     + pymem_hiddenimports
     + win32_hiddenimports
+    + jaraco_hiddenimports
     + [
         "pynput.keyboard",
         "pynput.mouse",
@@ -73,6 +82,9 @@ hiddenimports = (
     ]
 )
 
+# Hook and runtime hook paths (ensure these directories exist and are committed)
+hookspath = ["hooks"]
+runtime_hooks = ["runtime_hooks/site_import_jaraco.py"]
 
 a = Analysis(
     ["raw.py"],
@@ -80,9 +92,9 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=hookspath,
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=runtime_hooks,
     excludes=[],
     noarchive=False,
     optimize=0,

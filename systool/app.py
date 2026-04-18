@@ -278,17 +278,44 @@ class SystemMonitorApp:
     def _build_afk_panel(self, parent: tk.Frame) -> None:
         panel = tk.LabelFrame(parent, text=" 🚶  Activity Monitor ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         panel.pack(fill="x", pady=(0, 8))
-        afk_min = tk.StringVar(value=str(self.runtime.state.afk_min_ms))
-        afk_max = tk.StringVar(value=str(self.runtime.state.afk_max_ms))
+        afk_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.afk_min_ms)))
+        afk_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.afk_max_ms)))
         self.ui_vars["afk_min_var"] = afk_min
         self.ui_vars["afk_max_var"] = afk_max
-        self._label_entry(panel, "Timer Min (ms):", afk_min)
-        self._label_entry(panel, "Timer Max (ms):", afk_max)
+        afk_min.trace_add("write", self._update_afk_min)
+        afk_max.trace_add("write", self._update_afk_max)
+        unit = self._get_unit_label()
+        self._label_entry(panel, f"Timer Min ({unit}):", afk_min)
+        self._label_entry(panel, f"Timer Max ({unit}):", afk_max)
         tk.Label(panel, text="Ctrl held down → arrow press → Ctrl released", font=SMALL, fg=MUTED, bg=PANEL).pack(anchor="w")
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.afk_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
         self._btn(buttons, "⏹ Stop", self.afk_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
+
+    def _update_afk_min(self, *args) -> None:
+        try:
+            self.runtime.state.afk_min_ms = self._display_to_ms(float(self.ui_vars["afk_min_var"].get()))
+        except ValueError:
+            pass
+
+    def _update_afk_max(self, *args) -> None:
+        try:
+            self.runtime.state.afk_max_ms = self._display_to_ms(float(self.ui_vars["afk_max_var"].get()))
+        except ValueError:
+            pass
+
+    def _update_rclick_min(self, *args) -> None:
+        try:
+            self.runtime.state.rclick_min_ms = self._display_to_ms(float(self.ui_vars["rclick_min_var"].get()))
+        except ValueError:
+            pass
+
+    def _update_rclick_max(self, *args) -> None:
+        try:
+            self.runtime.state.rclick_max_ms = self._display_to_ms(float(self.ui_vars["rclick_max_var"].get()))
+        except ValueError:
+            pass
 
     def _build_right_click_panel(self, parent: tk.Frame) -> None:
         panel = tk.LabelFrame(parent, text=" 🖱️  Right-Click Monitor ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -296,12 +323,15 @@ class SystemMonitorApp:
         self.pos_label = tk.Label(panel, text="Pos: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
         self.pos_label.pack(anchor="w", pady=(0, 4))
         self._btn(panel, "🎯 Record Position", self.record_rclick_pos, BLUE).pack(fill="x", pady=(0, 6))
-        min_var = tk.StringVar(value=str(self.runtime.state.rclick_min_ms))
-        max_var = tk.StringVar(value=str(self.runtime.state.rclick_max_ms))
+        min_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_min_ms)))
+        max_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_max_ms)))
         self.ui_vars["rclick_min_var"] = min_var
         self.ui_vars["rclick_max_var"] = max_var
-        self._label_entry(panel, "Timer Min (ms):", min_var)
-        self._label_entry(panel, "Timer Max (ms):", max_var)
+        min_var.trace_add("write", self._update_rclick_min)
+        max_var.trace_add("write", self._update_rclick_max)
+        unit = self._get_unit_label()
+        self._label_entry(panel, f"Timer Min ({unit}):", min_var)
+        self._label_entry(panel, f"Timer Max ({unit}):", max_var)
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
         rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
         rclick_food_burst_count = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count))
@@ -319,7 +349,7 @@ class SystemMonitorApp:
         mode_menu.pack(side="left", padx=4)
         self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
         self._label_entry(panel, "Food burst clicks:", rclick_food_burst_count, width=6)
-        self._label_entry(panel, "Burst interval (ms):", rclick_food_burst_interval, width=6)
+        self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
@@ -850,8 +880,37 @@ class SystemMonitorApp:
         buttons = tk.Frame(wrapper, bg=BG)
         buttons.pack()
         self._btn(buttons, "💾 Save JSON", self.save_config_json, BLUE).pack(side="left", padx=8, ipadx=12)
-        self._btn(buttons, "💾 Save XML", self.save_config_xml, PURPLE).pack(side="left", padx=8, ipadx=12)
+#        self._btn(buttons, "💾 Save XML", self.save_config_xml, PURPLE).pack(side="left", padx=8, ipadx=12)
         self._btn(buttons, "📂 Load", self.load_config, ORANGE).pack(side="left", padx=8, ipadx=12)
+
+        # Time unit toggle
+        toggle_frame = tk.Frame(wrapper, bg=BG)
+        toggle_frame.pack(pady=(20, 0))
+        tk.Label(toggle_frame, text="Timer Units:", font=BOLD, fg=FG, bg=BG).pack(side="left", padx=(0, 10))
+        self.time_unit_var = tk.StringVar(value=self.runtime.state.time_unit)
+        ms_btn = tk.Radiobutton(toggle_frame, text="Milliseconds", variable=self.time_unit_var, value="ms", bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG, command=self._on_time_unit_change)
+        ms_btn.pack(side="left", padx=(0, 10))
+        s_btn = tk.Radiobutton(toggle_frame, text="Seconds", variable=self.time_unit_var, value="s", bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG, command=self._on_time_unit_change)
+        s_btn.pack(side="left")
+
+    def _on_time_unit_change(self) -> None:
+        self.runtime.state.time_unit = self.time_unit_var.get()
+        self.runtime.ui.log(f"Timer units changed to {self.runtime.state.time_unit}")
+        # Refresh all tabs to update displayed values
+        self._refresh_all_tabs()
+
+    def _ms_to_display(self, ms: int) -> float:
+        if self.runtime.state.time_unit == "s":
+            return ms / 1000.0
+        return float(ms)
+
+    def _display_to_ms(self, display: float) -> int:
+        if self.runtime.state.time_unit == "s":
+            return int(display * 1000)
+        return int(display)
+
+    def _get_unit_label(self) -> str:
+        return "s" if self.runtime.state.time_unit == "s" else "ms"
 
     def toggle_log_window(self) -> None:
         if self.log_window and self.log_window.winfo_exists() and self.log_window.state() != "withdrawn":
