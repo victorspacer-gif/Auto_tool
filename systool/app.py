@@ -87,9 +87,6 @@ class SystemMonitorApp:
         self.fish_session_value_label: tk.Label | None = None
         self.fish_session_remaining_label: tk.Label | None = None
         self.jobs_frame: tk.Frame | None = None
-        self.notebook_canvas: tk.Canvas | None = None
-        self.notebook_container: tk.Frame | None = None
-        self.notebook_window_id: int | None = None
         self.notebook_widget: ttk.Notebook | None = None
         self.tray_icon = None
         self.listener = None
@@ -109,7 +106,6 @@ class SystemMonitorApp:
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
         self.root.minsize(960, 720)
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("<Configure>", self._on_root_resize)
 
         self.runtime.ui.configure(
@@ -182,24 +178,14 @@ class SystemMonitorApp:
         style = ttk.Style()
         style.theme_use("default")
         style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background=PANEL, foreground=MUTED, font=BOLD, padding=[12, 6])
+        style.configure("TNotebook.Tab", background=PANEL, foreground=MUTED, font=BOLD, padding=[8, 4])
         style.map("TNotebook.Tab", background=[("selected", BG)], foreground=[("selected", FG)])
 
         wrapper = tk.Frame(self.root, bg=BG)
         wrapper.pack(fill="both", expand=True, padx=14, pady=6)
-        self.notebook_canvas = tk.Canvas(wrapper, bg=BG, highlightthickness=0)
-        h_scroll = tk.Scrollbar(wrapper, orient="horizontal", command=self.notebook_canvas.xview)
-        self.notebook_canvas.configure(xscrollcommand=h_scroll.set)
-        self.notebook_canvas.pack(fill="both", expand=True)
-        h_scroll.pack(fill="x")
-        self.notebook_container = tk.Frame(self.notebook_canvas, bg=BG)
-        self.notebook_window_id = self.notebook_canvas.create_window((0, 0), window=self.notebook_container, anchor="nw")
-
-        notebook = ttk.Notebook(self.notebook_container)
+        notebook = ttk.Notebook(wrapper)
         notebook.pack(fill="both", expand=True)
         self.notebook_widget = notebook
-        self.notebook_container.bind("<Configure>", self._sync_notebook_layout)
-        self.notebook_canvas.bind("<Configure>", self._sync_notebook_layout)
 
         automation_tab = tk.Frame(notebook, bg=BG)
         rune_tab = tk.Frame(notebook, bg=BG)
@@ -307,8 +293,17 @@ class SystemMonitorApp:
         self._btn(buttons, "⏹ Stop", self.rclick_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
 
     def _build_rune_tab(self, parent: tk.Frame) -> None:
-        left = tk.Frame(parent, bg=BG)
-        right = tk.Frame(parent, bg=BG)
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        left = tk.Frame(content_frame, bg=BG)
+        right = tk.Frame(content_frame, bg=BG)
         left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
         right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
 
@@ -436,8 +431,17 @@ class SystemMonitorApp:
         self._btn(action_row, "⏹ Stop", self.alarm_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
 
     def _build_healer_tab(self, parent: tk.Frame) -> None:
-        left = tk.Frame(parent, bg=BG)
-        right = tk.Frame(parent, bg=BG)
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        left = tk.Frame(content_frame, bg=BG)
+        right = tk.Frame(content_frame, bg=BG)
         left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
         right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
 
@@ -501,7 +505,16 @@ class SystemMonitorApp:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
 
     def _build_light_tab(self, parent: tk.Frame) -> None:
-        wrapper = tk.Frame(parent, bg=BG)
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        wrapper = tk.Frame(content_frame, bg=BG)
         wrapper.pack(fill="both", expand=True, padx=16, pady=10)
         panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control - Alpha test ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
         panel.pack(fill="x")
@@ -576,8 +589,17 @@ class SystemMonitorApp:
         self.light_status_label.pack(fill="x")
 
     def _build_fish_tab(self, parent: tk.Frame) -> None:
-        left = tk.Frame(parent, bg=BG)
-        right = tk.Frame(parent, bg=BG)
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        left = tk.Frame(content_frame, bg=BG)
+        right = tk.Frame(content_frame, bg=BG)
         left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
         right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
 
@@ -678,8 +700,17 @@ class SystemMonitorApp:
         tk.Label(right, text="Quick toggle hotkey: see Hotkeys tab (fish_stop)", font=SMALL, fg=ORANGE, bg=BG).pack(anchor="w")
 
     def _build_character_status_tab(self, parent: tk.Frame) -> None:
-        left = tk.Frame(parent, bg=BG)
-        right = tk.Frame(parent, bg=BG)
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        left = tk.Frame(content_frame, bg=BG)
+        right = tk.Frame(content_frame, bg=BG)
         left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
         right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
 
@@ -694,10 +725,16 @@ class SystemMonitorApp:
         )
         self.char_status_region_label.pack(anchor="w", pady=(0, 4))
         char_poll = tk.StringVar(value=str(self.runtime.state.char_status_poll_ms))
+        char_samples = tk.StringVar(value=str(self.runtime.state.char_status_samples))
+        char_sample_delay = tk.StringVar(value=str(self.runtime.state.char_status_sample_delay_ms))
         tesseract_path = tk.StringVar(value=self.runtime.state.char_status_tesseract_path)
         self.ui_vars["char_status_poll_var"] = char_poll
+        self.ui_vars["char_status_samples_var"] = char_samples
+        self.ui_vars["char_status_sample_delay_var"] = char_sample_delay
         self.ui_vars["char_status_tesseract_var"] = tesseract_path
         self._label_entry(watch_panel, "Refresh every (ms):", char_poll, width=6)
+        self._label_entry(watch_panel, "Samples per scan:", char_samples, width=6)
+        self._label_entry(watch_panel, "Delay between samples (ms):", char_sample_delay, width=6)
         tesseract_row = tk.Frame(watch_panel, bg=PANEL)
         tesseract_row.pack(fill="x", pady=2)
         tk.Label(tesseract_row, text="Tesseract path:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
@@ -874,17 +911,6 @@ class SystemMonitorApp:
             return
         if self.status_label:
             self.status_label.config(wraplength=max(320, event.width - 48))
-        self._sync_notebook_layout()
-
-    def _sync_notebook_layout(self, _event=None) -> None:
-        if not self.notebook_canvas or not self.notebook_container or self.notebook_window_id is None:
-            return
-        self.notebook_canvas.update_idletasks()
-        required_width = self.notebook_container.winfo_reqwidth()
-        viewport_width = self.notebook_canvas.winfo_width()
-        target_width = max(viewport_width, required_width)
-        self.notebook_canvas.itemconfigure(self.notebook_window_id, width=target_width)
-        self.notebook_canvas.configure(scrollregion=self.notebook_canvas.bbox("all"))
 
     def _sync_pause_state(self, paused: bool) -> None:
         if paused:
@@ -1524,6 +1550,11 @@ class SystemMonitorApp:
             state.alarm_threshold = get_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
             state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent_var", state.alarm_hp_percent)))
             state.char_status_poll_ms = max(250, get_int("char_status_poll_var", state.char_status_poll_ms))
+            state.char_status_samples = max(1, get_int("char_status_samples_var", state.char_status_samples))
+            state.char_status_sample_delay_ms = max(0, get_int("char_status_sample_delay_var", state.char_status_sample_delay_ms))
+            # Scale samples according to frequency: more frequent scans get fewer samples
+            if "char_status_samples_var" not in self.ui_vars:  # If not manually set, scale
+                state.char_status_samples = max(1, 2000 // state.char_status_poll_ms)
             if "alarm_auto_pause_var" in self.ui_vars:
                 state.alarm_auto_pause = bool(self.ui_vars["alarm_auto_pause_var"].get())
             if "alarm_mp3_var" in self.ui_vars:

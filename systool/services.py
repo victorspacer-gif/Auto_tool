@@ -779,28 +779,34 @@ class CharacterStatusService:
                     if not region and not all([hp_region, mana_region, cap_region]):
                         break
                     try:
-                        parsed: dict[str, int | None] = {}
-                        if region:
-                            monitor = {
-                                "left": region[0],
-                                "top": region[1],
-                                "width": region[2],
-                                "height": region[3],
-                                "mon": 1,
-                            }
-                            frame = np.array(sct.grab(monitor))[:, :, :3]
-                            parsed = self._extract_values(frame)
-                        if all([hp_region, mana_region, cap_region]):
-                            parsed.update(
-                                self._extract_values_from_regions(
-                                    sct,
-                                    {
-                                        "hp": hp_region,
-                                        "mana": mana_region,
-                                        "cap": cap_region,
-                                    },
+                        samples = []
+                        for _ in range(state.char_status_samples):
+                            parsed_sample: dict[str, int | None] = {}
+                            if region:
+                                monitor = {
+                                    "left": region[0],
+                                    "top": region[1],
+                                    "width": region[2],
+                                    "height": region[3],
+                                    "mon": 1,
+                                }
+                                frame = np.array(sct.grab(monitor))[:, :, :3]
+                                parsed_sample = self._extract_values(frame)
+                            if all([hp_region, mana_region, cap_region]):
+                                parsed_sample.update(
+                                    self._extract_values_from_regions(
+                                        sct,
+                                        {
+                                            "hp": hp_region,
+                                            "mana": mana_region,
+                                            "cap": cap_region,
+                                        },
+                                    )
                                 )
-                            )
+                            samples.append(parsed_sample)
+                            if _ < state.char_status_samples - 1:
+                                time.sleep(state.char_status_sample_delay_ms / 1000.0)
+                        parsed = self._aggregate_samples(samples)
                     except pytesseract.TesseractNotFoundError:
                         with self.runtime.settings_lock:
                             state.char_status_last_error = "Tesseract executable not found"
@@ -892,8 +898,31 @@ class CharacterStatusService:
         elapsed_minutes = max((history[-1][0] - history[0][0]) / 60.0, 1e-6)
         return gained / elapsed_minutes
 
-    @staticmethod
-    def _extract_values_from_text(frame) -> dict[str, int | None]:
+    def _aggregate_samples(self, samples: list[dict[str, int | None | str]]) -> dict[str, int | None | str]:
+        if not samples:
+            return {}
+        aggregated: dict[str, int | None | str] = {}
+        keys = set()
+        for sample in samples:
+            keys.update(sample.keys())
+        for key in keys:
+            values = [sample.get(key) for sample in samples if key in sample and sample[key] is not None]
+            if not values:
+                continue
+            if key in {"level", "hp", "mana", "cap", "food_seconds"}:
+                # For numeric, take median
+                numeric_values = [v for v in values if isinstance(v, int)]
+                if numeric_values:
+                    sorted_vals = sorted(numeric_values)
+                    mid = len(sorted_vals) // 2
+                    aggregated[key] = sorted_vals[mid]
+            elif key == "food_text":
+                # For text, most common
+                from collections import Counter
+                text_values = [v for v in values if isinstance(v, str)]
+                if text_values:
+                    aggregated[key] = Counter(text_values).most_common(1)[0][0]
+        return aggregated
         values: dict[str, int | None] = {
             "level": None,
             "hp": None,

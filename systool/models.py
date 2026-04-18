@@ -82,6 +82,8 @@ class AppState:
     char_status_mana_region: tuple[int, int, int, int] | None = None
     char_status_cap_region: tuple[int, int, int, int] | None = None
     char_status_poll_ms: int = 800
+    char_status_samples: int = 3
+    char_status_sample_delay_ms: int = 100
     char_status_tesseract_path: str = ""
     char_status_level: int | None = None
     char_status_hp: int | None = None
