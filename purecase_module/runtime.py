@@ -4,9 +4,22 @@ import os
 import re
 import shlex
 import subprocess
+import ctypes
+import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
+
+try:
+    import win32api
+    import win32con
+    import win32process
+    import win32security
+    import win32job
+    import pywintypes
+    WIN32_AVAILABLE = True
+except ImportError:
+    WIN32_AVAILABLE = False
 
 
 LogCallback = Callable[[str], None]
@@ -263,6 +276,275 @@ def terminate_box(
     )
     _log(log_callback, f"PureCase box [{sanitize_box_name(box_name)}] terminated")
     return result
+
+
+def create_job_object() -> object | None:
+    """
+    Create a Windows Job Object for process isolation.
+    Restricts clipboard, display settings, atoms, and exits with job closure.
+    """
+    if not WIN32_AVAILABLE:
+        return None
+    try:
+        job = win32job.CreateJobObject(None, "SandboxJob")
+        
+        # UI restrictions (handles excluded for normal file/folder access)
+        ui_info = win32job.QueryInformationJobObject(
+            job, win32job.JobObjectBasicUIRestrictions
+        )
+        ui_info["UIRestrictionsClass"] = (
+            win32job.JOB_OBJECT_UILIMIT_READCLIPBOARD |
+            win32job.JOB_OBJECT_UILIMIT_WRITECLIPBOARD |
+            win32job.JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS |
+            win32job.JOB_OBJECT_UILIMIT_DISPLAYSETTINGS |
+            win32job.JOB_OBJECT_UILIMIT_GLOBALATOMS |
+            win32job.JOB_OBJECT_UILIMIT_EXITWINDOWS
+        )
+        win32job.SetInformationJobObject(
+            job, win32job.JobObjectBasicUIRestrictions, ui_info
+        )
+
+        # Kill-on-job-close
+        ext_info = win32job.QueryInformationJobObject(
+            job, win32job.JobObjectExtendedLimitInformation
+        )
+        ext_info["BasicLimitInformation"]["LimitFlags"] |= (
+            win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+            win32job.JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION
+        )
+        win32job.SetInformationJobObject(
+            job, win32job.JobObjectExtendedLimitInformation, ext_info
+        )
+        return job
+    except Exception:
+        return None
+
+
+def get_safer_token() -> object | None:
+    """
+    Produce a de-elevated token using Windows SAFER API (SaferComputeTokenFromLevel).
+    Returns None if not available or pywin32 not installed.
+    """
+    if not WIN32_AVAILABLE:
+        return None
+    try:
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        SAFER_SCOPEID_USER = 1
+        SAFER_LEVELID_NORMALUSER = 0x20000
+        SAFER_LEVEL_OPEN = 1
+
+        h_level = ctypes.c_void_p()
+        if not advapi32.SaferCreateLevel(
+            SAFER_SCOPEID_USER, SAFER_LEVELID_NORMALUSER,
+            SAFER_LEVEL_OPEN, ctypes.byref(h_level), None
+        ):
+            return None
+
+        raw_token = ctypes.wintypes.HANDLE()
+        ok = advapi32.SaferComputeTokenFromLevel(
+            h_level, None, ctypes.byref(raw_token), 0, None
+        )
+        advapi32.SaferCloseLevel(h_level)
+
+        if not ok:
+            return None
+
+        # Duplicate raw token into PyHANDLE
+        cur = win32api.GetCurrentProcess()
+        py_token = win32api.DuplicateHandle(
+            cur, raw_token.value, cur, 0, False,
+            win32con.DUPLICATE_SAME_ACCESS
+        )
+        kernel32.CloseHandle(raw_token)
+        return py_token
+    except Exception:
+        return None
+
+
+def build_spoofed_env(extra_vars: dict | None = None) -> dict[str, str]:
+    """
+    Build environment dict with sandbox detection cues removed and plausible user profile.
+    """
+    env = os.environ.copy()
+    
+    # Remove debugging/profiling detection
+    for key in [
+        "_DEBUGGER_IS_PRESENT", "COR_ENABLE_PROFILING",
+        "COR_PROFILER", "VSDEBUGGEE_PID", "VS_DEBUGGER",
+        "COMPLUS_MDA", "__COMPAT_LAYER",
+    ]:
+        env.pop(key, None)
+
+    # Spoof user profile
+    if "USERPROFILE" not in env:
+        env["USERPROFILE"] = r"C:\Users\User"
+    if "HOMEPATH" not in env:
+        env["HOMEPATH"] = r"\Users\User"
+    if "USERNAME" not in env:
+        env["USERNAME"] = "User"
+    if "COMPUTERNAME" not in env:
+        env["COMPUTERNAME"] = "DESKTOP-PC"
+
+    env.setdefault("SystemRoot", r"C:\Windows")
+    env.setdefault("windir", r"C:\Windows")
+
+    if extra_vars:
+        env.update(extra_vars)
+
+    return env
+
+
+def launch_with_job_object(
+    executable: str | os.PathLike[str],
+    *,
+    args: str | Sequence[str] | None = None,
+    drop_admin: bool = False,
+    spoof_env: bool = True,
+    cwd: str | os.PathLike[str] | None = None,
+    extra_env: dict[str, str] | None = None,
+    log_callback: LogCallback | None = None,
+) -> subprocess.Popen:
+    """
+    Launch executable inside a Job Object sandbox.
+    
+    Parameters
+    ----------
+    executable  : Full path to the executable.
+    args        : Command-line arguments (str or sequence).
+    drop_admin  : Strip administrator privileges from child token.
+    spoof_env   : Use spoofed environment dict.
+    cwd         : Working directory (defaults to executable directory).
+    extra_env   : Additional environment variables to inject.
+    log_callback: Callable for logging.
+    """
+    env = build_spoofed_env(extra_env) if spoof_env else os.environ.copy()
+    
+    cmd = [str(executable)]
+    cmd.extend(_normalize_args(args))
+    
+    _log(log_callback, f"[{_ts()}] Command  : {' '.join(cmd)}")
+    _log(log_callback, f"[{_ts()}] Drop admin: {drop_admin}")
+
+    if not WIN32_AVAILABLE:
+        _log(log_callback, f"[{_ts()}] WARNING: pywin32 not found – launching without Job Object.")
+        return subprocess.Popen(
+            cmd,
+            env=env,
+            cwd=str(cwd) if cwd else str(Path(executable).parent),
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+
+    job = create_job_object()
+    start_flags = (
+        win32process.CREATE_SUSPENDED |
+        win32process.CREATE_NEW_PROCESS_GROUP
+    )
+
+    env_dict = dict(env)
+    cwd_str = str(cwd) if cwd else str(Path(executable).parent)
+    cmdline = " ".join(cmd)
+
+    try:
+        if drop_admin:
+            _log(log_callback, f"[{_ts()}] Token    : computing SAFER de-elevated token")
+            token_handle = get_safer_token()
+            if not token_handle:
+                _log(log_callback, f"[{_ts()}] Token    : failed, proceeding without de-elevation")
+                si = win32process.STARTUPINFO()
+                si.dwFlags = win32process.STARTF_USESHOWWINDOW
+                si.wShowWindow = win32con.SW_SHOWNORMAL
+                hProcess, hThread, pid, tid = win32process.CreateProcess(
+                    str(executable), cmdline, None, None, False,
+                    start_flags, env_dict, cwd_str, si,
+                )
+            else:
+                si = win32process.STARTUPINFO()
+                si.dwFlags = win32process.STARTF_USESHOWWINDOW
+                si.wShowWindow = win32con.SW_SHOWNORMAL
+                hProcess, hThread, pid, tid = win32process.CreateProcessAsUser(
+                    token_handle, str(executable), cmdline, None, None, False,
+                    start_flags, env_dict, cwd_str, si,
+                )
+                del token_handle
+        else:
+            si = win32process.STARTUPINFO()
+            si.dwFlags = win32process.STARTF_USESHOWWINDOW
+            si.wShowWindow = win32con.SW_SHOWNORMAL
+            hProcess, hThread, pid, tid = win32process.CreateProcess(
+                str(executable), cmdline, None, None, False,
+                start_flags, env_dict, cwd_str, si,
+            )
+
+        _log(log_callback, f"[{_ts()}] PID      : {pid}")
+
+        if job:
+            win32job.AssignProcessToJobObject(job, hProcess)
+            _log(log_callback, f"[{_ts()}] Job object assigned.")
+
+        win32process.ResumeThread(hThread)
+        _log(log_callback, f"[{_ts()}] Process resumed – sandbox active.")
+
+        proc = _Win32ProcWrapper(hProcess, pid, job)
+    except Exception as exc:
+        _log(log_callback, f"[{_ts()}] Launch failed: {exc}")
+        raise
+
+    _log(log_callback, f"[{_ts()}] Launch complete.")
+    return proc
+
+
+class _Win32ProcWrapper:
+    """Thin wrapper so Win32 process handles behave like subprocess.Popen."""
+
+    def __init__(self, hProcess: int, pid: int, job: object | None) -> None:
+        self._hProcess = hProcess
+        self.pid = pid
+        self._job = job
+
+    def wait(self) -> int:
+        if WIN32_AVAILABLE:
+            try:
+                import win32event
+                win32event.WaitForSingleObject(self._hProcess, win32event.INFINITE)
+            except Exception:
+                pass
+        return 0
+
+    def poll(self) -> int | None:
+        if not WIN32_AVAILABLE:
+            return None
+        try:
+            import win32event
+            rc = win32event.WaitForSingleObject(self._hProcess, 0)
+            return None if rc == win32event.WAIT_TIMEOUT else 0
+        except Exception:
+            return None
+
+    def terminate(self) -> None:
+        """Kill process and all children in Job Object, with taskkill fallback."""
+        if self._job:
+            try:
+                win32job.TerminateJobObject(self._job, 1)
+            except Exception:
+                pass
+        try:
+            win32api.TerminateProcess(self._hProcess, 1)
+        except Exception:
+            pass
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(self.pid)],
+                capture_output=True, timeout=5
+            )
+        except Exception:
+            pass
+
+
+def _ts() -> str:
+    """Return current time as HH:MM:SS."""
+    return datetime.datetime.now().strftime("%H:%M:%S")
 
 
 def _normalize_args(args: str | Sequence[str] | None) -> list[str]:

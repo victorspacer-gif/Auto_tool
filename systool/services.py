@@ -567,6 +567,8 @@ class RightClickService:
             else:
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
                     break
+                if state.rclick_require_food and food_seconds is not None and food_seconds >= food_min_secs:
+                    continue
                 clicks_to_send = 1
                 queue_window = 0.80
             if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window, module_id="right_click"):
@@ -923,6 +925,8 @@ class CharacterStatusService:
                 if text_values:
                     aggregated[key] = Counter(text_values).most_common(1)[0][0]
         return aggregated
+
+    def _extract_values_from_text(self, frame) -> dict[str, int | None | str]:
         values: dict[str, int | None] = {
             "level": None,
             "hp": None,
@@ -974,7 +978,8 @@ class CharacterStatusService:
         match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
         if not match:
             return None
-        return int(match.group(1)) * 60 + int(match.group(2))
+        # Format is HH:MM, converting to seconds
+        return (int(match.group(1)) * 60 + int(match.group(2))) * 60
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
         base_w, base_h = self.BASE_SIZE
@@ -1050,14 +1055,22 @@ class FishingService:
             self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
             return
         self.runtime.fish_stop.clear()
-        state.fish_session_remaining_secs = max(1, state.fish_session_minutes * 60)
-        state.fish_session_deadline = time.monotonic() + state.fish_session_remaining_secs
+        
+        # Calculate random bonus time scaled by user configuration (up to 15 minutes at 60min mark)
+        max_bonus_mins = max(1.0, 15.0 * (state.fish_session_minutes / 60.0))
+        bonus_secs = random.randint(60, max(60, int(max_bonus_mins * 60)))
+        total_seconds = max(1, state.fish_session_minutes * 60) + bonus_secs
+        
+        state.fish_session_remaining_secs = total_seconds
+        state.fish_session_deadline = time.monotonic() + total_seconds
         state.fish_active = True
         threading.Thread(target=self._worker, daemon=True).start()
+        
         self.runtime.ui.set_status(
-            f"Fishing session running for {state.fish_session_minutes} min…",
+            f"Fishing session running ({state.fish_session_minutes} min + {bonus_secs//60} min random bonus)",
             GREEN,
         )
+        self.runtime.ui.log(f"🎣 Session setup: {state.fish_session_minutes} min base + {bonus_secs//60}m {bonus_secs%60}s randomized padding")
 
     def stop(self) -> None:
         state = self.runtime.state
