@@ -40,6 +40,7 @@ class ConfigSerializer:
             "rclick_min_ms": state.rclick_min_ms,
             "rclick_max_ms": state.rclick_max_ms,
             "rclick_mode": state.rclick_mode,
+            "rclick_require_food": state.rclick_require_food,
             "rclick_food_min_secs": state.rclick_food_min_secs,
             "rclick_food_burst_count": state.rclick_food_burst_count,
             "rclick_food_burst_interval_ms": state.rclick_food_burst_interval_ms,
@@ -220,6 +221,7 @@ class ConfigSerializer:
         state.rclick_min_ms = get_int("rclick_min_ms", state.rclick_min_ms)
         state.rclick_max_ms = get_int("rclick_max_ms", state.rclick_max_ms)
         state.rclick_mode = get_str("rclick_mode", state.rclick_mode)
+        state.rclick_require_food = get_bool("rclick_require_food", state.rclick_require_food)
         state.rclick_food_min_secs = max(0, get_int("rclick_food_min_secs", state.rclick_food_min_secs))
         state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count", state.rclick_food_burst_count))
         state.rclick_food_burst_interval_ms = max(50, get_int("rclick_food_burst_interval_ms", state.rclick_food_burst_interval_ms))
