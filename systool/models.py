@@ -11,8 +11,8 @@ from typing import Any
 class HotkeyJob:
     job_id: int
     key: str = "F1"
-    min_ms: int = 1_000
-    max_ms: int = 3_000
+    min_ms: int = 20_000
+    max_ms: int = 30_000
     min_mana: int = 0
     burst_enabled: bool = False
     burst_chance: float = 0.20
@@ -58,21 +58,22 @@ class AppState:
     rebind_target: str | None = None
 
     afk_active: bool = False
-    afk_min_ms: int = 30_000
-    afk_max_ms: int = 60_000
+    afk_min_ms: int = 70_000
+    afk_max_ms: int = 88_000
 
     rclick_active: bool = False
     rclick_pos: tuple[int, int] = (0, 0)
-    rclick_min_ms: int = 5_000
-    rclick_max_ms: int = 15_000
+    rclick_min_ms: int = 20_000
+    rclick_max_ms: int = 31_000
     rclick_mode: str = "timer"
+    rclick_require_food: bool = False
     rclick_food_min_secs: int = 600
     rclick_food_burst_count: int = 3
     rclick_food_burst_interval_ms: int = 700
 
     alarm_active: bool = False
     alarm_mp3: str = ""
-    alarm_threshold: float = 0.90
+    alarm_threshold: float = 0.80
     alarm_cooldown: int = 10
     alarm_region: tuple[int, int, int, int] | None = None
     alarm_auto_pause: bool = False
@@ -110,12 +111,12 @@ class AppState:
     fish_active: bool = False
     fish_rod_pos: tuple[int, int] = (0, 0)
     fish_spots: list[tuple[int, int]] = dataclasses.field(default_factory=list)
-    fish_cast_min_ms: int = 1_500
-    fish_cast_max_ms: int = 4_000
-    fish_wait_min_ms: int = 8_000
-    fish_wait_max_ms: int = 18_000
+    fish_cast_min_ms: int = 1_000
+    fish_cast_max_ms: int = 2_000
+    fish_wait_min_ms: int = 1_000
+    fish_wait_max_ms: int = 2_000
     fish_rod_jitter: int = 5
-    fish_spot_jitter: int = 22
+    fish_spot_jitter: int = 15
     fish_session_minutes: int = 10
     fish_session_remaining_secs: int = 0
     fish_session_deadline: float | None = None
@@ -156,10 +157,10 @@ class AppState:
     light_use_dynamic_pointer: bool = True
     light_pointer_chain_index: int = 0
     light_default_value_hex: str = "07"
-    light_boosted_value_hex: str = "11"
+    light_boosted_value_hex: str = "08"
     light_freeze_enabled: bool = False
-    light_freeze_value_hex: str = "11"
-    light_freeze_interval_ms: int = 120
+    light_freeze_value_hex: str = "08"
+    light_freeze_interval_ms: int = 50
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {

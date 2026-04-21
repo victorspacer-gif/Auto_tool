@@ -348,10 +348,12 @@ class SystemMonitorApp:
         self._label_entry(panel, f"Timer Min ({unit}):", min_var)
         self._label_entry(panel, f"Timer Max ({unit}):", max_var)
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
+        rclick_require_food = tk.BooleanVar(value=self.runtime.state.rclick_require_food)
         rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
         rclick_food_burst_count = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count))
         rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
         self.ui_vars["rclick_mode_var"] = rclick_mode
+        self.ui_vars["rclick_require_food_var"] = rclick_require_food
         self.ui_vars["rclick_food_min_var"] = rclick_food_min
         self.ui_vars["rclick_food_burst_count_var"] = rclick_food_burst_count
         self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
@@ -362,6 +364,7 @@ class SystemMonitorApp:
         mode_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
         mode_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
         mode_menu.pack(side="left", padx=4)
+        tk.Checkbutton(panel, text="Timer checks food threshold first", variable=rclick_require_food, font=BOLD, fg=FG, bg=PANEL, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w", pady=(2, 2))
         self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
         self._label_entry(panel, "Food burst clicks:", rclick_food_burst_count, width=6)
         self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
@@ -736,21 +739,6 @@ class SystemMonitorApp:
         fish_min_cap = tk.StringVar(value=str(self.runtime.state.fish_min_cap))
         self.ui_vars["fish_min_cap_var"] = fish_min_cap
         self._label_entry(timing_panel, "Stop below cap:", fish_min_cap, width=6)
-        help_panel = tk.LabelFrame(right, text=" ℹ️  How It Works ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
-        help_panel.pack(fill="both", expand=True, pady=(0, 8))
-        help_text = (
-            "Fishing automation simulates rod casting, waits for a bite, moves to the spot, "
-            "reels in, then repeats with the next saved waypoint."
-        )
-        tk.Label(help_panel, text=help_text, font=SMALL, fg=FG, bg=PANEL, justify="left", wraplength=380).pack(anchor="w", pady=(0, 6))
-        for line in [
-            "1. Record the rod position first.",
-            "2. Click Start Recording, then press F12 to save each waypoint.",
-            "3. Click the recording button again when you are done.",
-            "4. Start the session; the automation repeats until stopped.",
-            f"5. Timing values display in {self._get_unit_label()} and update instantly when toggled.",
-        ]:
-            tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
 
         session_panel = tk.LabelFrame(right, text=" ⏲️  Fishing Session ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         session_panel.pack(fill="x", pady=(0, 8))
@@ -765,7 +753,7 @@ class SystemMonitorApp:
         scale = tk.Scale(
             session_panel,
             from_=1,
-            to=40,
+            to=60,
             orient="horizontal",
             variable=fish_session,
             resolution=1,
@@ -814,59 +802,6 @@ class SystemMonitorApp:
         ]:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
 
-    def _build_fish_help_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=BG)
-
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=v_scroll.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-
-        help_text = """
-🎣 Fishing Automation - How It Works
-
-This tool automates the fishing process in your game by simulating mouse movements and clicks.
-
-WORKFLOW OVERVIEW:
-1. Mouse moves to the fishing rod position
-2. Right-clicks to cast the line
-3. Waits for the specified cast time
-4. Mouse moves to the fishing spot (destination pixel)
-5. Right-clicks to reel in the fish
-6. Waits for the specified reel time
-7. Returns to step 1 to repeat the cycle
-
-TIMERS:
-- Cast Time: How long to wait after casting before moving to the fishing spot
-- Reel Time: How long to wait after reeling in before starting the next cast
-- All timers can be set in milliseconds (ms) or seconds using the toggle in Config tab
-
-WAYPOINT RECORDING:
-- Press F12 to save fishing positions
-- You can save multiple positions by pressing F12 multiple times
-- Recording stops automatically 5 seconds after the last F12 press
-- Positions are saved in the order they were recorded
-
-HOTKEYS:
-- F12: Record fishing position
-- See Hotkeys tab for the stop fishing hotkey
-
-TIPS:
-- Position the mouse cursor carefully when recording waypoints
-- Adjust timers based on your game's fishing mechanics
-- Use the character status tab to monitor your fishing progress
-- The automation will continue until manually stopped
-        """
-
-        tk.Label(scrollable_frame, text=help_text.strip(), font=SMALL, fg=FG, bg=BG, justify="left").pack(anchor="w", padx=10, pady=10)
 
     def _build_character_status_tab(self, parent: tk.Frame) -> None:
         canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
@@ -1001,10 +936,22 @@ TIPS:
         s_btn.pack(side="left")
 
     def _on_time_unit_change(self) -> None:
-        self.runtime.state.time_unit = self.time_unit_var.get()
+        new_unit = self.time_unit_var.get()
+        if self.runtime.state.time_unit == new_unit:
+            return
+        # Force a poll with the current unit to save anything the user typed
+        self._root_poll_settings_now()
+        
+        self.runtime.state.time_unit = new_unit
         self.runtime.ui.log(f"Timer units changed to {self.runtime.state.time_unit}")
         # Refresh all tabs to update displayed values
         self._refresh_all_tabs()
+
+    def _root_poll_settings_now(self) -> None:
+        self._poll_settings(schedule_next=False)
+        for job in self.runtime.state.jobs:
+            if hasattr(job, "row_frame") and job.row_frame:
+                self._read_job_vars(job)
 
     def _ms_to_display(self, ms: int) -> float:
         if self.runtime.state.time_unit == "s":
@@ -1040,6 +987,9 @@ TIPS:
         self._build_fish_tab(self.fish_tab)
         self._build_hotkeys_tab(self.hotkeys_tab)
         self._build_config_tab(self.config_tab)
+        
+        # Restore lists and labels from state
+        self._sync_ui_from_state()
 
     def toggle_log_window(self) -> None:
         if self.log_window and self.log_window.winfo_exists() and self.log_window.state() != "withdrawn":
@@ -1943,41 +1893,53 @@ TIPS:
 
     def _sync_ui_from_state(self) -> None:
         state = self.runtime.state
-        mappings = {
+        ms_mappings = {
             "afk_min_var": state.afk_min_ms,
             "afk_max_var": state.afk_max_ms,
             "rclick_min_var": state.rclick_min_ms,
             "rclick_max_var": state.rclick_max_ms,
-            "alarm_mp3_var": state.alarm_mp3,
-            "alarm_thresh_var": int(state.alarm_threshold * 100),
-            "alarm_hp_percent_var": state.alarm_hp_percent,
             "char_status_poll_var": state.char_status_poll_ms,
-            "char_status_tesseract_var": state.char_status_tesseract_path,
+            "char_status_sample_delay_var": state.char_status_sample_delay_ms,
             "fish_cast_min_var": state.fish_cast_min_ms,
             "fish_cast_max_var": state.fish_cast_max_ms,
             "fish_wait_min_var": state.fish_wait_min_ms,
             "fish_wait_max_var": state.fish_wait_max_ms,
-            "fish_min_cap_var": state.fish_min_cap,
-            "fish_rod_jit_var": state.fish_rod_jitter,
-            "fish_spot_jit_var": state.fish_spot_jitter,
-            "fish_session_var": state.fish_session_minutes,
-            "rclick_mode_var": state.rclick_mode,
-            "rclick_food_min_var": state.rclick_food_min_secs,
-            "rclick_food_burst_count_var": state.rclick_food_burst_count,
             "rclick_food_burst_interval_var": state.rclick_food_burst_interval_ms,
-            "rune_spell_key_var": state.rune_spell_key,
             "rune_cycle_delay_var": state.rune_cycle_delay_ms,
             "rune_cycle_variation_var": state.rune_cycle_delay_variation_ms,
-            "rune_jitter_var": state.rune_jitter,
             "rune_cast_delay_var": state.rune_cast_delay_ms,
-            "rune_min_mana_var": state.rune_min_mana,
-            "rune_blank_cycles_var": state.rune_available_blank_runes,
             "rune_move_min_var": state.rune_mouse_move_min_ms,
             "rune_move_max_var": state.rune_mouse_move_max_ms,
             "rune_press_min_var": state.rune_mouse_press_min_ms,
             "rune_press_max_var": state.rune_mouse_press_max_ms,
             "rune_settle_min_var": state.rune_mouse_settle_min_ms,
             "rune_settle_max_var": state.rune_mouse_settle_max_ms,
+            "healer_rune_delay_var": state.healer_rune_delay_ms,
+            "light_freeze_interval_ms_var": state.light_freeze_interval_ms,
+        }
+        for name, value in ms_mappings.items():
+            if name in self.ui_vars:
+                # Convert correctly into strings via ms_to_display
+                self.ui_vars[name].set(str(self._ms_to_display(value)))
+
+        mappings = {
+            "alarm_mp3_var": state.alarm_mp3,
+            "alarm_thresh_var": int(state.alarm_threshold * 100),
+            "alarm_hp_percent_var": state.alarm_hp_percent,
+            "char_status_tesseract_var": state.char_status_tesseract_path,
+            "char_status_samples_var": state.char_status_samples,
+            "fish_min_cap_var": state.fish_min_cap,
+            "fish_rod_jit_var": state.fish_rod_jitter,
+            "fish_spot_jit_var": state.fish_spot_jitter,
+            "fish_session_var": state.fish_session_minutes,
+            "rclick_mode_var": state.rclick_mode,
+            "rclick_food_min_var": state.rclick_food_min_secs,
+            "rclick_require_food_var": state.rclick_require_food,
+            "rclick_food_burst_count_var": state.rclick_food_burst_count,
+            "rune_spell_key_var": state.rune_spell_key,
+            "rune_jitter_var": state.rune_jitter,
+            "rune_min_mana_var": state.rune_min_mana,
+            "rune_blank_cycles_var": state.rune_available_blank_runes,
             "healer_mode_var": state.healer_mode,
             "healer_spell_key_var": state.healer_spell_key,
             "healer_use_percent_var": state.healer_use_percent,
@@ -2039,7 +2001,7 @@ TIPS:
             if action in self.hotkey_vars:
                 self.hotkey_vars[action].set(binding.upper())
 
-    def _poll_settings(self) -> None:
+    def _poll_settings(self, schedule_next: bool = True) -> None:
         state = self.runtime.state
 
         def get_int(name: str, default: int) -> int:
@@ -2085,7 +2047,7 @@ TIPS:
             state.fish_min_cap = max(0, get_int("fish_min_cap_var", state.fish_min_cap))
             state.fish_rod_jitter = get_int("fish_rod_jit_var", state.fish_rod_jitter)
             state.fish_spot_jitter = get_int("fish_spot_jit_var", state.fish_spot_jitter)
-            state.fish_session_minutes = max(1, min(40, get_int("fish_session_var", state.fish_session_minutes)))
+            state.fish_session_minutes = max(1, min(60, get_int("fish_session_var", state.fish_session_minutes)))
             if "rune_spell_key_var" in self.ui_vars:
                 state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
             state.rune_cycle_delay_ms = get_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)
@@ -2138,7 +2100,8 @@ TIPS:
                 state.light_boosted_value_hex = str(self.ui_vars["light_boosted_value_hex_var"].get()).strip()
         self._refresh_character_status_display()
         self._refresh_fish_session_display()
-        self.root.after(500, self._poll_settings)
+        if schedule_next:
+            self.root.after(500, self._poll_settings)
 
     def _refresh_fish_session_display(self) -> None:
         if self.fish_session_value_label:
