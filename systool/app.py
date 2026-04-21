@@ -208,7 +208,7 @@ class SystemMonitorApp:
         self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
         self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
         if HAS_SANDBOX_LAUNCHER:
-            self._btn(pause_bar, "🔒  Sandbox Launcher Alpha Feature", self._show_sandbox_launcher_popup, PURPLE).pack(side="left", padx=(8, 0))
+            self._btn(pause_bar, "🔒  Sandbox Launcher UNSAFE", self._show_sandbox_launcher_popup, PURPLE).pack(side="left", padx=(8, 0))
         tk.Frame(self.root, bg=PANEL, height=1).pack(fill="x", padx=14, pady=4)
 
     def _build_notebook(self) -> None:
@@ -248,7 +248,7 @@ class SystemMonitorApp:
         notebook.add(automation_tab, text="🎮  Activity Control")
         notebook.add(rune_tab, text="✨  Rune Session")
         notebook.add(healer_tab, text="❤️  Auto Healer")
-        notebook.add(light_tab, text="💡  Light Control")
+        notebook.add(light_tab, text="💡  Light Control??")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
         notebook.add(char_status_tab, text="📊  Character Status")
         notebook.add(fish_tab, text="🎣  Fishing Session")
