@@ -123,6 +123,49 @@ class ConfigSerializer:
             json.dump(ConfigSerializer.to_dict(state), handle, indent=2)
 
     @staticmethod
+    def save_xml(path: str, state: AppState) -> None:
+        config = ConfigSerializer.to_dict(state)
+        root = ET.Element("SystemMonitorConfig")
+        jobs_el = ET.SubElement(root, "jobs")
+        for job_data in config.pop("jobs", []):
+            job_el = ET.SubElement(jobs_el, "job")
+            for key, value in job_data.items():
+                child = ET.SubElement(job_el, key)
+                child.text = str(value)
+        hotkeys_el = ET.SubElement(root, "hotkey_bindings")
+        for key, value in config.pop("hotkey_bindings", {}).items():
+            child = ET.SubElement(hotkeys_el, key)
+            child.text = str(value)
+        spots_el = ET.SubElement(root, "fish_spots")
+        for x, y in config.pop("fish_spots", []):
+            spot = ET.SubElement(spots_el, "spot")
+            spot.text = f"{x},{y}"
+        def _region_text(val):
+            return ",".join(map(str, val)) if val else ""
+
+        region = config.pop("alarm_region", None)
+        region_el = ET.SubElement(root, "alarm_region")
+        region_el.text = _region_text(region)
+        csr = config.pop("char_status_region", None)
+        csr_el = ET.SubElement(root, "char_status_region")
+        csr_el.text = _region_text(csr)
+        chr_el = config.pop("char_status_hp_region", None)
+        char_hp_el = ET.SubElement(root, "char_status_hp_region")
+        char_hp_el.text = _region_text(chr_el)
+        cmr_el = config.pop("char_status_mana_region", None)
+        char_mana_el = ET.SubElement(root, "char_status_mana_region")
+        char_mana_el.text = _region_text(cmr_el)
+        ccr_el = config.pop("char_status_cap_region", None)
+        char_cap_el = ET.SubElement(root, "char_status_cap_region")
+        char_cap_el.text = _region_text(ccr_el)
+        for key, value in config.items():
+            child = ET.SubElement(root, key)
+            child.text = str(value)
+        tree = ET.ElementTree(root)
+        ET.indent(tree, space="  ")
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+    @staticmethod
     def load_file(path: str) -> dict:
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)

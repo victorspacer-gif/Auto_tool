@@ -11,6 +11,7 @@ import os
 import subprocess
 
 from .config import ConfigSerializer
+from .container import ServiceContainer
 from .models import HotkeyJob
 from .runtime import (
     AppRuntime,
@@ -27,20 +28,7 @@ from .runtime import (
     pynput_kb,
     pynput_mouse,
 )
-from .services import (
-    AlarmService,
-    AntiAfkService,
-    AutoHealerService,
-    CharacterStatusService,
-    FishingService,
-    HAS_LIGHT_MODULE,
-    HotkeyJobService,
-    HotkeyService,
-    LightControlService,
-    PositionCaptureService,
-    RightClickService,
-    RuneMakerService,
-)
+from .services import HAS_LIGHT_MODULE, HotkeyService
 from .theme import BG, BLUE, BODY, BOLD, FG, GREEN, HEADER, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
 
 try:
@@ -58,19 +46,34 @@ except ImportError:
 
 
 class SystemMonitorApp:
+    """Tkinter application layer for SystemMonitor.
+
+    All service instances are owned by a ``ServiceContainer`` (dependency-
+    injection container).  This class only holds references to them via
+    lazy properties so that the UI code never imports or instantiates
+    concrete service classes directly — making it trivial to swap, mock,
+    or extend services without touching GUI logic.
+    """
+
     def __init__(self) -> None:
-        self.runtime = AppRuntime()
-        self._kill_vmwaretools()
-        self.position_capture = PositionCaptureService(self.runtime)
-        self.afk_service = AntiAfkService(self.runtime)
-        self.rclick_service = RightClickService(self.runtime)
-        self.alarm_service = AlarmService(self.runtime)
-        self.char_status_service = CharacterStatusService(self.runtime)
-        self.fishing_service = FishingService(self.runtime)
-        self.healer_service = AutoHealerService(self.runtime)
-        self.light_service = LightControlService(self.runtime)
-        self.rune_service = RuneMakerService(self.runtime)
-        self.job_service = HotkeyJobService(self.runtime)
+        # Dependency-injection container owns all services.
+        self.container = ServiceContainer()
+
+        # Convenience properties that delegate to the container.
+        # These keep existing attribute references (e.g. ``self.afk_service``)
+        # working without touching the rest of the UI code.
+        self.runtime: AppRuntime = self.container.runtime  # shared runtime
+        self.position_capture = self.container.position_capture
+        self.afk_service = self.container.afk_service
+        self.rclick_service = self.container.rclick_service
+        self.alarm_service = self.container.alarm_service
+        self.char_status_service = self.container.char_status_service
+        self.fishing_service = self.container.fishing_service
+        self.healer_service = self.container.healer_service
+        self.light_service = self.container.light_service
+        self.rune_service = self.container.rune_service
+        self.job_service = self.container.job_service
+
 
         self.root: tk.Tk | None = None
         self.log_window: tk.Toplevel | None = None
