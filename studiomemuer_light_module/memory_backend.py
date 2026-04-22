@@ -27,6 +27,12 @@ class PatchResult:
     new_value: int
 
 
+@dataclass
+class LightPatchResult:
+    color: PatchResult
+    intensity: PatchResult
+
+
 class LightMemoryController:
     def __init__(self, process_name: str) -> None:
         self.process_name = process_name
@@ -74,10 +80,21 @@ class LightMemoryController:
         if self.pm is None:
             raise ProcessNotFoundError("Not attached to process.")
 
+        modules = list(self.pm.list_modules())
         module_substr = module_substr.lower()
-        for module in self.pm.list_modules():
+        for module in modules:
             if module_substr in module.name.lower():
                 return module.lpBaseOfDll
+
+        # Some client variants rename the main executable (for example miracle_dx-*.exe)
+        # while the imported CE pointers still reference the game's primary module base.
+        # If the configured module name is absent, fall back to the attached process main module.
+        for module in modules:
+            if module.name.lower().endswith(".exe"):
+                return module.lpBaseOfDll
+
+        if modules:
+            return modules[0].lpBaseOfDll
 
         raise ProcessNotFoundError(f"Module not found: {module_substr}")
 
@@ -193,3 +210,52 @@ class LightMemoryController:
         )
         value = int(value_hex, 16)
         return self.write_byte(address, value)
+
+    def resolve_light_pair_addresses(
+        self,
+        module_name: str,
+        pointer_chains: list[list[int]],
+        structure_value_offset: int = 0,
+        signature_pattern: str | None = None,
+        signature_offset_to_base: int = 0,
+    ) -> tuple[int, int]:
+        color_address = self.resolve_light_address(
+            module_name=module_name,
+            pointer_chains=pointer_chains,
+            structure_value_offset=structure_value_offset,
+            signature_pattern=signature_pattern,
+            signature_offset_to_base=signature_offset_to_base,
+        )
+        intensity_address = color_address + 1
+        try:
+            self.read_byte(intensity_address)
+        except Exception as exc:
+            raise AddressResolveError(
+                f"Resolved color address 0x{color_address:X}, but intensity byte 0x{intensity_address:X} is invalid."
+            ) from exc
+        return color_address, intensity_address
+
+    def write_light_pair(self, color_address: int, color_value: int, intensity_value: int) -> LightPatchResult:
+        return LightPatchResult(
+            color=self.write_byte(color_address, color_value),
+            intensity=self.write_byte(color_address + 1, intensity_value),
+        )
+
+    def apply_light_pair_by_resolver(
+        self,
+        module_name: str,
+        pointer_chains: list[list[int]],
+        color_value: int,
+        intensity_value: int,
+        structure_value_offset: int = 0,
+        signature_pattern: str | None = None,
+        signature_offset_to_base: int = 0,
+    ) -> LightPatchResult:
+        color_address, _intensity_address = self.resolve_light_pair_addresses(
+            module_name=module_name,
+            pointer_chains=pointer_chains,
+            structure_value_offset=structure_value_offset,
+            signature_pattern=signature_pattern,
+            signature_offset_to_base=signature_offset_to_base,
+        )
+        return self.write_light_pair(color_address, color_value, intensity_value)

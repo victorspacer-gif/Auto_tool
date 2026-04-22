@@ -99,14 +99,16 @@ class ConfigSerializer:
             "healer_mouse_speed": state.healer_mouse_speed,
             "healer_rune_delay_ms": state.healer_rune_delay_ms,
             "light_process_name": state.light_process_name,
-            "light_address_hex": state.light_address_hex,
-            "light_use_dynamic_pointer": state.light_use_dynamic_pointer,
-            "light_pointer_chain_index": state.light_pointer_chain_index,
-            "light_default_value_hex": state.light_default_value_hex,
-            "light_boosted_value_hex": state.light_boosted_value_hex,
+            "light_direct_address_hex": state.light_direct_address_hex,
             "light_freeze_enabled": state.light_freeze_enabled,
-            "light_freeze_value_hex": state.light_freeze_value_hex,
+            "light_freeze_color_value": state.light_freeze_color_value,
+            "light_freeze_intensity_value": state.light_freeze_intensity_value,
             "light_freeze_interval_ms": state.light_freeze_interval_ms,
+            "light_last_mode": state.light_last_mode,
+            "light_last_color_address_hex": state.light_last_color_address_hex,
+            "light_last_intensity_address_hex": state.light_last_intensity_address_hex,
+            "light_original_color_value": state.light_original_color_value,
+            "light_original_intensity_value": state.light_original_intensity_value,
             "sandbox_backend": state.sandbox_backend,
             "sandbox_box_name": state.sandbox_box_name,
             "sandbox_exe_path": state.sandbox_exe_path,
@@ -310,20 +312,24 @@ class ConfigSerializer:
         state.healer_mouse_speed = max(0.2, min(3.0, get_float("healer_mouse_speed", state.healer_mouse_speed)))
         state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_ms", state.healer_rune_delay_ms))
         state.light_process_name = get_str("light_process_name", state.light_process_name)
-        state.light_address_hex = get_str("light_address_hex", state.light_address_hex)
-        state.light_use_dynamic_pointer = get_bool("light_use_dynamic_pointer", state.light_use_dynamic_pointer)
-        state.light_pointer_chain_index = max(0, get_int("light_pointer_chain_index", state.light_pointer_chain_index))
-        state.light_default_value_hex = get_str("light_default_value_hex", state.light_default_value_hex)
+        state.light_direct_address_hex = get_str("light_direct_address_hex", state.light_direct_address_hex)
         state.sandbox_backend = get_str("sandbox_backend", state.sandbox_backend)
         state.sandbox_box_name = get_str("sandbox_box_name", state.sandbox_box_name)
         state.sandbox_exe_path = get_str("sandbox_exe_path", state.sandbox_exe_path)
         state.sandbox_args = get_str("sandbox_args", state.sandbox_args)
         state.sandbox_drop_admin = get_bool("sandbox_drop_admin", state.sandbox_drop_admin)
         state.sandbox_spoof_env = get_bool("sandbox_spoof_env", state.sandbox_spoof_env)
-        state.light_boosted_value_hex = get_str("light_boosted_value_hex", state.light_boosted_value_hex)
         state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
-        state.light_freeze_value_hex = get_str("light_freeze_value_hex", state.light_freeze_value_hex)
+        state.light_freeze_color_value = max(0, min(255, get_int("light_freeze_color_value", state.light_freeze_color_value)))
+        state.light_freeze_intensity_value = max(0, min(255, get_int("light_freeze_intensity_value", state.light_freeze_intensity_value)))
         state.light_freeze_interval_ms = max(30, get_int("light_freeze_interval_ms", state.light_freeze_interval_ms))
+        state.light_last_mode = get_str("light_last_mode", state.light_last_mode)
+        state.light_last_color_address_hex = get_str("light_last_color_address_hex", state.light_last_color_address_hex)
+        state.light_last_intensity_address_hex = get_str("light_last_intensity_address_hex", state.light_last_intensity_address_hex)
+        raw_original_color = cfg.get("light_original_color_value")
+        raw_original_intensity = cfg.get("light_original_intensity_value")
+        state.light_original_color_value = None if raw_original_color in (None, "", "None") else max(0, min(255, get_int("light_original_color_value", 0)))
+        state.light_original_intensity_value = None if raw_original_intensity in (None, "", "None") else max(0, min(255, get_int("light_original_intensity_value", 0)))
 
         for action, binding in hotkeys.items():
             if action in state.hotkey_bindings:
@@ -349,4 +355,3 @@ class ConfigSerializer:
             )
             state.jobs.append(job)
             state.job_counter = max(state.job_counter, job.job_id)
-

@@ -153,14 +153,16 @@ class AppState:
     healer_rune_delay_ms: int = 250
 
     light_process_name: str = "miracle_gl.exe"
-    light_address_hex: str = "133AA965"
-    light_use_dynamic_pointer: bool = True
-    light_pointer_chain_index: int = 0
-    light_default_value_hex: str = "07"
-    light_boosted_value_hex: str = "08"
+    light_direct_address_hex: str = ""
     light_freeze_enabled: bool = False
-    light_freeze_value_hex: str = "08"
+    light_freeze_color_value: int = 215
+    light_freeze_intensity_value: int = 7
     light_freeze_interval_ms: int = 50
+    light_last_mode: str = "default"
+    light_last_color_address_hex: str = ""
+    light_last_intensity_address_hex: str = ""
+    light_original_color_value: int | None = None
+    light_original_intensity_value: int | None = None
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
@@ -183,4 +185,3 @@ class AppState:
     sandbox_args: str = ""
     sandbox_drop_admin: bool = False
     sandbox_spoof_env: bool = False
-
