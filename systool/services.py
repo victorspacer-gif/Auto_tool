@@ -555,7 +555,8 @@ class RightClickService:
                 mode = state.rclick_mode
                 food_seconds = state.char_status_food_seconds
                 food_min_secs = state.rclick_food_min_secs
-                burst_count = state.rclick_food_burst_count
+                burst_count_min = state.rclick_food_burst_count_min
+                burst_count_max = state.rclick_food_burst_count_max
                 burst_interval_ms = state.rclick_food_burst_interval_ms
                 click_delay_min_ms = state.rclick_click_delay_min_ms
                 click_delay_max_ms = state.rclick_click_delay_max_ms
@@ -565,7 +566,7 @@ class RightClickService:
                     if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rclick_stop):
                         break
                     continue
-                clicks_to_send = max(1, burst_count)
+                clicks_to_send = random.randint(burst_count_min, burst_count_max)
                 queue_window = max(
                     0.35,
                     clicks_to_send * (click_delay_max_ms / 1000.0) + max(0, clicks_to_send - 1) * max(click_delay_min_ms / 1000.0, burst_interval_ms / 1000.0),
@@ -584,10 +585,10 @@ class RightClickService:
             try:
                 HumanMouse.move(mouse, target)
                 for click_index in range(clicks_to_send):
-                    time.sleep(random.uniform(click_delay_min_ms / 1000.0, click_delay_max_ms / 1000.0))
+                    # Add slight random variation between clicks for natural rhythm
+                    inter_click = max(0.02, burst_interval_ms / 1000.0 + random.uniform(-0.05, 0.08))
+                    time.sleep(inter_click)
                     mouse.click(pynput_mouse.Button.right, 1)
-                    if click_index + 1 < clicks_to_send:
-                        time.sleep(max(0.15, burst_interval_ms / 1000.0))
                 # Settle after all clicks — lets the game register and adds human-like pause
                 time.sleep(post_settle_ms / 1000.0)
             except Exception as exc:
@@ -1564,7 +1565,9 @@ class HotkeyJobService:
                             break
                         self._press_key(keyboard, pressed_key)
                         sent += 1
-                        time.sleep(job.burst_int_ms / 1000.0)
+                        # Add slight random variation between burst clicks for natural rhythm
+                        inter_click = max(0.02, job.burst_int_ms / 1000.0 + random.uniform(-0.05, 0.08))
+                        time.sleep(inter_click)
                 finally:
                     self.runtime.execution.release()
                 with self.runtime.record_lock:

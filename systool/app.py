@@ -353,7 +353,8 @@ class SystemMonitorApp:
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
         rclick_require_food = tk.BooleanVar(value=self.runtime.state.rclick_require_food)
         rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
-        rclick_food_burst_count = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count))
+        rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
+        rclick_food_burst_count_max = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_max))
         rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
         click_delay_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_min_ms)))
         click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
@@ -361,7 +362,8 @@ class SystemMonitorApp:
         self.ui_vars["rclick_mode_var"] = rclick_mode
         self.ui_vars["rclick_require_food_var"] = rclick_require_food
         self.ui_vars["rclick_food_min_var"] = rclick_food_min
-        self.ui_vars["rclick_food_burst_count_var"] = rclick_food_burst_count
+        self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
+        self.ui_vars["rclick_food_burst_count_max_var"] = rclick_food_burst_count_max
         self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
         self.ui_vars["rclick_click_delay_min_var"] = click_delay_min
         self.ui_vars["rclick_click_delay_max_var"] = click_delay_max
@@ -375,7 +377,8 @@ class SystemMonitorApp:
         mode_menu.pack(side="left", padx=4)
         tk.Checkbutton(panel, text="Timer checks food threshold first", variable=rclick_require_food, font=BOLD, fg=FG, bg=PANEL, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w", pady=(2, 2))
         self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
-        self._label_entry(panel, "Food burst clicks:", rclick_food_burst_count, width=6)
+        self._label_entry(panel, f"Burst clicks min:", rclick_food_burst_count_min, width=6)
+        self._label_entry(panel, f"Burst clicks max:", rclick_food_burst_count_max, width=6)
         self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
         self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
         self._label_entry(panel, f"Click delay max ({unit}):", click_delay_max, width=6)
@@ -1901,7 +1904,8 @@ class SystemMonitorApp:
             "rclick_mode_var": state.rclick_mode,
             "rclick_food_min_var": state.rclick_food_min_secs,
             "rclick_require_food_var": state.rclick_require_food,
-            "rclick_food_burst_count_var": state.rclick_food_burst_count,
+            "rclick_food_burst_count_min_var": state.rclick_food_burst_count_min,
+            "rclick_food_burst_count_max_var": state.rclick_food_burst_count_max,
             "rune_spell_key_var": state.rune_spell_key,
             "rune_jitter_var": state.rune_jitter,
             "rune_min_mana_var": state.rune_min_mana,
@@ -1984,7 +1988,8 @@ class SystemMonitorApp:
             if "rclick_mode_var" in self.ui_vars:
                 state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
             state.rclick_food_min_secs = max(0, get_int("rclick_food_min_var", state.rclick_food_min_secs))
-            state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count_var", state.rclick_food_burst_count))
+            state.rclick_food_burst_count_min = max(1, get_int("rclick_food_burst_count_min_var", state.rclick_food_burst_count_min))
+            state.rclick_food_burst_count_max = max(state.rclick_food_burst_count_min, get_int("rclick_food_burst_count_max_var", state.rclick_food_burst_count_max))
             state.rclick_food_burst_interval_ms = max(50, get_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
             state.rclick_click_delay_min_ms = max(100, get_ms("rclick_click_delay_min_var", state.rclick_click_delay_min_ms))
             state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, get_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))

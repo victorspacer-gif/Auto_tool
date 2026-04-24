@@ -68,7 +68,8 @@ class AppState:
     rclick_mode: str = "timer"
     rclick_require_food: bool = False
     rclick_food_min_secs: int = 600
-    rclick_food_burst_count: int = 3
+    rclick_food_burst_count_min: int = 3
+    rclick_food_burst_count_max: int = 6
     rclick_food_burst_interval_ms: int = 700
     rclick_click_delay_min_ms: int = 150
     rclick_click_delay_max_ms: int = 250
