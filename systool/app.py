@@ -399,6 +399,7 @@ class SystemMonitorApp:
         rune_cycle_variation = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_cycle_delay_variation_ms)))
         rune_jitter = tk.StringVar(value=str(self.runtime.state.rune_jitter))
         rune_cast = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_cast_delay_ms)))
+        rune_post_cast_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_post_cast_settle_ms)))
         rune_blank_cycles = tk.StringVar(value=str(self.runtime.state.rune_available_blank_runes))
         rune_move_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_mouse_move_min_ms)))
         rune_move_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_mouse_move_max_ms)))
@@ -411,6 +412,7 @@ class SystemMonitorApp:
         self.ui_vars["rune_cycle_variation_var"] = rune_cycle_variation
         self.ui_vars["rune_jitter_var"] = rune_jitter
         self.ui_vars["rune_cast_delay_var"] = rune_cast
+        self.ui_vars["rune_post_cast_settle_var"] = rune_post_cast_settle
         self.ui_vars["rune_blank_cycles_var"] = rune_blank_cycles
         self.ui_vars["rune_move_min_var"] = rune_move_min
         self.ui_vars["rune_move_max_var"] = rune_move_max
@@ -420,6 +422,7 @@ class SystemMonitorApp:
         self.ui_vars["rune_settle_max_var"] = rune_settle_max
         self._label_entry(spell_panel, "Spell hotkey:", rune_spell, width=6)
         self._label_entry(spell_panel, f"Cast settle delay ({unit}):", rune_cast, width=7)
+        self._label_entry(spell_panel, f"Post-cast settle ({unit}):", rune_post_cast_settle, width=8)
         self._label_entry(spell_panel, f"Cycle delay base ({unit}):", rune_cycle, width=7)
         self._label_entry(spell_panel, f"Cycle variation ({unit}):", rune_cycle_variation, width=7)
         self._label_entry(spell_panel, "Position jitter (px ±):", rune_jitter, width=5)
@@ -434,8 +437,9 @@ class SystemMonitorApp:
             try:
                 base_ms = self._display_to_ms(float(rune_cycle.get()))
                 variation_ms = self._display_to_ms(float(rune_cycle_variation.get()))
-                min_seconds = max(0.0, (base_ms - variation_ms) / 1000.0)
-                max_seconds = (base_ms + variation_ms) / 1000.0
+                post_settle_ms = self._display_to_ms(float(rune_post_cast_settle.get())) if rune_post_cast_settle.get() else 600
+                min_seconds = max(0.0, (base_ms - variation_ms + post_settle_ms) / 1000.0)
+                max_seconds = (base_ms + variation_ms + post_settle_ms) / 1000.0
                 cycle_label.config(
                     text=f"≈ {min_seconds:.1f}–{max_seconds:.1f} s between casts"
                 )
@@ -1860,6 +1864,7 @@ class SystemMonitorApp:
             "rune_cycle_delay_var": state.rune_cycle_delay_ms,
             "rune_cycle_variation_var": state.rune_cycle_delay_variation_ms,
             "rune_cast_delay_var": state.rune_cast_delay_ms,
+            "rune_post_cast_settle_var": state.rune_post_cast_settle_ms,
             "rune_move_min_var": state.rune_mouse_move_min_ms,
             "rune_move_max_var": state.rune_mouse_move_max_ms,
             "rune_press_min_var": state.rune_mouse_press_min_ms,
@@ -2000,6 +2005,7 @@ class SystemMonitorApp:
             state.rune_cycle_delay_variation_ms = max(0, get_ms("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
             state.rune_jitter = get_int("rune_jitter_var", state.rune_jitter)
             state.rune_cast_delay_ms = get_ms("rune_cast_delay_var", state.rune_cast_delay_ms)
+            state.rune_post_cast_settle_ms = max(100, get_ms("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
             state.rune_min_mana = max(0, get_int("rune_min_mana_var", state.rune_min_mana))
             state.rune_available_blank_runes = max(0, get_int("rune_blank_cycles_var", state.rune_available_blank_runes))
             state.rune_mouse_move_min_ms = max(20, get_ms("rune_move_min_var", state.rune_mouse_move_min_ms))

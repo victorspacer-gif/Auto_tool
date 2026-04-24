@@ -131,14 +131,15 @@ class AppState:
     rune_blank_pos: tuple[int, int] = (0, 0)
     rune_jitter: int = 6
     rune_cast_delay_ms: int = 900
+    rune_post_cast_settle_ms: int = 600
     rune_min_mana: int = 0
     rune_available_blank_runes: int = 0
-    rune_mouse_move_min_ms: int = 110
-    rune_mouse_move_max_ms: int = 240
-    rune_mouse_press_min_ms: int = 45
-    rune_mouse_press_max_ms: int = 90
-    rune_mouse_settle_min_ms: int = 80
-    rune_mouse_settle_max_ms: int = 180
+    rune_mouse_move_min_ms: int = 180
+    rune_mouse_move_max_ms: int = 350
+    rune_mouse_press_min_ms: int = 60
+    rune_mouse_press_max_ms: int = 120
+    rune_mouse_settle_min_ms: int = 100
+    rune_mouse_settle_max_ms: int = 220
 
     healer_active: bool = False
     healer_mode: str = "spell"

@@ -1349,7 +1349,8 @@ class RuneMakerService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log(
-            f"▶ Rune session start — spell={state.rune_spell_key.upper()}  cycle={state.rune_cycle_delay_ms}ms"
+            f"▶ Rune session start — spell={state.rune_spell_key.upper()}  "
+            f"cycle={state.rune_cycle_delay_ms}ms  post-settle={state.rune_post_cast_settle_ms}ms"
         )
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
@@ -1385,6 +1386,7 @@ class RuneMakerService:
                 press_max_ms = state.rune_mouse_press_max_ms
                 settle_min_ms = state.rune_mouse_settle_min_ms
                 settle_max_ms = state.rune_mouse_settle_max_ms
+                post_cast_settle_ms = state.rune_post_cast_settle_ms
             if blank_rune_limit > 0 and cycles_completed >= blank_rune_limit:
                 self.runtime.ui.log(f"⏲️ Rune session stopped — avb blank runes limit reached ({blank_rune_limit})")
                 self.runtime.ui.set_status("Rune session finished by avb blank runes limit", ORANGE)
@@ -1397,6 +1399,7 @@ class RuneMakerService:
                 0.90,
                 cast_delay_ms / 1000.0
                 + (move_max_ms * 2 + press_max_ms * 2 + settle_max_ms * 2) / 1000.0
+                + post_cast_settle_ms / 1000.0
                 + 0.40,
             )
             if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window, module_id="rune"):
@@ -1437,6 +1440,8 @@ class RuneMakerService:
                     settle_delay_range=settle_delay_range,
                 )
                 self.runtime.ui.log("📥 Blank rune → hand slot")
+                # Settle before next cast — lets mana deplete and OCR catch up
+                time.sleep(post_cast_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ Rune cycle: {exc}")
                 break
