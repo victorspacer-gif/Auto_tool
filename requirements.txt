@@ -3,7 +3,7 @@ pywin32
 pystray 
 pillow 
 mss 
-numpy 
+numpy==1.26.4
 pygame 
 pyautogui 
 opencv-python

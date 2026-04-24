@@ -33,11 +33,17 @@ from .runtime import (
     AppRuntime,
     HAS_CV2,
     HAS_MSS,
+    HAS_NUMPY,
     HAS_PYGAME,
     HAS_PYNPUT,
     HAS_TESSERACT,
     HAS_WIN32,
+    CV2_IMPORT_ERROR,
+    MSS_IMPORT_ERROR,
+    NUMPY_IMPORT_ERROR,
+    TESSERACT_IMPORT_ERROR,
     cv2,
+    configure_tesseract_runtime,
     mss,
     np,
     pygame,
@@ -717,14 +723,17 @@ class CharacterStatusService:
     def get_dependency_error(self) -> str | None:
         state = self.runtime.state
         if not HAS_MSS:
-            return "mss is not installed"
+            return "mss import failed" + (f": {MSS_IMPORT_ERROR}" if MSS_IMPORT_ERROR else "")
+        if not HAS_NUMPY:
+            return "numpy import failed" + (f": {NUMPY_IMPORT_ERROR}" if NUMPY_IMPORT_ERROR else "")
         if not HAS_CV2:
-            return "opencv-python is not installed"
+            return "opencv-python import failed" + (f": {CV2_IMPORT_ERROR}" if CV2_IMPORT_ERROR else "")
         if not HAS_TESSERACT:
-            return "pytesseract is not installed"
+            return "pytesseract import failed" + (f": {TESSERACT_IMPORT_ERROR}" if TESSERACT_IMPORT_ERROR else "")
         tesseract_cmd = resolve_tesseract_cmd(state.char_status_tesseract_path)
         if not tesseract_cmd:
             return "Tesseract executable not found"
+        configure_tesseract_runtime(tesseract_cmd)
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
         return None
 

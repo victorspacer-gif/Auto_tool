@@ -34,31 +34,48 @@ except ImportError:
     pystray = None
     HAS_TRAY = False
 
+MSS_IMPORT_ERROR = ""
+NUMPY_IMPORT_ERROR = ""
+
 try:
     import mss
-    import numpy as np
 
     HAS_MSS = True
-except ImportError:
+except Exception as exc:
     mss = None
-    np = None
     HAS_MSS = False
+    MSS_IMPORT_ERROR = str(exc)
+
+try:
+    import numpy as np
+
+    HAS_NUMPY = True
+except Exception as exc:
+    np = None
+    HAS_NUMPY = False
+    NUMPY_IMPORT_ERROR = str(exc)
+
+CV2_IMPORT_ERROR = ""
 
 try:
     import cv2
 
     HAS_CV2 = True
-except ImportError:
+except Exception as exc:
     cv2 = None
     HAS_CV2 = False
+    CV2_IMPORT_ERROR = str(exc)
+
+TESSERACT_IMPORT_ERROR = ""
 
 try:
     import pytesseract
 
     HAS_TESSERACT = True
-except ImportError:
+except Exception as exc:
     pytesseract = None
     HAS_TESSERACT = False
+    TESSERACT_IMPORT_ERROR = str(exc)
 
 try:
     import pygame
@@ -346,3 +363,13 @@ def resolve_tesseract_cmd(explicit_path: str = "") -> str | None:
         if candidate and os.path.exists(candidate):
             return candidate
     return None
+
+
+def configure_tesseract_runtime(tesseract_cmd: str) -> None:
+    tesseract_dir = os.path.dirname(os.path.abspath(tesseract_cmd))
+    tessdata_dir = os.path.join(tesseract_dir, "tessdata")
+    if os.path.isdir(tessdata_dir):
+        os.environ["TESSDATA_PREFIX"] = tessdata_dir
+    path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    if tesseract_dir not in path_entries:
+        os.environ["PATH"] = tesseract_dir + os.pathsep + os.environ.get("PATH", "")

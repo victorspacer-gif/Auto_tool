@@ -864,8 +864,10 @@ class SystemMonitorApp:
             "4. If OCR misses a frame, the last good values are kept until the next valid read.",
         ]:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
-        dep_text = "Python OCR packages loaded" if (HAS_MSS and HAS_CV2 and HAS_TESSERACT) else "Install mss, opencv-python, and pytesseract to use this tab"
-        tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if (HAS_MSS and HAS_CV2 and HAS_TESSERACT) else ORANGE, bg=PANEL, justify="left").pack(anchor="w", pady=(10, 0))
+        dependency_error = self.char_status_service.get_dependency_error()
+        dep_ready = dependency_error is None
+        dep_text = "Python OCR packages loaded" if dep_ready else f"OCR dependency status: {dependency_error}"
+        tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if dep_ready else ORANGE, bg=PANEL, justify="left", wraplength=300).pack(anchor="w", pady=(10, 0))
 
     def _build_hotkeys_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
