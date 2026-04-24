@@ -557,6 +557,9 @@ class RightClickService:
                 food_min_secs = state.rclick_food_min_secs
                 burst_count = state.rclick_food_burst_count
                 burst_interval_ms = state.rclick_food_burst_interval_ms
+                click_delay_min_ms = state.rclick_click_delay_min_ms
+                click_delay_max_ms = state.rclick_click_delay_max_ms
+                post_settle_ms = state.rclick_post_click_settle_ms
             if mode == "food":
                 if food_seconds is not None and food_seconds >= food_min_secs:
                     if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rclick_stop):
@@ -565,7 +568,7 @@ class RightClickService:
                 clicks_to_send = max(1, burst_count)
                 queue_window = max(
                     0.35,
-                    clicks_to_send * 0.14 + max(0, clicks_to_send - 1) * max(0.05, burst_interval_ms / 1000.0),
+                    clicks_to_send * (click_delay_max_ms / 1000.0) + max(0, clicks_to_send - 1) * max(click_delay_min_ms / 1000.0, burst_interval_ms / 1000.0),
                 )
             else:
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
@@ -581,10 +584,12 @@ class RightClickService:
             try:
                 HumanMouse.move(mouse, target)
                 for click_index in range(clicks_to_send):
-                    time.sleep(random.uniform(0.06, 0.14))
+                    time.sleep(random.uniform(click_delay_min_ms / 1000.0, click_delay_max_ms / 1000.0))
                     mouse.click(pynput_mouse.Button.right, 1)
                     if click_index + 1 < clicks_to_send:
-                        time.sleep(max(0.05, burst_interval_ms / 1000.0))
+                        time.sleep(max(0.15, burst_interval_ms / 1000.0))
+                # Settle after all clicks — lets the game register and adds human-like pause
+                time.sleep(post_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ R-click: {exc}")
             finally:

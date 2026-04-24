@@ -70,6 +70,9 @@ class AppState:
     rclick_food_min_secs: int = 600
     rclick_food_burst_count: int = 3
     rclick_food_burst_interval_ms: int = 700
+    rclick_click_delay_min_ms: int = 150
+    rclick_click_delay_max_ms: int = 250
+    rclick_post_click_settle_ms: int = 300
 
     alarm_active: bool = False
     alarm_mp3: str = ""

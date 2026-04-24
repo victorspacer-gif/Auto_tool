@@ -355,11 +355,17 @@ class SystemMonitorApp:
         rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
         rclick_food_burst_count = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count))
         rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
+        click_delay_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_min_ms)))
+        click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
+        post_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_post_click_settle_ms)))
         self.ui_vars["rclick_mode_var"] = rclick_mode
         self.ui_vars["rclick_require_food_var"] = rclick_require_food
         self.ui_vars["rclick_food_min_var"] = rclick_food_min
         self.ui_vars["rclick_food_burst_count_var"] = rclick_food_burst_count
         self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
+        self.ui_vars["rclick_click_delay_min_var"] = click_delay_min
+        self.ui_vars["rclick_click_delay_max_var"] = click_delay_max
+        self.ui_vars["rclick_post_settle_ms_var"] = post_settle
         mode_row = tk.Frame(panel, bg=PANEL)
         mode_row.pack(fill="x", pady=2)
         tk.Label(mode_row, text="Mode:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
@@ -371,6 +377,9 @@ class SystemMonitorApp:
         self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
         self._label_entry(panel, "Food burst clicks:", rclick_food_burst_count, width=6)
         self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
+        self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
+        self._label_entry(panel, f"Click delay max ({unit}):", click_delay_max, width=6)
+        self._label_entry(panel, f"Post-click settle ({unit}):", post_settle, width=6)
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
@@ -1977,6 +1986,9 @@ class SystemMonitorApp:
             state.rclick_food_min_secs = max(0, get_int("rclick_food_min_var", state.rclick_food_min_secs))
             state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count_var", state.rclick_food_burst_count))
             state.rclick_food_burst_interval_ms = max(50, get_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
+            state.rclick_click_delay_min_ms = max(100, get_ms("rclick_click_delay_min_var", state.rclick_click_delay_min_ms))
+            state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, get_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))
+            state.rclick_post_click_settle_ms = max(100, get_ms("rclick_post_settle_ms_var", state.rclick_post_click_settle_ms))
             state.alarm_threshold = get_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
             state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent_var", state.alarm_hp_percent)))
             state.char_status_poll_ms = max(250, get_ms("char_status_poll_var", state.char_status_poll_ms))
