@@ -2150,13 +2150,71 @@ class SystemMonitorApp:
         self._hide_log_window()
         self.root.withdraw()
 
-    def _make_tray_image(self):
+    def _make_tray_image(self, color: tuple[int, int, int] = (48, 209, 88)):
+        """Create the tray icon image with a colored circle and white 'M' overlay.
+
+        Args:
+            color: RGB tuple for the circle fill (default green).
+        """
         image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
-        draw.ellipse([4, 4, 60, 60], fill=(48, 209, 88, 255))
+        # Draw colored background circle
+        draw.ellipse([4, 4, 60, 60], fill=(*color[:3], 255))
+        # White 'M' overlay (two rectangles forming an M shape)
         draw.rectangle([20, 28, 44, 36], fill=(255, 255, 255, 220))
         draw.rectangle([28, 20, 36, 44], fill=(255, 255, 255, 220))
         return image
+
+    def _get_tray_color(self) -> tuple[int, int, int]:
+        """Determine the tray icon color based on current application state.
+
+        Returns:
+            RGB tuple for the circle fill color.
+        """
+        state = self.runtime.state
+
+        # Blue when fishing is active (highest priority)
+        if state.fish_active:
+            return (59, 130, 246)
+
+        # Yellow when paused
+        if self.runtime.pause.paused:
+            return (255, 191, 0)
+
+        # Green when any service is running
+        if (state.afk_active or state.rclick_active or
+                state.alarm_active or state.rune_active):
+            return (48, 209, 88)
+
+        # Red when stopped (no services active and not paused)
+        return (239, 68, 68)
+
+    def _update_tray_icon(self) -> None:
+        """Update the system tray icon to reflect current application state."""
+        if self.tray_icon is None or not HAS_TRAY:
+            return
+        try:
+            color = self._get_tray_color()
+            new_image = self._make_tray_image(color)
+            # Compare by RGB data instead of object identity (PIL doesn't implement __eq__)
+            old_rgb = None
+            if hasattr(self.tray_icon.image, 'tobytes'):
+                try:
+                    old_rgb = bytes(self.tray_icon.image.tobytes())
+                except Exception:
+                    pass  # .tobytes() may fail on some image types
+            new_rgb = bytes(new_image.tobytes())
+            if old_rgb != new_rgb:
+                self.tray_icon.image = new_image
+                # Force pystray to refresh the icon (required on some Windows builds)
+                try:
+                    self.tray_icon.update()
+                except Exception:
+                    pass  # update() may not exist in older pystray versions
+                print(f"[SystemMonitor] Tray icon updated → RGB{color}")
+        except Exception as exc:
+            # Log tray errors so we can diagnose issues — don't silently swallow
+            print(f"[SystemMonitor] Tray icon update error: {exc}")
 
     def _start_tray(self) -> None:
         menu = pystray.Menu(
@@ -2168,6 +2226,13 @@ class SystemMonitorApp:
         )
         self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image(), "SystemMonitor", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+        # Start periodic tray icon updates (every 500ms) to catch state changes
+        def _poll_tray():
+            self._update_tray_icon()
+            self.root.after(500, _poll_tray)
+
+        self.root.after(1000, _poll_tray)
 
     def show_window(self, *args) -> None:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift(), self.root.focus_force()))
