@@ -2199,16 +2199,23 @@ class SystemMonitorApp:
         try:
             color = self._get_tray_color()
             new_image = self._make_tray_image(color)
+            
+            # Detect which pystray API version we're using
+            # Old (pre-0.19): icon.image, New (0.19+): icon.icon
+            image_attr = 'icon' if hasattr(self.tray_icon, 'icon') else 'image'
+            
             # Compare by RGB data instead of object identity (PIL doesn't implement __eq__)
             old_rgb = None
-            if hasattr(self.tray_icon.image, 'tobytes'):
+            current_image = getattr(self.tray_icon, image_attr)
+            if hasattr(current_image, 'tobytes'):
                 try:
-                    old_rgb = bytes(self.tray_icon.image.tobytes())
+                    old_rgb = bytes(current_image.tobytes())
                 except Exception:
                     pass  # .tobytes() may fail on some image types
             new_rgb = bytes(new_image.tobytes())
+            
             if old_rgb != new_rgb:
-                self.tray_icon.image = new_image
+                setattr(self.tray_icon, image_attr, new_image)
                 # Small delay to let pystray process the new image before forcing a redraw
                 time.sleep(0.05)
                 try:
