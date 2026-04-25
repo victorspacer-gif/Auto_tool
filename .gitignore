@@ -53,3 +53,7 @@ Thumbs.db
 # Analysis / Reference docs
 # =========================
 ANALYSIS.md
+systool/__pycache__/
+vendor/tesseract/doc/
+vendor/tesseract/tessdata/configs/
+vendor/tesseract/tessdata/tessconfigs/
