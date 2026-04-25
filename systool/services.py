@@ -401,6 +401,400 @@ class LightControlService:
         return self.controller
 
 
+class HpService:
+    """HP value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves all known pointer chains (HP, light) against the
+    target process.  If a pointer resolves successfully its address is
+    cached and used as the primary HP source.  When the pointer fails to
+    resolve the service falls back to OCR-derived HP from the character
+    status window.
+
+    Public API::
+
+        hp_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        hp_service.get_hp()          -> int | None    # current HP value (pointer or OCR)
+        hp_service.get_hp_peak()     -> int           # peak HP from OCR (0 if unavailable)
+        hp_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller = None  # LightMemoryController instance
+        self._hp_address: int | None = None  # resolved HP pointer address
+        self._light_address: int | None = None  # resolved light pointer address (for logging)
+
+    def is_available(self) -> bool:
+        return HAS_LIGHT_MODULE
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve all known pointers.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        if not HAS_LIGHT_MODULE:
+            return False, "Install psutil and pymem to use HP pointer"
+
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = self._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve HP pointer chain
+        hp_address = self._resolve_hp_pointer()
+
+        # Resolve light pointer (for logging / future use)
+        light_address = None
+        try:
+            from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as LIGHT_PROFILE
+            light_address = self.controller.resolve_light_address(
+                module_name=LIGHT_PROFILE.module_name,
+                pointer_chains=LIGHT_PROFILE.pointer_chains,
+                structure_value_offset=LIGHT_PROFILE.structure_value_offset,
+                signature_pattern=LIGHT_PROFILE.signature_pattern,
+                signature_offset_to_base=LIGHT_PROFILE.signature_offset_to_base,
+            )
+        except Exception:
+            pass
+
+        # Build status message
+        parts = []
+        if hp_address is not None:
+            self._hp_address = hp_address
+            state = self.runtime.state
+            state.hp_pointer_address_hex = f"{hp_address:X}"
+            state.hp_source = "pointer"
+            parts.append(f"HP pointer resolved at 0x{hp_address:X}")
+
+            # Read current HP value from pointer
+            try:
+                hp_val = self.controller.read_byte(hp_address)
+                state.hp_value = hp_val
+                parts.append(f"HP={hp_val}")
+            except Exception as exc:
+                parts.append(f"HP read failed: {exc}")
+
+        if light_address is not None:
+            self._light_address = light_address
+            parts.append(f"Light pointer resolved at 0x{light_address:X}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._hp_address = None
+        self._light_address = None
+        return True, "Detached"
+
+    def get_hp(self) -> int | None:
+        """Return current HP value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if self._hp_address is not None and self.controller is not None:
+            try:
+                hp_val = self.controller.read_byte(self._hp_address)
+                with self.runtime.settings_lock:
+                    state.hp_value = hp_val
+                return hp_val
+            except Exception:
+                pass  # fall through to OCR
+
+        # Fallback to OCR-derived HP from character status service
+        with self.runtime.settings_lock:
+            ocr_hp = state.char_status_hp
+        if ocr_hp is not None and ocr_hp > 0:
+            return ocr_hp
+        return None
+
+    def get_hp_peak(self) -> int:
+        """Return peak HP value (from OCR)."""
+        with self.runtime.settings_lock:
+            return self.runtime.state.char_status_hp_peak
+
+    @staticmethod
+    def _find_game_process_name() -> str | None:
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        for proc in psutil.process_iter(attrs=["name"]):
+            name = (proc.info.get("name") or "").strip()
+            if pattern.fullmatch(name):
+                return name
+        return None
+
+    def _resolve_hp_pointer(self) -> int | None:
+        """Resolve the HP pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_hp_module.hp_profile import DEFAULT_HP_PROFILE as HP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(HP_PROFILE.module_name)
+
+        for chain in HP_PROFILE.pointer_chains:
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + HP_PROFILE.structure_value_offset
+                # Verify we can read the byte at this address
+                ctrl.read_byte(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
+class MpService:
+    """MP (Mana) value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves the MP pointer chain against the target process using
+    a Double-precision read.  If the pointer resolves successfully its address
+    is cached and used as the primary MP source.  When the pointer fails to
+    resolve the service falls back to OCR-derived MP from the character status
+    window.
+
+    Public API::
+
+        mp_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        mp_service.get_mp()          -> float | None  # current MP value (pointer or OCR)
+        mp_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller: LightMemoryController | None = None
+        self._mp_address: int | None = None  # resolved MP pointer address
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve the MP pointer.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = HpService._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve MP pointer chain (same base as HP, different offset)
+        mp_address = self._resolve_mp_pointer()
+
+        parts = []
+        if mp_address is not None:
+            self._mp_address = mp_address
+            state = self.runtime.state
+            state.mp_pointer_address_hex = f"{mp_address:X}"
+            state.mp_source = "pointer"
+            parts.append(f"MP pointer resolved at 0x{mp_address:X}")
+
+            # Read current MP value from pointer (Double)
+            try:
+                mp_val = self.controller.read_double(mp_address)
+                with self.runtime.settings_lock:
+                    state.mp_value = mp_val
+                parts.append(f"MP={mp_val:.1f}")
+            except Exception as exc:
+                parts.append(f"MP read failed: {exc}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._mp_address = None
+        return True, "Detached"
+
+    def get_mp(self) -> float | None:
+        """Return current MP value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if self._mp_address is not None and self.controller is not None:
+            try:
+                mp_val = self.controller.read_double(self._mp_address)
+                with self.runtime.settings_lock:
+                    state.mp_value = mp_val
+                return mp_val
+            except Exception:
+                pass  # fall through to OCR
+
+        # Fallback to OCR-derived MP from character status service
+        with self.runtime.settings_lock:
+            ocr_mana = state.char_status_mana
+        if ocr_mana is not None and ocr_mana > 0:
+            return float(ocr_mana)
+        return None
+
+    def _resolve_mp_pointer(self) -> int | None:
+        """Resolve the MP pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base("miracle_gl")
+
+        # MP offset from base (same base as HP, different offset)
+        mp_offset_chain = [0x4F8]
+        for chain in [[0x00A783E0]]:  # base address
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + 0x4F8
+                # Verify we can read the double at this address
+                ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
+class CapService:
+    """Cap (Max HP) value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves the Cap pointer chain against the target process using
+    a Double-precision read.  If the pointer resolves successfully its address
+    is cached and used as the primary Cap source.  When the pointer fails to
+    resolve the service falls back to OCR-derived Cap from the character status
+    window.
+
+    Public API::
+
+        cap_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        cap_service.get_cap()         -> float | None  # current Cap value (pointer or OCR)
+        cap_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller: LightMemoryController | None = None
+        self._cap_address: int | None = None  # resolved Cap pointer address
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve the Cap pointer.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = HpService._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve Cap pointer chain (same base as HP, different offset)
+        cap_address = self._resolve_cap_pointer()
+
+        parts = []
+        if cap_address is not None:
+            self._cap_address = cap_address
+            state = self.runtime.state
+            state.cap_pointer_address_hex = f"{cap_address:X}"
+            state.cap_source = "pointer"
+            parts.append(f"Cap pointer resolved at 0x{cap_address:X}")
+
+            # Read current Cap value from pointer (Double)
+            try:
+                cap_val = self.controller.read_double(cap_address)
+                with self.runtime.settings_lock:
+                    state.cap_value = cap_val
+                parts.append(f"Cap={cap_val:.1f}")
+            except Exception as exc:
+                parts.append(f"Cap read failed: {exc}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._cap_address = None
+        return True, "Detached"
+
+    def get_cap(self) -> float | None:
+        """Return current Cap value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if self._cap_address is not None and self.controller is not None:
+            try:
+                cap_val = self.controller.read_double(self._cap_address)
+                with self.runtime.settings_lock:
+                    state.cap_value = cap_val
+                return cap_val
+            except Exception:
+                pass  # fall through to OCR
+
+        # Fallback to OCR-derived Cap from character status service
+        with self.runtime.settings_lock:
+            ocr_cap = state.char_status_cap
+        if ocr_cap is not None and ocr_cap > 0:
+            return float(ocr_cap)
+        return None
+
+    def _resolve_cap_pointer(self) -> int | None:
+        """Resolve the Cap pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base("miracle_gl")
+
+        # Cap offset from base (same base as HP, different offset)
+        for chain in [[0x00A783E0]]:  # base address
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + 0x4B8
+                # Verify we can read the double at this address
+                ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
 class PositionCaptureService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
@@ -672,10 +1066,19 @@ class AlarmService:
                 now = time.monotonic()
                 with self.runtime.settings_lock:
                     hp_percent = state.alarm_hp_percent
-                    hp_value = state.char_status_hp
                     hp_peak = state.char_status_hp_peak
                     auto_pause = state.alarm_auto_pause
                     threshold = state.alarm_threshold
+                # Try pointer-based HP first, fall back to OCR
+                hp_value = None
+                if self.runtime.hp_service is not None:
+                    try:
+                        hp_value = self.runtime.hp_service.get_hp()
+                    except Exception:
+                        pass
+                if hp_value is None:
+                    with self.runtime.settings_lock:
+                        hp_value = state.char_status_hp
                 if hp_percent > 0 and hp_value is not None and hp_peak > 0 and now >= cooldown_until:
                     hp_ratio = (hp_value / hp_peak) * 100.0
                     if hp_ratio <= hp_percent:
@@ -1248,7 +1651,6 @@ class AutoHealerService:
                     break
                 continue
             with self.runtime.settings_lock:
-                hp_value = state.char_status_hp
                 hp_peak = state.char_status_hp_peak
                 mana_value = state.char_status_mana
                 mode = state.healer_mode
@@ -1261,6 +1663,13 @@ class AutoHealerService:
                 rune_pos = state.healer_rune_pos
                 mouse_speed = state.healer_mouse_speed
                 rune_delay_ms = state.healer_rune_delay_ms
+            # Try pointer-based HP first, fall back to OCR
+            hp_value = None
+            if self.runtime.hp_service is not None:
+                try:
+                    hp_value = self.runtime.hp_service.get_hp()
+                except Exception:
+                    pass
             if hp_value is None:
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
                     break

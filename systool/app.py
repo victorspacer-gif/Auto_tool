@@ -71,6 +71,13 @@ class SystemMonitorApp:
         self.fishing_service = self.container.fishing_service
         self.healer_service = self.container.healer_service
         self.light_service = self.container.light_service
+        self.hp_service = self.container.hp_service
+        # Wire HP service into runtime so alarm/healer services can access it
+        self.runtime.hp_service = self.hp_service
+        self.mp_service = self.container.mp_service
+        self.runtime.mp_service = self.mp_service
+        self.cap_service = self.container.cap_service
+        self.runtime.cap_service = self.cap_service
         self.rune_service = self.container.rune_service
         self.job_service = self.container.job_service
 
@@ -1700,6 +1707,28 @@ class SystemMonitorApp:
 
     def attach_light_process(self) -> None:
         ok, message = self.light_service.attach()
+        # Also resolve HP/MP/Cap pointers on light attach (same process handle)
+        if ok and self.hp_service is not None:
+            try:
+                hp_ok, hp_msg = self.hp_service.attach()
+                if hp_ok:
+                    message += f" | {hp_msg}"
+            except Exception as exc:
+                message += f" | HP attach warning: {exc}"
+        if ok and self.mp_service is not None:
+            try:
+                mp_ok, mp_msg = self.mp_service.attach()
+                if mp_ok:
+                    message += f" | {mp_msg}"
+            except Exception as exc:
+                message += f" | MP attach warning: {exc}"
+        if ok and self.cap_service is not None:
+            try:
+                cap_ok, cap_msg = self.cap_service.attach()
+                if cap_ok:
+                    message += f" | {cap_msg}"
+            except Exception as exc:
+                message += f" | Cap attach warning: {exc}"
         self._set_light_status(ok, message)
 
     def toggle_light_freeze(self) -> None:
@@ -2107,11 +2136,26 @@ class SystemMonitorApp:
         if self.char_status_level_label:
             self.char_status_level_label.config(text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}")
         if self.char_status_hp_label:
-            self.char_status_hp_label.config(text=f"HP: {state.char_status_hp if state.char_status_hp is not None else '—'}")
+            # Show pointer-derived HP when available, fall back to OCR
+            hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
+            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
+            self.char_status_hp_label.config(
+                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_mana_label:
-            self.char_status_mana_label.config(text=f"Mana: {state.char_status_mana if state.char_status_mana is not None else '—'}")
+            # Show pointer-derived MP when available, fall back to OCR
+            mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
+            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
+            self.char_status_mana_label.config(
+                text=f"Mana: {mp_display if mp_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_cap_label:
-            self.char_status_cap_label.config(text=f"Cap: {state.char_status_cap if state.char_status_cap is not None else '—'}")
+            # Show pointer-derived Cap when available, fall back to OCR
+            cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
+            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
+            self.char_status_cap_label.config(
+                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_food_label:
             self.char_status_food_label.config(text=f"Food: {state.char_status_food_text or '—'}")
         if self.char_status_regen_label:
@@ -2145,6 +2189,21 @@ class SystemMonitorApp:
     def on_close(self) -> None:
         try:
             self.light_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.hp_service is not None:
+                self.hp_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.mp_service is not None:
+                self.mp_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.cap_service is not None:
+                self.cap_service.detach()
         except Exception:
             pass
         self._hide_log_window()

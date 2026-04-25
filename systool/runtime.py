@@ -336,6 +336,10 @@ class AppRuntime:
         self.fish_stop = threading.Event()
         self.healer_stop = threading.Event()
         self.rune_stop = threading.Event()
+        # Optional service references — set by app.py after creation
+        self.hp_service: object | None = None
+        self.mp_service: object | None = None
+        self.cap_service: object | None = None
 
     def save_config(self) -> None:
         config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")

@@ -67,6 +67,23 @@ class LightMemoryController:
         except Exception as exc:
             raise MemoryWriteError(f"Failed to write byte at 0x{address:X}: {exc}") from exc
 
+    def read_double(self, address: int) -> float:
+        """Read a double-precision floating-point value from the target process."""
+        if self.pm is None:
+            raise ProcessNotFoundError("Not attached to process.")
+        return self.pm.read_double(address)
+
+    def write_double(self, address: int, value: float) -> PatchResult:
+        if self.pm is None:
+            raise ProcessNotFoundError("Not attached to process.")
+
+        try:
+            old_value = self.pm.read_double(address)
+            self.pm.write_double(address, value)
+            return PatchResult(address=address, old_value=int(old_value), new_value=int(value))
+        except Exception as exc:
+            raise MemoryWriteError(f"Failed to write double at 0x{address:X}: {exc}") from exc
+
     @staticmethod
     def _find_pid_by_name(process_name: str) -> int | None:
         target = process_name.lower()

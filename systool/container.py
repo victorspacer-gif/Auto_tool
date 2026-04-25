@@ -89,6 +89,21 @@ class ServiceContainer:
         return self._lazy("light_service", LightControlService, (self.runtime,))
 
     @property
+    def hp_service(self):
+        from .services import HpService
+        return self._lazy("hp_service", HpService, (self.runtime,))
+
+    @property
+    def mp_service(self):
+        from .services import MpService
+        return self._lazy("mp_service", MpService, (self.runtime,))
+
+    @property
+    def cap_service(self):
+        from .services import CapService
+        return self._lazy("cap_service", CapService, (self.runtime,))
+
+    @property
     def rune_service(self):
         from .services import RuneMakerService
         return self._lazy("rune_service", RuneMakerService, (self.runtime,))
