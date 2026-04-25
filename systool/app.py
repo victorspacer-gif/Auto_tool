@@ -2150,19 +2150,22 @@ class SystemMonitorApp:
         self._hide_log_window()
         self.root.withdraw()
 
-    def _make_tray_image(self, color: tuple[int, int, int] = (48, 209, 88)):
+    def _make_tray_image(self, color: tuple[int, int, int] = (48, 209, 88)) -> Image.Image:
         """Create the tray icon image with a colored circle and white 'M' overlay.
 
         Args:
             color: RGB tuple for the circle fill (default green).
+        Returns:
+            PIL Image in RGB mode (safe for pystray on Windows).
         """
-        image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        # Use RGB mode — some pystray builds on Windows silently fail with RGBA tray icons
+        image = Image.new("RGB", (64, 64), (*color[:3], 0))
         draw = ImageDraw.Draw(image)
         # Draw colored background circle
-        draw.ellipse([4, 4, 60, 60], fill=(*color[:3], 255))
+        draw.ellipse([4, 4, 60, 60], fill=color[:3])
         # White 'M' overlay (two rectangles forming an M shape)
-        draw.rectangle([20, 28, 44, 36], fill=(255, 255, 255, 220))
-        draw.rectangle([28, 20, 36, 44], fill=(255, 255, 255, 220))
+        draw.rectangle([20, 28, 44, 36], fill=(255, 255, 255))
+        draw.rectangle([28, 20, 36, 44], fill=(255, 255, 255))
         return image
 
     def _get_tray_color(self) -> tuple[int, int, int]:
@@ -2206,7 +2209,8 @@ class SystemMonitorApp:
             new_rgb = bytes(new_image.tobytes())
             if old_rgb != new_rgb:
                 self.tray_icon.image = new_image
-                # Force pystray to refresh the icon (required on some Windows builds)
+                # Small delay to let pystray process the new image before forcing a redraw
+                time.sleep(0.05)
                 try:
                     self.tray_icon.update()
                 except Exception:
@@ -2224,7 +2228,7 @@ class SystemMonitorApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", self.exit_app),
         )
-        self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image(), "SystemMonitor", menu)
+        self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image((239, 68, 68)), "SystemMonitor", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
         # Start periodic tray icon updates (every 500ms) to catch state changes
