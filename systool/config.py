@@ -71,6 +71,8 @@ class ConfigSerializer:
             "fish_spot_jitter": state.fish_spot_jitter,
             "fish_session_minutes": state.fish_session_minutes,
             "fish_min_cap": state.fish_min_cap,
+            "fish_auto_restart_enabled": state.fish_auto_restart_enabled,
+            "fish_auto_restart_food_min_secs": state.fish_auto_restart_food_min_secs,
             "rune_spell_key": state.rune_spell_key,
             "rune_cycle_delay_ms": state.rune_cycle_delay_ms,
             "rune_cycle_delay_variation_ms": state.rune_cycle_delay_variation_ms,
@@ -325,6 +327,8 @@ class ConfigSerializer:
         state.fish_spot_jitter = get_int("fish_spot_jitter", state.fish_spot_jitter)
         state.fish_session_minutes = max(1, min(40, get_int("fish_session_minutes", state.fish_session_minutes)))
         state.fish_min_cap = max(0, get_int("fish_min_cap", state.fish_min_cap))
+        state.fish_auto_restart_enabled = bool(get_bool("fish_auto_restart_enabled", state.fish_auto_restart_enabled))
+        state.fish_auto_restart_food_min_secs = max(10, get_int("fish_auto_restart_food_min_secs", state.fish_auto_restart_food_min_secs))
         state.fish_spots = list(spots)
         state.rune_spell_key = get_str("rune_spell_key", state.rune_spell_key)
         state.rune_cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune_cycle_delay_ms)

@@ -357,6 +357,19 @@ class SystemMonitorApp:
         except ValueError:
             pass
 
+    def _toggle_fish_restart(self) -> None:
+        enabled = bool(self.fish_restart_enabled_var.get())
+        if not enabled:
+            self.fish_restart_food_var.set("")
+        else:
+            try:
+                val = int(self.fish_restart_food_var.get())
+                if val < 10:
+                    val = 300
+                self.fish_restart_food_var.set(str(val))
+            except ValueError:
+                self.fish_restart_food_var.set("300")
+
     def _build_right_click_panel(self, parent: tk.Frame) -> None:
         panel = tk.LabelFrame(parent, text=" 🖱️  Right-Click Monitor ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         panel.pack(fill="x", pady=(0, 8))
@@ -762,6 +775,28 @@ class SystemMonitorApp:
         fish_min_cap = tk.StringVar(value=str(self.runtime.state.fish_min_cap))
         self.ui_vars["fish_min_cap_var"] = fish_min_cap
         self._label_entry(timing_panel, "Stop below cap:", fish_min_cap, width=6)
+
+        # Auto-restart on low food
+        restart_frame = tk.Frame(right, bg=BG)
+        restart_frame.pack(fill="x", pady=(0, 8))
+        self.fish_restart_enabled_var = tk.BooleanVar(value=self.runtime.state.fish_auto_restart_enabled)
+        self.ui_vars["fish_restart_enabled_var"] = self.fish_restart_enabled_var
+        cb = tk.Checkbutton(
+            restart_frame,
+            text="Auto-restart session when food drops below:",
+            variable=self.fish_restart_enabled_var,
+            bg=BG,
+            fg=FG,
+            activebackground=BG,
+            activeforeground=FG,
+            command=self._toggle_fish_restart,
+        )
+        cb.pack(side="left", anchor="w")
+        self.fish_restart_food_var = tk.StringVar(value=str(self.runtime.state.fish_auto_restart_food_min_secs))
+        self.ui_vars["fish_restart_food_var"] = self.fish_restart_food_var
+        entry = tk.Entry(restart_frame, textvariable=self.fish_restart_food_var, width=6, bg=PANEL, fg=FG)
+        entry.pack(side="left", padx=(8, 0), anchor="center")
+        tk.Label(restart_frame, text="sec", font=SMALL, fg=MUTED, bg=BG).pack(side="left", padx=(4, 0), anchor="center")
 
         session_panel = tk.LabelFrame(right, text=" ⏲️  Fishing Session ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         session_panel.pack(fill="x", pady=(0, 8))
@@ -2060,6 +2095,8 @@ class SystemMonitorApp:
             "fish_rod_jit_var": state.fish_rod_jitter,
             "fish_spot_jit_var": state.fish_spot_jitter,
             "fish_session_var": state.fish_session_minutes,
+            "fish_restart_enabled_var": state.fish_auto_restart_enabled,
+            "fish_restart_food_var": str(state.fish_auto_restart_food_min_secs),
             "rclick_mode_var": state.rclick_mode,
             "rclick_food_min_var": state.rclick_food_min_secs,
             "rclick_require_food_var": state.rclick_require_food,
@@ -2180,6 +2217,14 @@ class SystemMonitorApp:
             state.fish_rod_jitter = get_int("fish_rod_jit_var", state.fish_rod_jitter)
             state.fish_spot_jitter = get_int("fish_spot_jit_var", state.fish_spot_jitter)
             state.fish_session_minutes = max(1, min(60, get_int("fish_session_var", state.fish_session_minutes)))
+            if "fish_restart_enabled_var" in self.ui_vars:
+                state.fish_auto_restart_enabled = bool(self.ui_vars["fish_restart_enabled_var"].get())
+            if "fish_restart_food_var" in self.ui_vars:
+                try:
+                    val = int(self.ui_vars["fish_restart_food_var"].get())
+                    state.fish_auto_restart_food_min_secs = max(10, val) if val > 0 else 300
+                except ValueError:
+                    pass
             if "rune_spell_key_var" in self.ui_vars:
                 state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
             state.rune_cycle_delay_ms = get_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)

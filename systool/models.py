@@ -77,6 +77,9 @@ class AppState:
     rclick_click_delay_max_ms: int = 250
     rclick_post_click_settle_ms: int = 300
 
+    fish_auto_restart_enabled: bool = False
+    fish_auto_restart_food_min_secs: int = 300
+
     alarm_active: bool = False
     alarm_mp3: str = ""
     alarm_threshold: float = 0.80

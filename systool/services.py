@@ -1780,6 +1780,27 @@ class FishingService:
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
                 self.runtime.fish_stop.set()
                 break
+
+            # Auto-restart on low food check
+            with self.runtime.settings_lock:
+                restart_enabled = state.fish_auto_restart_enabled
+                restart_food_min = state.fish_auto_restart_food_min_secs
+                food_seconds = state.char_status_food_seconds
+            if (
+                restart_enabled
+                and food_seconds is not None
+                and food_seconds < restart_food_min
+                and self.runtime.fishing_service is not None
+            ):
+                self.runtime.ui.log(f"🍖 Food low ({food_seconds}s) — auto-restarting session")
+                self.runtime.ui.set_status("Low food — restarting fishing session", ORANGE)
+                self.runtime.fish_stop.set()
+                state.fish_active = False
+                time.sleep(1.0)
+                if not self.runtime.fish_stop.is_set():
+                    self.runtime.fishing_service.start()
+                break
+
             cycle_locked = False
             try:
                 cycle_window = max(0.90, max(cast_max, 0) / 1000.0 + 1.20)
