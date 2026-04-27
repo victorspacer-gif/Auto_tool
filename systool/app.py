@@ -163,6 +163,7 @@ class SystemMonitorApp:
             refresh_stats=self._refresh_stats,
             set_pause_label=self._sync_pause_state,
             job_state_changed=self._refresh_job_indicator,
+            state=self.state,
         )
 
         self.sandbox_sbie_info = find_installation() if HAS_SANDBOX_LAUNCHER and find_installation else None
@@ -330,6 +331,7 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.afk_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
         self._btn(buttons, "⏹ Stop", self.afk_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
+        self._verbose_toggle(buttons, "afk")
 
     def _update_afk_min(self, *args) -> None:
         try:
@@ -407,6 +409,7 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
         self._btn(buttons, "⏹ Stop", self.rclick_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
+        self._verbose_toggle(buttons, "rclick")
 
     def _build_rune_tab(self, parent: tk.Frame) -> None:
         canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
@@ -516,6 +519,7 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(0, 8))
         self._btn(buttons, "▶ Start Rune Session", self.rune_service.start, GREEN).pack(fill="x", pady=2)
         self._btn(buttons, "⏹ Stop Rune Session", self.rune_service.stop, RED).pack(fill="x", pady=2)
+        self._verbose_toggle(buttons, "rune")
 
     def _build_alarm_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
@@ -560,6 +564,7 @@ class SystemMonitorApp:
         action_row.pack(fill="x", pady=(10, 0))
         self._btn(action_row, "▶ Start Watching", self.alarm_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
         self._btn(action_row, "⏹ Stop", self.alarm_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
+        self._verbose_toggle(action_row, "alarm")
 
     def _build_healer_tab(self, parent: tk.Frame) -> None:
         canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
@@ -628,6 +633,7 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(0, 8))
         self._btn(buttons, "▶ Start Auto Healer", self.healer_service.start, GREEN).pack(fill="x", pady=2)
         self._btn(buttons, "⏹ Stop Auto Healer", self.healer_service.stop, RED).pack(fill="x", pady=2)
+        self._verbose_toggle(buttons, "healer")
 
         help_panel = tk.LabelFrame(right, text=" ℹ️  Flow ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         help_panel.pack(fill="both", expand=True, pady=(0, 8))
@@ -683,6 +689,7 @@ class SystemMonitorApp:
         self._btn(buttons, "Apply Default", self.apply_light_default, ORANGE).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Apply Boosted", self.apply_light_boosted, GREEN).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Reset", self.reset_light_original, BLUE).pack(side="left", padx=2, expand=True, fill="x")
+        self._verbose_toggle(buttons, "light")
         tk.Label(panel, text="Leave target color address blank to use the pointer list from Light Pointers.CT. Apply Default writes color 215 and intensity 7. Apply Boosted writes color 215 and intensity 8 to the next byte. Reset restores the last unchanged pair that was captured before an apply.", font=SMALL, fg=MUTED, bg=PANEL, justify="left", wraplength=860).pack(anchor="w", pady=(10, 6))
         dep_text = "Light module ready" if HAS_LIGHT_MODULE else "Install psutil and pymem to use this tab"
         self.light_status_label = tk.Label(panel, text=dep_text, font=SMALL_B, fg=TEAL if HAS_LIGHT_MODULE else ORANGE, bg=PANEL, anchor="w", justify="left")
@@ -800,6 +807,7 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(0, 8))
         self._btn(buttons, "▶ Start Fishing Session", self.fishing_service.start, GREEN).pack(fill="x", pady=2)
         self._btn(buttons, "⏹ Stop Fishing Session", self.fishing_service.stop, RED).pack(fill="x", pady=2)
+        self._verbose_toggle(buttons, "fish")
         tk.Label(right, text="Quick toggle hotkey: see Hotkeys tab (fish_stop)", font=SMALL, fg=ORANGE, bg=BG).pack(anchor="w")
 
         help_panel = tk.LabelFrame(right, text=" ℹ️  How It Works ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -1343,6 +1351,35 @@ class SystemMonitorApp:
         tk.Label(row, text=label, font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
         self._entry(row, var, width).pack(side="left", padx=4)
         return row
+
+    def _verbose_toggle(self, parent: tk.Frame, module_id: str, side: str = "right", padx: int = 6) -> None:
+        """Add a small Verbose toggle button next to Start/Stop controls."""
+        flag_name = f"{module_id}_verbose"
+        current = getattr(self.runtime.state, flag_name, False)
+        var = tk.BooleanVar(value=current)
+        self.ui_vars[f"{flag_name}_var"] = var
+
+        def _toggle():
+            var.set(not var.get())
+            setattr(self.runtime.state, flag_name, var.get())
+            btn.config(text=f"Verbose {'ON' if var.get() else 'OFF'}")
+
+        btn = tk.Button(
+            parent,
+            text=f"Verbose {'ON' if current else 'OFF'}",
+            command=_toggle,
+            font=SMALL,
+            bg=MUTED if not current else ORANGE,
+            fg="white",
+            activebackground=ORANGE,
+            activeforeground="white",
+            bd=0,
+            relief="flat",
+            cursor="hand2",
+            padx=4,
+            pady=(0, 1),
+        )
+        btn.pack(side=side, padx=padx)
 
     def _build_position_row(self, parent: tk.Frame, title: str, label_text: str, command) -> None:
         frame = tk.Frame(parent, bg=PANEL)

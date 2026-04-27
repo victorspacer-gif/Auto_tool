@@ -176,6 +176,16 @@ class AppState:
     light_original_color_value: int | None = None
     light_original_intensity_value: int | None = None
 
+    # Verbose logging toggles for troubleshooting (default False)
+    afk_verbose: bool = False
+    rclick_verbose: bool = False
+    alarm_verbose: bool = False
+    char_status_verbose: bool = False
+    fish_verbose: bool = False
+    rune_verbose: bool = False
+    healer_verbose: bool = False
+    light_verbose: bool = False
+
     # HP pointer (primary source, falls back to OCR)
     hp_pointer_address_hex: str = ""
     hp_source: str = "ocr"  # 'pointer' or 'ocr'

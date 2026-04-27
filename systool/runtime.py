@@ -119,6 +119,16 @@ class UINotifier:
         self._set_pause_label: Callable[[bool], None] = lambda _paused: None
         self._job_state_changed: Callable[[HotkeyJob], None] = lambda _job: None
 
+    def dispatch(self, callback: Callable[[], None]) -> None:
+        self._dispatch(callback)
+
+    def log(self, message: str) -> None:
+        self._dispatch(lambda: self._log(message))
+
+    # Module-specific logging (only when that module's verbose flag is True)
+    def _get_state(self) -> AppState | None:
+        return getattr(self, '_state', None)
+
     def configure(
         self,
         dispatch: Callable[[Callable[[], None]], None],
@@ -127,6 +137,7 @@ class UINotifier:
         refresh_stats: Callable[[], None],
         set_pause_label: Callable[[bool], None],
         job_state_changed: Callable[[HotkeyJob], None],
+        state: AppState | None = None,
     ) -> None:
         self._dispatch = dispatch
         self._log = log
@@ -134,12 +145,13 @@ class UINotifier:
         self._refresh_stats = refresh_stats
         self._set_pause_label = set_pause_label
         self._job_state_changed = job_state_changed
+        self._state = state
 
-    def dispatch(self, callback: Callable[[], None]) -> None:
-        self._dispatch(callback)
-
-    def log(self, message: str) -> None:
-        self._dispatch(lambda: self._log(message))
+    def _module_log(self, module_id: str, message: str) -> None:
+        """Log a message only if the given module's verbose flag is True."""
+        state = self._get_state()
+        if state is not None and getattr(state, f"{module_id}_verbose", False):
+            self.log(f"[{module_id}] {message}")
 
     def set_status(self, text: str, color: str) -> None:
         self._dispatch(lambda: self._set_status(text, color))
