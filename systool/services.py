@@ -1766,6 +1766,9 @@ class FishingService:
                 wait_min = state.fish_wait_min_ms
                 wait_max = state.fish_wait_max_ms
                 min_cap = state.fish_min_cap
+                food_seconds = state.char_status_food_seconds
+                auto_restart_enabled = state.fish_auto_restart_enabled
+                auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
                 # Use pointer-based Cap first, fall back to OCR
                 current_cap = None
                 if self.runtime.cap_service is not None:
@@ -1778,6 +1781,12 @@ class FishingService:
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
                 self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
+                self.runtime.fish_stop.set()
+                break
+            # Check food level for auto-restart
+            if auto_restart_enabled and food_seconds is not None and food_seconds <= auto_restart_food_min_secs:
+                self.runtime.ui.log(f"🍖 Food running low ({food_seconds}s) — stopping session to eat")
+                self.runtime.ui.set_status("Food low — stopping fishing to eat", ORANGE)
                 self.runtime.fish_stop.set()
                 break
             cycle_locked = False
@@ -1830,7 +1839,23 @@ class FishingService:
         if self.runtime.fish_stop.is_set():
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
-        self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
+        # Check if we stopped due to low food and auto-restart is enabled
+        with self.runtime.settings_lock:
+            food_seconds = state.char_status_food_seconds
+            auto_restart_enabled = state.fish_auto_restart_enabled
+            auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
+        if (
+            auto_restart_enabled
+            and food_seconds is not None
+            and food_seconds <= auto_restart_food_min_secs
+        ):
+            self.runtime.ui.log(
+                f"🔄 Auto-restart triggered — waiting 1s for cleanup, then starting fresh session"
+            )
+            time.sleep(1.0)
+            self.start()
+        else:
+            self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
 
 
 class AutoHealerService:

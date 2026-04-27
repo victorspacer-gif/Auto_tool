@@ -756,6 +756,29 @@ class SystemMonitorApp:
         self.ui_vars["fish_min_cap_var"] = fish_min_cap
         self._label_entry(timing_panel, "Stop below cap:", fish_min_cap, width=6)
 
+        # Auto-restart fishing when food drops
+        fish_auto_restart_enabled = tk.BooleanVar(value=self.runtime.state.fish_auto_restart_enabled)
+        fish_auto_restart_food_secs = tk.StringVar(value=str(self.runtime.state.fish_auto_restart_food_min_secs))
+        self.ui_vars["fish_auto_restart_enabled_var"] = fish_auto_restart_enabled
+        self.ui_vars["fish_auto_restart_food_secs_var"] = fish_auto_restart_food_secs
+
+        ar_frame = tk.Frame(timing_panel, bg=PANEL)
+        ar_frame.pack(fill="x", pady=2)
+        tk.Checkbutton(
+            ar_frame,
+            variable=fish_auto_restart_enabled,
+            command=lambda: self._on_fish_auto_restart_toggle(fish_auto_restart_food_secs),
+            bg=PANEL,
+            fg=FG,
+            font=BOLD,
+            activebackground=PANEL,
+            activeforeground=TEAL,
+        ).pack(side="left")
+        ar_label = tk.Label(ar_frame, text="Auto-restart session when food drops below:", font=BOLD, fg=FG, bg=PANEL)
+        ar_label.pack(side="left", padx=(8, 4))
+        self._entry(ar_frame, fish_auto_restart_food_secs, width=5).pack(side="left")
+        tk.Label(ar_frame, text="sec", font=BOLD, fg=TEAL, bg=PANEL).pack(side="left", padx=(2, 0))
+
         session_panel = tk.LabelFrame(right, text=" ⏲️  Fishing Session ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         session_panel.pack(fill="x", pady=(0, 8))
         self.fish_session_value_label = tk.Label(
@@ -1310,6 +1333,23 @@ class SystemMonitorApp:
                 self.sandbox_kill_button.config(state="disabled")
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _on_fish_auto_restart_toggle(self, food_secs_var: tk.StringVar) -> None:
+        """Toggle handler for auto-restart checkbox. Clears entry when unchecked, defaults to 300s when checked."""
+        state = self.runtime.state
+        if not state.fish_auto_restart_enabled:
+            # Unchecked — clear the entry field
+            food_secs_var.set("")
+        else:
+            # Checked — default to 300s if empty or invalid
+            try:
+                val = int(food_secs_var.get())
+                if val < 30:
+                    food_secs_var.set("30")
+                elif val > 600:
+                    food_secs_var.set("600")
+            except (ValueError, TypeError):
+                food_secs_var.set("300")
 
     def _terminate_sandbox(self) -> None:
         if not self.sandbox_proc:
@@ -2023,6 +2063,8 @@ class SystemMonitorApp:
             "fish_rod_jit_var": state.fish_rod_jitter,
             "fish_spot_jit_var": state.fish_spot_jitter,
             "fish_session_var": state.fish_session_minutes,
+            "fish_auto_restart_enabled_var": bool(state.fish_auto_restart_enabled),
+            "fish_auto_restart_food_secs_var": str(state.fish_auto_restart_food_min_secs),
             "rclick_mode_var": state.rclick_mode,
             "rclick_food_min_var": state.rclick_food_min_secs,
             "rclick_require_food_var": state.rclick_require_food,
@@ -2143,6 +2185,11 @@ class SystemMonitorApp:
             state.fish_rod_jitter = get_int("fish_rod_jit_var", state.fish_rod_jitter)
             state.fish_spot_jitter = get_int("fish_spot_jit_var", state.fish_spot_jitter)
             state.fish_session_minutes = max(1, min(60, get_int("fish_session_var", state.fish_session_minutes)))
+            if "fish_auto_restart_enabled_var" in self.ui_vars:
+                state.fish_auto_restart_enabled = bool(self.ui_vars["fish_auto_restart_enabled_var"].get())
+            if "fish_auto_restart_food_secs_var" in self.ui_vars:
+                val = get_int("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
+                state.fish_auto_restart_food_min_secs = max(30, min(600, val))
             if "rune_spell_key_var" in self.ui_vars:
                 state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
             state.rune_cycle_delay_ms = get_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)
