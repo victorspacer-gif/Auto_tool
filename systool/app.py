@@ -139,6 +139,10 @@ class SystemMonitorApp:
         self.hotkey_vars: dict[str, tk.StringVar] = {}
         self.log_history: list[str] = []
 
+        # Background stats polling (HP/MP/Cap pointer reads)
+        self._stats_poll_timer_id: int | None = None
+        self._prev_stats_values: tuple[float | None, float | None, float | None] = (None, None, None)
+
     def run(self) -> None:
         self.build_ui()
         self.root.mainloop()
@@ -169,6 +173,9 @@ class SystemMonitorApp:
         self._refresh_stats()
         self._refresh_character_status_display()
         self._refresh_variables_display()
+        # Start background stats polling (100ms interval, UI-only-on-change)
+        self._start_stats_polling()
+
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()
         if HAS_TRAY:
@@ -2319,21 +2326,25 @@ class SystemMonitorApp:
             addr = state.cap_pointer_address_hex or "—"
             self.var_cap_addr_label.config(text=f"Cap address: {addr}")
 
-        # Right column: read statistics (from OCR character status service)
+        # Right column: regen rates & read statistics (from OCR character status service)
         if self.var_regen_label:
+            hp_regen = state.char_status_hp_regen_per_min if hasattr(state, 'char_status_hp_regen_per_min') else 0.0
+            mp_regen = state.char_status_mana_regen_per_min if hasattr(state, 'char_status_mana_regen_per_min') else 0.0
             self.var_regen_label.config(
-                text=f"Regen: HP {state.char_status_hp_regen_per_min:.1f}/min | Mana {state.char_status_mana_regen_per_min:.1f}/min"
+                text=f"Regen: HP {hp_regen:.1f}/min | Mana {mp_regen:.1f}/min"
             )
         if self.var_read_stats_label:
+            reads = state.char_status_reads if hasattr(state, 'char_status_reads') else 0
+            misses = state.char_status_failures if hasattr(state, 'char_status_failures') else 0
             self.var_read_stats_label.config(
-                text=f"Reads: {state.char_status_reads}  |  Misses: {state.char_status_failures}"
+                text=f"Reads: {reads} | Misses: {misses}"
             )
         if self.var_last_update_label:
             if state.char_status_last_seen:
                 seen = time.strftime("%H:%M:%S", time.localtime(state.char_status_last_seen))
-                peak_text = f"  |  HP max: {state.char_status_hp_peak}" if state.char_status_hp_peak else ""
+                peak_text = f"  |  HP max: {state.char_status_hp_peak}" if hasattr(state, 'char_status_hp_peak') and state.char_status_hp_peak else ""
                 self.var_last_update_label.config(
-                    text=f"Last update: {seen}  |  Reads: {state.char_status_reads}{peak_text}"
+                    text=f"Last update: {seen}  |  Reads: {reads}{peak_text}"
                 )
             else:
                 self.var_last_update_label.config(text="Last update: —")
@@ -2347,6 +2358,40 @@ class SystemMonitorApp:
             label.config(text=f"{title}: ({x_val},{y_val}) {width}×{height}")
         else:
             label.config(text=f"{title}: not selected")
+
+    def _start_stats_polling(self) -> None:
+        """Start background HP/MP/Cap pointer polling (100ms interval)."""
+        self._stats_poll_timer_id = 100
+
+    def _poll_stats_background(self) -> None:
+        """Background poller: read HP/MP/Cap every 100ms, update UI only on change."""
+        state = self.runtime.state
+        old_hp, old_mp, old_cap = self._prev_stats_values
+
+        # Trigger batch memory read (updates state.hp_value, state.mp_value, state.cap_value)
+        if self.hp_service is not None and hasattr(self.hp_service, "_read_all_stats"):
+            try:
+                self.hp_service._read_all_stats()
+            except Exception:
+                pass
+
+        new_hp = state.hp_value
+        new_mp = state.mp_value
+        new_cap = state.cap_value
+
+        # Only update UI if at least one value changed
+        if (new_hp != old_hp or new_mp != old_mp or new_cap != old_cap):
+            self._prev_stats_values = (new_hp, new_mp, new_cap)
+            self.root.after(0, self._refresh_variables_display)
+
+        # Schedule next poll (non-blocking via root.after)
+        if self._stats_poll_timer_id is not None:
+            self.root.after(100, self._poll_stats_background)
+
+    def _stop_stats_polling(self) -> None:
+        """Stop background stats polling."""
+        self._stats_poll_timer_id = None
+
 
     def on_close(self) -> None:
         try:
@@ -2470,6 +2515,9 @@ class SystemMonitorApp:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift(), self.root.focus_force()))
 
     def exit_app(self, *args) -> None:
+        # Stop background stats polling
+        self._stop_stats_polling()
+
         self.char_status_service.stop()
         if self.tray_icon:
             self.tray_icon.stop()
