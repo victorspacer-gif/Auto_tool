@@ -239,6 +239,50 @@ class TestJSONRoundTrip:
         finally:
             os.unlink(path)
 
+    def test_json_round_trip_preserves_healer_mana_thresholds(self):
+        """Verify healer_min_mana and healer_max_mana survive JSON save/load."""
+        state = AppState()
+        state.healer_mode = "rune"
+        state.healer_hp_percent = 45
+        state.healer_mouse_speed = 1.5
+        state.healer_min_mana = 30
+        state.healer_max_mana = 35
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+
+        try:
+            ConfigSerializer.save_json(path, state)
+            payload = ConfigSerializer.load_file(path)
+            new_state = AppState()
+            ConfigSerializer.apply_loaded(new_state, payload)
+            assert new_state.healer_mode == "rune"
+            assert new_state.healer_hp_percent == 45
+            assert new_state.healer_mouse_speed == 1.5
+            assert new_state.healer_min_mana == 30
+            assert new_state.healer_max_mana == 35
+        finally:
+            os.unlink(path)
+
+    def test_json_round_trip_preserves_healer_mana_clamped(self):
+        """Verify healer_max_mana is clamped to >= min_mana on load."""
+        state = AppState()
+        state.healer_min_mana = 50
+        state.healer_max_mana = 30  # invalid: max < min
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+
+        try:
+            ConfigSerializer.save_json(path, state)
+            payload = ConfigSerializer.load_file(path)
+            new_state = AppState()
+            ConfigSerializer.apply_loaded(new_state, payload)
+            # apply_loaded should clamp max to min when max < min
+            assert new_state.healer_max_mana == 50
+        finally:
+            os.unlink(path)
+
     def test_json_round_trip_preserves_light_settings(self):
         state = AppState()
         state.light_process_name = "test.exe"
@@ -406,6 +450,31 @@ class TestXMLRoundTrip:
             assert new_state.healer_mode == "rune"
             assert new_state.healer_hp_percent == 45
             assert new_state.healer_mouse_speed == 1.5
+        finally:
+            os.unlink(path)
+
+    def test_xml_round_trip_preserves_healer_mana_thresholds(self):
+        """Verify healer_min_mana and healer_max_mana survive XML save/load."""
+        state = AppState()
+        state.healer_mode = "rune"
+        state.healer_hp_percent = 45
+        state.healer_mouse_speed = 1.5
+        state.healer_min_mana = 30
+        state.healer_max_mana = 35
+
+        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as f:
+            path = f.name
+
+        try:
+            ConfigSerializer.save_xml(path, state)
+            payload = ConfigSerializer.load_file(path)
+            new_state = AppState()
+            ConfigSerializer.apply_loaded(new_state, payload)
+            assert new_state.healer_mode == "rune"
+            assert new_state.healer_hp_percent == 45
+            assert new_state.healer_mouse_speed == 1.5
+            assert new_state.healer_min_mana == 30
+            assert new_state.healer_max_mana == 35
         finally:
             os.unlink(path)
 
