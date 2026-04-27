@@ -2209,7 +2209,13 @@ class HotkeyJobService:
         self.runtime.ui.set_status(f"Job #{job.job_id} ({job.key}) started", GREEN)
 
     def stop_job(self, job: HotkeyJob) -> None:
+        if not job.running:
+            return
         job.stop_evt.set()
+        job.running = False
+        self.runtime.ui.job_state_changed(job)
+        self.runtime.ui.log(f"⏹ Job #{job.job_id} ({job.key}) stopped")
+        self.runtime.ui.set_status(f"Job #{job.job_id} stopped", RED)
 
     def stop_all(self, stop_afk, stop_rclick, stop_alarm, stop_fishing, stop_rune) -> None:
         for job in list(self.runtime.state.jobs):

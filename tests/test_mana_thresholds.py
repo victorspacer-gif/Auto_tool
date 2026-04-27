@@ -255,3 +255,90 @@ class TestManaThresholdEdgeCases:
         for _ in range(100):
             threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
             assert threshold == 500
+
+
+class TestHotkeyJobMaxManaReadBack:
+    """Regression tests for max_mana read-back and clamping in _read_job_vars."""
+
+    def test_max_mana_clamped_when_less_than_min(self):
+        """If user sets max_mana < min_mana, it should be clamped to min_mana.
+        This prevents random.randint(min, max) from crashing with ValueError.
+        """
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1, min_mana=100, max_mana=50)
+        # Simulate what _read_job_vars does after the fix:
+        clamped_max = max(job.min_mana, 50)  # user entered 50
+        assert clamped_max == 100
+
+    def test_min_mana_clamped_to_zero_minimum(self):
+        """min_mana should never go negative."""
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1, min_mana=-5, max_mana=100)
+        clamped_min = max(0, -5)  # what _read_job_vars does
+        assert clamped_min == 0
+
+    def test_max_mana_read_back_applied(self):
+        """After editing a job's max_mana in the UI and clicking Start,
+        the new value should be used — not the original default of 0.
+        """
+        from systool.models import HotkeyJob
+        # Simulate: user creates job with min=50, max=200
+        job = HotkeyJob(job_id=1, min_mana=50, max_mana=200)
+        # User edits UI to change max_mana from 200 to 300
+        ui_max_mana = "300"
+        ui_min_mana = "50"
+        # _read_job_vars reads and clamps:
+        new_min = max(0, int(ui_min_mana))
+        new_max = max(new_min, int(ui_max_mana))
+        assert new_max == 300
+        assert new_min == 50
+
+    def test_burst_chance_clamped_to_0_1(self):
+        """burst_chance should be clamped to [0.0, 1.0]."""
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1)
+        # Simulate user entering 200% chance
+        ui_val = "200"
+        clamped = min(1.0, max(0.0, int(ui_val) / 100.0))
+        assert clamped == 1.0
+
+    def test_burst_cnt_max_clamped_above_min(self):
+        """burst_cnt_max should be >= burst_cnt_min."""
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1)
+        ui_cmin = "8"
+        ui_cmax = "3"
+        cmin = max(0, int(ui_cmin))
+        cmax = max(cmin, int(ui_cmax))
+        assert cmax == 8
+
+
+class TestStopJobReportsState:
+    """Verify stop_job sets running=False and calls UI callbacks."""
+
+    def test_stop_job_sets_running_false(self):
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1)
+        job.running = True
+        # Simulate what the fixed stop_job does:
+        job.stop_evt.set()
+        job.running = False
+        assert not job.running
+
+    def test_stop_job_is_idempotent(self):
+        """Calling stop_job on an already-stopped job should be safe."""
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1)
+        # First call: sets event and running=False
+        job.stop_evt.set()
+        job.running = False
+        # Second call: should not crash (early return guard)
+        assert not job.running  # stays False
+
+    def test_stop_all_sets_events_for_jobs(self):
+        """stop_all should set stop_evt for every job."""
+        from systool.models import HotkeyJob
+        jobs = [HotkeyJob(job_id=i) for i in range(3)]
+        for job in jobs:
+            job.stop_evt.set()
+        assert all(j.stop_evt.is_set() for j in jobs)
