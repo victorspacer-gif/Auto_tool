@@ -2028,6 +2028,7 @@ class RuneMakerService:
                 cycle_delay_ms = state.rune_cycle_delay_ms
                 cycle_variation_ms = state.rune_cycle_delay_variation_ms
                 min_mana = state.rune_min_mana
+                max_mana = state.rune_max_mana
                 # Use pointer-based MP first, fall back to OCR
                 current_mana = None
                 if self.runtime.mp_service is not None:
@@ -2049,10 +2050,13 @@ class RuneMakerService:
                 self.runtime.ui.log(f"⏲️ Rune session stopped — avb blank runes limit reached ({blank_rune_limit})")
                 self.runtime.ui.set_status("Rune session finished by avb blank runes limit", ORANGE)
                 break
-            if min_mana > 0 and current_mana is not None and current_mana < min_mana:
-                if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
-                    break
-                continue
+            if min_mana > 0 and current_mana is not None:
+                # Pick a random threshold between min and max (if max set), otherwise use min
+                threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
+                if current_mana < threshold:
+                    if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
+                        break
+                    continue
             queue_window = max(
                 0.90,
                 cast_delay_ms / 1000.0
@@ -2207,8 +2211,11 @@ class HotkeyJobService:
                 if current_mana is None:
                     with self.runtime.settings_lock:
                         current_mana = self.runtime.state.char_status_mana
-                if current_mana is not None and current_mana < job.min_mana:
-                    continue
+                if current_mana is not None:
+                    # Pick a random threshold between min and max (if max set), otherwise use min
+                    threshold = random.randint(job.min_mana, job.max_mana) if job.max_mana > job.min_mana else job.min_mana
+                    if current_mana < threshold:
+                        continue
             if job.use_focus and job.window_name.strip():
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):

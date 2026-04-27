@@ -459,8 +459,11 @@ class SystemMonitorApp:
         self._label_entry(spell_panel, f"Cycle variation ({unit}):", rune_cycle_variation, width=7)
         self._label_entry(spell_panel, "Position jitter (px ±):", rune_jitter, width=5)
         rune_min_mana = tk.StringVar(value=str(self.runtime.state.rune_min_mana))
+        rune_max_mana = tk.StringVar(value=str(self.runtime.state.rune_max_mana))
         self.ui_vars["rune_min_mana_var"] = rune_min_mana
+        self.ui_vars["rune_max_mana_var"] = rune_max_mana
         self._label_entry(spell_panel, "Min mana to cast:", rune_min_mana, width=7)
+        self._label_entry(spell_panel, "Max mana (random range):", rune_max_mana, width=10)
         self._label_entry(spell_panel, "avb blank runes:", rune_blank_cycles, width=7)
         cycle_label = tk.Label(spell_panel, text="≈ Cycle time: —", font=SMALL_B, fg=TEAL, bg=PANEL)
         cycle_label.pack(anchor="w", pady=(6, 0))
@@ -581,12 +584,14 @@ class SystemMonitorApp:
         healer_hp_percent = tk.StringVar(value=str(self.runtime.state.healer_hp_percent))
         healer_hp_value = tk.StringVar(value=str(self.runtime.state.healer_hp_value))
         healer_min_mana = tk.StringVar(value=str(self.runtime.state.healer_min_mana))
+        healer_max_mana = tk.StringVar(value=str(self.runtime.state.healer_max_mana))
         self.ui_vars["healer_mode_var"] = healer_mode
         self.ui_vars["healer_spell_key_var"] = healer_spell_key
         self.ui_vars["healer_use_percent_var"] = healer_use_percent
         self.ui_vars["healer_hp_percent_var"] = healer_hp_percent
         self.ui_vars["healer_hp_value_var"] = healer_hp_value
         self.ui_vars["healer_min_mana_var"] = healer_min_mana
+        self.ui_vars["healer_max_mana_var"] = healer_max_mana
         mode_row = tk.Frame(mode_panel, bg=PANEL)
         mode_row.pack(fill="x", pady=2)
         tk.Label(mode_row, text="Heal with:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
@@ -599,6 +604,7 @@ class SystemMonitorApp:
         self._label_entry(mode_panel, "Heal below HP %:", healer_hp_percent, width=6)
         self._label_entry(mode_panel, "Heal below HP value:", healer_hp_value, width=6)
         self._label_entry(mode_panel, "Min mana to heal:", healer_min_mana, width=6)
+        self._label_entry(mode_panel, "Max mana (random range):", healer_max_mana, width=8)
 
         rune_panel = tk.LabelFrame(left, text=" 🧿  Rune Healing ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         rune_panel.pack(fill="x", pady=(0, 8))
@@ -1588,6 +1594,10 @@ class SystemMonitorApp:
         min_mana_var = tk.StringVar(value=str(job.min_mana))
         self._entry(row1, min_mana_var, 6).pack(side="left", padx=4)
         outer._vars["min_mana"] = min_mana_var
+        tk.Label(row1, text="Max mana:", font=BOLD, fg=FG, bg=PANEL).pack(side="left", padx=(8, 0))
+        max_mana_var = tk.StringVar(value=str(job.max_mana))
+        self._entry(row1, max_mana_var, 6).pack(side="left", padx=4)
+        outer._vars["max_mana"] = max_mana_var
         indicator = tk.Label(row1, text="●", font=BOLD, fg=MUTED, bg=PANEL)
         indicator.pack(side="right", padx=4)
         outer._indicator = indicator
@@ -2021,6 +2031,7 @@ class SystemMonitorApp:
             "rune_spell_key_var": state.rune_spell_key,
             "rune_jitter_var": state.rune_jitter,
             "rune_min_mana_var": state.rune_min_mana,
+            "rune_max_mana_var": state.rune_max_mana,
             "rune_blank_cycles_var": state.rune_available_blank_runes,
             "healer_mode_var": state.healer_mode,
             "healer_spell_key_var": state.healer_spell_key,
@@ -2028,6 +2039,7 @@ class SystemMonitorApp:
             "healer_hp_percent_var": state.healer_hp_percent,
             "healer_hp_value_var": state.healer_hp_value,
             "healer_min_mana_var": state.healer_min_mana,
+            "healer_max_mana_var": state.healer_max_mana,
             "healer_mouse_speed_var": state.healer_mouse_speed,
             "healer_rune_delay_var": state.healer_rune_delay_ms,
             "light_process_name_var": state.light_process_name,
@@ -2139,6 +2151,7 @@ class SystemMonitorApp:
             state.rune_cast_delay_ms = get_ms("rune_cast_delay_var", state.rune_cast_delay_ms)
             state.rune_post_cast_settle_ms = max(100, get_ms("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
             state.rune_min_mana = max(0, get_int("rune_min_mana_var", state.rune_min_mana))
+            state.rune_max_mana = max(state.rune_min_mana, get_int("rune_max_mana_var", state.rune_max_mana))
             state.rune_available_blank_runes = max(0, get_int("rune_blank_cycles_var", state.rune_available_blank_runes))
             state.rune_mouse_move_min_ms = max(20, get_ms("rune_move_min_var", state.rune_mouse_move_min_ms))
             state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, get_ms("rune_move_max_var", state.rune_mouse_move_max_ms))

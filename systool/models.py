@@ -14,6 +14,7 @@ class HotkeyJob:
     min_ms: int = 20_000
     max_ms: int = 30_000
     min_mana: int = 0
+    max_mana: int = 0
     burst_enabled: bool = False
     burst_chance: float = 0.20
     burst_cnt_min: int = 3
@@ -141,6 +142,7 @@ class AppState:
     rune_cast_delay_ms: int = 900
     rune_post_cast_settle_ms: int = 600
     rune_min_mana: int = 0
+    rune_max_mana: int = 0
     rune_available_blank_runes: int = 0
     rune_mouse_move_min_ms: int = 180
     rune_mouse_move_max_ms: int = 350
@@ -156,6 +158,7 @@ class AppState:
     healer_hp_percent: int = 60
     healer_hp_value: int = 120
     healer_min_mana: int = 0
+    healer_max_mana: int = 0
     healer_character_pos: tuple[int, int] = (0, 0)
     healer_rune_pos: tuple[int, int] = (0, 0)
     healer_mouse_speed: float = 1.0
