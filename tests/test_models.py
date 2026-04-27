@@ -14,8 +14,8 @@ class TestHotkeyJobDefaults:
 
     def test_default_ms_range(self):
         job = HotkeyJob(job_id=1)
-        assert job.min_ms == 1_000
-        assert job.max_ms == 3_000
+        assert job.min_ms == 20_000
+        assert job.max_ms == 30_000
 
     def test_default_mana(self):
         job = HotkeyJob(job_id=1)
@@ -91,8 +91,8 @@ class TestAppStateDefaults:
 
     def test_afk_defaults(self):
         state = AppState()
-        assert state.afk_min_ms == 30_000
-        assert state.afk_max_ms == 60_000
+        assert state.afk_min_ms == 70_000
+        assert state.afk_max_ms == 88_000
 
     def test_rclick_defaults(self):
         state = AppState()
@@ -102,7 +102,7 @@ class TestAppStateDefaults:
 
     def test_alarm_defaults(self):
         state = AppState()
-        assert state.alarm_threshold == 0.90
+        assert state.alarm_threshold == 0.80
         assert state.alarm_cooldown == 10
 
     def test_char_status_defaults(self):
@@ -134,9 +134,11 @@ class TestAppStateDefaults:
     def test_light_defaults(self):
         state = AppState()
         assert state.light_process_name == "miracle_gl.exe"
-        assert state.light_address_hex == "133AA965"
-        assert state.light_default_value_hex == "07"
-        assert state.light_boosted_value_hex == "11"
+        assert state.light_direct_address_hex == ""
+        assert state.light_freeze_enabled is False
+        assert state.light_freeze_color_value == 0
+        assert state.light_freeze_intensity_value == 0
+        assert state.light_freeze_interval_ms == 1_000
 
     def test_stats_defaults(self):
         state = AppState()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .models import AppState, HotkeyJob
@@ -167,6 +168,8 @@ class ConfigSerializer:
 
     @staticmethod
     def load_file(path: str) -> dict:
+        if path.endswith(".xml"):
+            return ConfigSerializer._load_xml(path)
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
         return {
@@ -226,6 +229,18 @@ class ConfigSerializer:
                 hotkeys = {field.tag: field.text or "" for field in child}
             else:
                 cfg[child.tag] = child.text or ""
+        return {
+            "cfg": cfg,
+            "jobs": jobs,
+            "spots": spots,
+            "alarm_region": alarm_region,
+            "char_status_region": char_status_region,
+            "char_status_hp_region": char_status_hp_region,
+            "char_status_mana_region": char_status_mana_region,
+            "char_status_cap_region": char_status_cap_region,
+            "hotkeys": hotkeys,
+        }
+
     @staticmethod
     def apply_loaded(state: AppState, payload: dict) -> None:
         cfg = payload["cfg"]

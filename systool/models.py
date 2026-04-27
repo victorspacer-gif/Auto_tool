@@ -161,8 +161,8 @@ class AppState:
     light_process_name: str = "miracle_gl.exe"
     light_direct_address_hex: str = ""
     light_freeze_enabled: bool = False
-    light_freeze_color_value: int | None = None
-    light_freeze_intensity_value: int | None = None
+    light_freeze_color_value: int = 0
+    light_freeze_intensity_value: int = 0
     light_freeze_interval_ms: int = 1000
     light_last_mode: str = ""
     light_last_color_address_hex: str = ""

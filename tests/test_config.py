@@ -242,7 +242,7 @@ class TestJSONRoundTrip:
     def test_json_round_trip_preserves_light_settings(self):
         state = AppState()
         state.light_process_name = "test.exe"
-        state.light_address_hex = "ABCDEF"
+        state.light_direct_address_hex = "ABCDEF"
         state.light_freeze_enabled = True
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
@@ -254,7 +254,7 @@ class TestJSONRoundTrip:
             new_state = AppState()
             ConfigSerializer.apply_loaded(new_state, payload)
             assert new_state.light_process_name == "test.exe"
-            assert new_state.light_address_hex == "ABCDEF"
+            assert new_state.light_direct_address_hex == "ABCDEF"
             assert new_state.light_freeze_enabled is True
         finally:
             os.unlink(path)
@@ -420,7 +420,7 @@ class TestApplyLoadedDefaults:
                    "char_status_mana_region": None, "char_status_cap_region": None,
                    "hotkeys": {}}
         ConfigSerializer.apply_loaded(state, payload)
-        assert state.afk_min_ms == 30_000
+        assert state.afk_min_ms == 70_000
         assert state.rclick_mode == "timer"
 
     def test_apply_invalid_int_falls_back(self):
@@ -434,7 +434,7 @@ class TestApplyLoadedDefaults:
             "hotkeys": {},
         }
         ConfigSerializer.apply_loaded(state, payload)
-        assert state.afk_min_ms == 30_000  # default
+        assert state.afk_min_ms == 70_000  # default
 
     def test_apply_clamps_fish_session_minutes(self):
         """fish_session_minutes should be clamped to [1, 40]."""
@@ -593,14 +593,14 @@ class TestApplyLoadedRanges:
         ConfigSerializer.apply_loaded(state, payload)
         assert state.healer_rune_delay_ms >= 50
 
-    def test_light_pointer_chain_index_min(self):
+    def test_light_freeze_color_value_clamped(self):
         state = AppState()
-        payload = {"cfg": {"light_pointer_chain_index": "-1"}, "jobs": [], "spots": [],
+        payload = {"cfg": {"light_freeze_color_value": "-1"}, "jobs": [], "spots": [],
                    "alarm_region": None, "char_status_region": None,
                    "char_status_hp_region": None, "char_status_mana_region": None,
                    "char_status_cap_region": None, "hotkeys": {}}
         ConfigSerializer.apply_loaded(state, payload)
-        assert state.light_pointer_chain_index >= 0
+        assert state.light_freeze_color_value >= 0
 
     def test_light_freeze_interval_min(self):
         state = AppState()

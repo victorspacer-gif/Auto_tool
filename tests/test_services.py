@@ -2,14 +2,23 @@
 
 import math
 import random
+import sys
 import threading
 import time
+import pytest
 from unittest.mock import MagicMock, patch
 
 # Mock pynput only for tests that need mocked mouse/keyboard objects.
 with patch("systool.services.pynput_kb"), \
      patch("systool.services.pynput_mouse"):
     from systool.services import HumanMouse, SafeKeyboardSession
+
+# Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
+try:
+    import pynput.keyboard  # noqa: F401
+    _HAS_PYNPUT = True
+except ImportError:
+    _HAS_PYNPUT = False
 
 
 class TestHumanMouseJitter:
@@ -298,6 +307,7 @@ class TestExecutionGate:
             assert gate._queue[0].module_id == "other"
 
 
+@pytest.mark.skipif(not _HAS_PYNPUT, reason="pynput not installed (Linux)")
 class TestHotkeyServiceKeyMapping:
     """Test HotkeyService key string to pynput mapping."""
 
