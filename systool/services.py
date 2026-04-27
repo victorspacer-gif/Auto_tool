@@ -433,7 +433,6 @@ class HpService:
         if time.time() - cache_time < self._HP_CACHE_TTL:
             return True
         # Cache expired — force re-resolution on next get_hp() call
-        self.runtime.ui.log(f"[HP] Pointer cache expired ({self._HP_CACHE_TTL}s), will re-resolve")
         return False
 
     def _ensure_address_resolved(self) -> bool:
@@ -447,7 +446,6 @@ class HpService:
             self._hp_cache_time = time.time()
             state.hp_pointer_address_hex = f"{new_addr:X}"
             state.hp_source = "pointer"
-            self.runtime.ui.log(f"[HP] Re-resolved pointer -> 0x{new_addr:X}")
             return True
         return False
 
@@ -542,18 +540,15 @@ class HpService:
                 hp_val = self.controller.read_double(self._hp_address)
                 with self.runtime.settings_lock:
                     state.hp_value = hp_val
-                self.runtime.ui.log(f"[HP] Live read -> 0x{self._hp_address:X} = {hp_val:.1f}")
                 return hp_val
-            except Exception as exc:
-                self.runtime.ui.log(f"[HP] Pointer read failed at 0x{self._hp_address:X}: {exc}")
+            except Exception:
+                pass
 
         # Fallback to OCR-derived HP from character status service
         with self.runtime.settings_lock:
             ocr_hp = state.char_status_hp
         if ocr_hp is not None and ocr_hp > 0:
-            self.runtime.ui.log(f"[HP] OCR fallback -> {ocr_hp}")
             return float(ocr_hp)
-        self.runtime.ui.log("[HP] No value available (pointer failed + no OCR)")
         return None
 
     def get_hp_peak(self) -> int:
@@ -579,24 +574,24 @@ class HpService:
         if self._hp_address is not None and self.controller is not None:
             try:
                 hp_val = self.controller.read_double(self._hp_address)
-            except Exception as exc:
-                self.runtime.ui.log(f"[HP] Batch read failed at 0x{self._hp_address:X}: {exc}")
+            except Exception:
+                pass
 
         # Read MP if address resolved (from MpService)
         mp_addr = getattr(state, "_mp_resolved_addr", None)
         if mp_addr is not None and self.controller is not None:
             try:
                 mp_val = self.controller.read_double(mp_addr)
-            except Exception as exc:
-                self.runtime.ui.log(f"[MP] Batch read failed at 0x{mp_addr:X}: {exc}")
+            except Exception:
+                pass
 
         # Read Cap if address resolved (from CapService)
         cap_addr = getattr(state, "_cap_resolved_addr", None)
         if cap_addr is not None and self.controller is not None:
             try:
                 cap_val = self.controller.read_double(cap_addr)
-            except Exception as exc:
-                self.runtime.ui.log(f"[Cap] Batch read failed at 0x{cap_addr:X}: {exc}")
+            except Exception:
+                pass
 
         # Update state with batch results under lock once
         with self.runtime.settings_lock:
@@ -606,17 +601,6 @@ class HpService:
                 state.mp_value = mp_val
             if cap_val is not None:
                 state.cap_value = cap_val
-
-        # Log batch results
-        parts = []
-        if hp_val is not None:
-            parts.append(f"HP={hp_val:.1f}")
-        if mp_val is not None:
-            parts.append(f"MP={mp_val:.1f}")
-        if cap_val is not None:
-            parts.append(f"Cap={cap_val:.1f}")
-        if parts:
-            self.runtime.ui.log(f"[Batch] {' | '.join(parts)}")
 
         return (hp_val, mp_val, cap_val)
 
@@ -684,7 +668,6 @@ class MpService:
             return False
         if time.time() - cache_time < self._MP_CACHE_TTL:
             return True
-        self.runtime.ui.log(f"[MP] Pointer cache expired ({self._MP_CACHE_TTL}s), will re-resolve")
         return False
 
     def _ensure_mp_address_resolved(self) -> bool:
@@ -699,7 +682,6 @@ class MpService:
             state.mp_pointer_address_hex = f"{new_addr:X}"
             state.mp_source = "pointer"
             state._mp_resolved_addr = new_addr  # also update batch-read address
-            self.runtime.ui.log(f"[MP] Re-resolved pointer -> 0x{new_addr:X}")
             return True
         return False
 
@@ -770,18 +752,15 @@ class MpService:
                 mp_val = self.controller.read_double(self._mp_address)
                 with self.runtime.settings_lock:
                     state.mp_value = mp_val
-                self.runtime.ui.log(f"[MP] Live read -> 0x{self._mp_address:X} = {mp_val:.1f}")
                 return mp_val
-            except Exception as exc:
-                self.runtime.ui.log(f"[MP] Pointer read failed at 0x{self._mp_address:X}: {exc}")
+            except Exception:
+                pass
 
         # Fallback to OCR-derived MP from character status service
         with self.runtime.settings_lock:
             ocr_mana = state.char_status_mana
         if ocr_mana is not None and ocr_mana > 0:
-            self.runtime.ui.log(f"[MP] OCR fallback -> {ocr_mana}")
             return float(ocr_mana)
-        self.runtime.ui.log("[MP] No value available (pointer failed + no OCR)")
         return None
 
     def _resolve_mp_pointer(self) -> int | None:
@@ -839,7 +818,6 @@ class CapService:
             return False
         if time.time() - cache_time < self._CAP_CACHE_TTL:
             return True
-        self.runtime.ui.log(f"[Cap] Pointer cache expired ({self._CAP_CACHE_TTL}s), will re-resolve")
         return False
 
     def _ensure_cap_address_resolved(self) -> bool:
@@ -854,7 +832,6 @@ class CapService:
             state.cap_pointer_address_hex = f"{new_addr:X}"
             state.cap_source = "pointer"
             state._cap_resolved_addr = new_addr  # also update batch-read address
-            self.runtime.ui.log(f"[Cap] Re-resolved pointer -> 0x{new_addr:X}")
             return True
         return False
 
@@ -925,19 +902,21 @@ class CapService:
                 cap_val = self.controller.read_double(self._cap_address)
                 with self.runtime.settings_lock:
                     state.cap_value = cap_val
-                self.runtime.ui.log(f"[Cap] Live read -> 0x{self._cap_address:X} = {cap_val:.1f}")
                 return cap_val
-            except Exception as exc:
-                self.runtime.ui.log(f"[Cap] Pointer read failed at 0x{self._cap_address:X}: {exc}")
+            except Exception:
+                pass
 
         # Fallback to OCR-derived Cap from character status service
         with self.runtime.settings_lock:
             ocr_cap = state.char_status_cap
         if ocr_cap is not None and ocr_cap > 0:
-            self.runtime.ui.log(f"[Cap] OCR fallback -> {ocr_cap}")
             return float(ocr_cap)
-        self.runtime.ui.log("[Cap] No value available (pointer failed + no OCR)")
         return None
+
+    def get_cap_peak(self) -> int:
+        """Return peak Cap value (from OCR)."""
+        with self.runtime.settings_lock:
+            return self.runtime.state.char_status_cap_peak
 
     def _resolve_cap_pointer(self) -> int | None:
         """Resolve the Cap pointer chain and verify readability.
