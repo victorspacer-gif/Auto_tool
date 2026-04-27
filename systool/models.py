@@ -133,6 +133,8 @@ class AppState:
     fish_session_remaining_secs: int = 0
     fish_session_deadline: float | None = None
     fish_min_cap: int = 0
+    fish_auto_restart_enabled: bool = False
+    fish_auto_restart_food_min_secs: int = 300
 
     rune_active: bool = False
     rune_spell_key: str = "f1"

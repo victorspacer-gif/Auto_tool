@@ -116,15 +116,6 @@ class ConfigSerializer:
             "light_last_intensity_address_hex": state.light_last_intensity_address_hex,
             "light_original_color_value": state.light_original_color_value,
             "light_original_intensity_value": state.light_original_intensity_value,
-            # Verbose logging toggles
-            "afk_verbose": state.afk_verbose,
-            "rclick_verbose": state.rclick_verbose,
-            "alarm_verbose": state.alarm_verbose,
-            "char_status_verbose": state.char_status_verbose,
-            "fish_verbose": state.fish_verbose,
-            "rune_verbose": state.rune_verbose,
-            "healer_verbose": state.healer_verbose,
-            "light_verbose": state.light_verbose,
             "sandbox_backend": state.sandbox_backend,
             "sandbox_box_name": state.sandbox_box_name,
             "sandbox_exe_path": state.sandbox_exe_path,
@@ -328,7 +319,7 @@ class ConfigSerializer:
         state.fish_session_minutes = max(1, min(40, get_int("fish_session_minutes", state.fish_session_minutes)))
         state.fish_min_cap = max(0, get_int("fish_min_cap", state.fish_min_cap))
         state.fish_auto_restart_enabled = bool(get_bool("fish_auto_restart_enabled", state.fish_auto_restart_enabled))
-        state.fish_auto_restart_food_min_secs = max(10, get_int("fish_auto_restart_food_min_secs", state.fish_auto_restart_food_min_secs))
+        state.fish_auto_restart_food_min_secs = max(30, min(600, get_int("fish_auto_restart_food_min_secs", state.fish_auto_restart_food_min_secs)))
         state.fish_spots = list(spots)
         state.rune_spell_key = get_str("rune_spell_key", state.rune_spell_key)
         state.rune_cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune_cycle_delay_ms)
@@ -409,16 +400,6 @@ class ConfigSerializer:
         raw_original_intensity = cfg.get("light_original_intensity_value")
         state.light_original_color_value = None if raw_original_color in (None, "", "None") else max(0, min(255, get_int("light_original_color_value", 0)))
         state.light_original_intensity_value = None if raw_original_intensity in (None, "", "None") else max(0, min(255, get_int("light_original_intensity_value", 0)))
-
-        # Verbose logging toggles
-        state.afk_verbose = get_bool("afk_verbose", False)
-        state.rclick_verbose = get_bool("rclick_verbose", False)
-        state.alarm_verbose = get_bool("alarm_verbose", False)
-        state.char_status_verbose = get_bool("char_status_verbose", False)
-        state.fish_verbose = get_bool("fish_verbose", False)
-        state.rune_verbose = get_bool("rune_verbose", False)
-        state.healer_verbose = get_bool("healer_verbose", False)
-        state.light_verbose = get_bool("light_verbose", False)
 
         for action, binding in hotkeys.items():
             if action in state.hotkey_bindings:

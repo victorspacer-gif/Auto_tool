@@ -953,7 +953,7 @@ class PositionCaptureService:
 
     def _worker(self, on_done: Callable[[tuple[int, int]], None], label: str) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("mouse", f"🎯 Move mouse to {label} → press record_pos hotkey (30 s)…")
+        self.runtime.ui.log(f"🎯 Move mouse to {label} → press record_pos hotkey (30 s)…")
         self.runtime.ui.set_status(
             f"Move to {label} → press {state.hotkey_bindings.get('record_pos', 'f12').upper()}",
             ORANGE,
@@ -970,7 +970,7 @@ class PositionCaptureService:
             return None
 
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("mouse", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             return
 
         listener = pynput_kb.Listener(on_press=on_press)
@@ -980,7 +980,7 @@ class PositionCaptureService:
         if holder[0]:
             on_done(holder[0])
         else:
-            self.runtime.ui._module_log("mouse", "⚠️  Capture timed out")
+            self.runtime.ui.log("⚠️  Capture timed out")
             self.runtime.ui.set_status("Capture timed out", ORANGE)
 
 
@@ -1007,9 +1007,9 @@ class AntiAfkService:
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("afk", f"▶ Activity monitor start — {state.afk_min_ms}–{state.afk_max_ms} ms")
+        self.runtime.ui.log(f"▶ Activity monitor start — {state.afk_min_ms}–{state.afk_max_ms} ms")
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("afk", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             state.afk_active = False
             return
         keyboard = pynput_kb.Controller()
@@ -1042,16 +1042,16 @@ class AntiAfkService:
                 session.release(direction_key)
                 time.sleep(random.uniform(0.02, 0.04))
             except Exception as exc:
-                self.runtime.ui._module_log("afk", f"❌ AFK: {exc}")
+                self.runtime.ui.log(f"❌ AFK: {exc}")
             finally:
                 session.release_all()
                 self.runtime.execution.release()
             with self.runtime.record_lock:
                 state.stats["afk_moves"] += 1
-            self.runtime.ui._module_log("afk", f"🚶 AFK Ctrl+{direction_name}")
+            self.runtime.ui.log(f"🚶 AFK Ctrl+{direction_name}")
             self.runtime.ui.refresh_stats()
         state.afk_active = False
-        self.runtime.ui._module_log("afk", "⏹ Activity monitor end")
+        self.runtime.ui.log("⏹ Activity monitor end")
 
 
 class RightClickService:
@@ -1063,7 +1063,7 @@ class RightClickService:
         if state.rclick_active:
             return
         if state.rclick_pos == (0, 0):
-            self.runtime.ui._module_log("afk", "⚠️  Record a position first")
+            self.runtime.ui.log("⚠️  Record a position first")
             self.runtime.ui.set_status("Record position first", ORANGE)
             return
         state.rclick_active = True
@@ -1081,9 +1081,9 @@ class RightClickService:
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("rclick", "▶ Right-click macro start")
+        self.runtime.ui.log("▶ Right-click macro start")
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("rclick", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             state.rclick_active = False
             return
         mouse = pynput_mouse.Controller()
@@ -1135,19 +1135,19 @@ class RightClickService:
                 # Settle after all clicks — lets the game register and adds human-like pause
                 time.sleep(post_settle_ms / 1000.0)
             except Exception as exc:
-                self.runtime.ui._module_log("rclick", f"❌ R-click: {exc}")
+                self.runtime.ui.log(f"❌ R-click: {exc}")
             finally:
                 self.runtime.mouse.release()
             with self.runtime.record_lock:
                 state.stats["right_clicks"] += clicks_to_send
             if mode == "food":
-                self.runtime.ui._module_log("rclick", f"🖱️  Food burst at {target} ×{clicks_to_send}")
+                self.runtime.ui.log(f"🖱️  Food burst at {target} ×{clicks_to_send}")
                 if not self.runtime.pause.wait_interruptible(1.5, self.runtime.rclick_stop):
                     break
             else:
-                self.runtime.ui._module_log("rclick", f"🖱️  Right-click at {target}")
+                self.runtime.ui.log(f"🖱️  Right-click at {target}")
             self.runtime.ui.refresh_stats()
-        self.runtime.ui._module_log("rclick", "⏹ Right-click end")
+        self.runtime.ui.log("⏹ Right-click end")
 
 
 class AlarmService:
@@ -1159,7 +1159,7 @@ class AlarmService:
         if state.alarm_active:
             return
         if not HAS_MSS:
-            self.runtime.ui._module_log("alarm", "❌ Install mss and numpy")
+            self.runtime.ui.log("❌ Install mss and numpy")
             return
         state.alarm_active = True
         self.runtime.alarm_stop.clear()
@@ -1177,7 +1177,7 @@ class AlarmService:
     def play_alarm(self) -> None:
         path = self.runtime.state.alarm_mp3
         if not path or not os.path.exists(path):
-            self.runtime.ui._module_log("alarm", "⚠️  Alert sound file not found")
+            self.runtime.ui.log("⚠️  Alert sound file not found")
             return
 
         def play() -> None:
@@ -1188,13 +1188,13 @@ class AlarmService:
                 else:
                     os.startfile(path)
             except Exception as exc:
-                self.runtime.ui._module_log("alarm", f"❌ Audio: {exc}")
+                self.runtime.ui.log(f"❌ Audio: {exc}")
 
         threading.Thread(target=play, daemon=True).start()
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("alarm", "▶ Screen watch start")
+        self.runtime.ui.log("▶ Screen watch start")
         with mss.mss() as sct:
             monitor = sct.monitors[1]
             screen_w = monitor["width"]
@@ -1237,12 +1237,12 @@ class AlarmService:
                         cooldown_until = now + state.alarm_cooldown
                         with self.runtime.record_lock:
                             state.stats["alarms"] += 1
-                        self.runtime.ui._module_log("alarm", f"🚨 LOW HP — {hp_value}/{hp_peak} ({hp_ratio:.1f}%)")
+                        self.runtime.ui.log(f"🚨 LOW HP — {hp_value}/{hp_peak} ({hp_ratio:.1f}%)")
                         self.runtime.ui.set_status(f"⚠️  LOW HP — {hp_ratio:.1f}% remaining", RED)
                         self.play_alarm()
                         self.runtime.ui.refresh_stats()
                         if auto_pause and not self.runtime.pause.paused:
-                            self.runtime.ui._module_log("alarm", "⏸  Auto-pausing all activities due to low HP")
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
                             self.runtime.ui.dispatch(self.runtime.pause.toggle)
                         continue
                 # Absolute value alerts (no % needed — uses live pointer reads)
@@ -1270,12 +1270,12 @@ class AlarmService:
                         cooldown_until = now + state.alarm_cooldown
                         with self.runtime.record_lock:
                             state.stats["alarms"] += 1
-                        self.runtime.ui._module_log("alarm", f"🚨 LOW HP — {hp_value:.0f} (below {alarm_hp_value})")
+                        self.runtime.ui.log(f"🚨 LOW HP — {hp_value:.0f} (below {alarm_hp_value})")
                         self.runtime.ui.set_status(f"⚠️  LOW HP — {hp_value:.0f}", RED)
                         self.play_alarm()
                         self.runtime.ui.refresh_stats()
                         if auto_pause and not self.runtime.pause.paused:
-                            self.runtime.ui._module_log("alarm", "⏸  Auto-pausing all activities due to low HP")
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
                             self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 # Low MP (absolute value)
                 elif alarm_mp_value > 0 and mp_value is not None and now >= cooldown_until:
@@ -1283,12 +1283,12 @@ class AlarmService:
                         cooldown_until = now + state.alarm_cooldown
                         with self.runtime.record_lock:
                             state.stats["alarms"] += 1
-                        self.runtime.ui._module_log("alarm", f"🚨 LOW MP — {mp_value:.0f} (below {alarm_mp_value})")
+                        self.runtime.ui.log(f"🚨 LOW MP — {mp_value:.0f} (below {alarm_mp_value})")
                         self.runtime.ui.set_status(f"⚠️  LOW MP — {mp_value:.0f}", RED)
                         self.play_alarm()
                         self.runtime.ui.refresh_stats()
                         if auto_pause and not self.runtime.pause.paused:
-                            self.runtime.ui._module_log("alarm", "⏸  Auto-pausing all activities due to low MP")
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low MP")
                             self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 # Low Cap (absolute value)
                 elif alarm_cap_value > 0 and cap_value is not None and now >= cooldown_until:
@@ -1296,17 +1296,17 @@ class AlarmService:
                         cooldown_until = now + state.alarm_cooldown
                         with self.runtime.record_lock:
                             state.stats["alarms"] += 1
-                        self.runtime.ui._module_log("alarm", f"🚨 LOW CAP — {cap_value:.0f} (below {alarm_cap_value})")
+                        self.runtime.ui.log(f"🚨 LOW CAP — {cap_value:.0f} (below {alarm_cap_value})")
                         self.runtime.ui.set_status(f"⚠️  LOW CAP — {cap_value:.0f}", RED)
                         self.play_alarm()
                         self.runtime.ui.refresh_stats()
                         if auto_pause and not self.runtime.pause.paused:
-                            self.runtime.ui._module_log("alarm", "⏸  Auto-pausing all activities due to low Cap")
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low Cap")
                             self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 try:
                     frame = np.array(sct.grab(get_region()))[:, :, :3]
                 except Exception as exc:
-                    self.runtime.ui._module_log("alarm", f"❌ Capture: {exc}")
+                    self.runtime.ui.log(f"❌ Capture: {exc}")
                     continue
                 if last_frame is not None and last_frame.shape == frame.shape:
                     if now >= cooldown_until:
@@ -1316,15 +1316,15 @@ class AlarmService:
                             cooldown_until = now + state.alarm_cooldown
                             with self.runtime.record_lock:
                                 state.stats["alarms"] += 1
-                            self.runtime.ui._module_log("alarm", f"🚨 ALARM — {changed * 100:.1f}% pixels changed!")
+                            self.runtime.ui.log(f"🚨 ALARM — {changed * 100:.1f}% pixels changed!")
                             self.runtime.ui.set_status(f"⚠️  PIXEL ALARM — {changed * 100:.1f}% changed!", RED)
                             self.play_alarm()
                             self.runtime.ui.refresh_stats()
                             if auto_pause and not self.runtime.pause.paused:
-                                self.runtime.ui._module_log("alarm", "⏸  Auto-pausing all activities due to screen watch event")
+                                self.runtime.ui.log("⏸  Auto-pausing all activities due to screen watch event")
                                 self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 last_frame = frame
-        self.runtime.ui._module_log("alarm", "⏹ Screen watch end")
+        self.runtime.ui.log("⏹ Screen watch end")
 
 
 class CharacterStatusService:
@@ -1363,13 +1363,13 @@ class CharacterStatusService:
         dependency_error = self.get_dependency_error()
         if dependency_error:
             state.char_status_last_error = dependency_error
-            self.runtime.ui._module_log("char_status", f"❌ Character status OCR unavailable: {dependency_error}")
+            self.runtime.ui.log(f"❌ Character status OCR unavailable: {dependency_error}")
             self.runtime.ui.set_status(f"Character status OCR unavailable: {dependency_error}", RED)
             return
         has_window = bool(state.char_status_region)
         has_field_regions = all([state.char_status_hp_region, state.char_status_mana_region, state.char_status_cap_region])
         if not has_window and not has_field_regions:
-            self.runtime.ui._module_log("char_status", "⚠️  Select HP, Mana, and Cap areas or select the full character status window first")
+            self.runtime.ui.log("⚠️  Select HP, Mana, and Cap areas or select the full character status window first")
             self.runtime.ui.set_status("Select stat areas or a full status window first", ORANGE)
             return
         state.char_status_active = True
@@ -1393,7 +1393,7 @@ class CharacterStatusService:
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("char_status", "▶ Character status watcher start")
+        self.runtime.ui.log("▶ Character status watcher start")
         try:
             with mss.mss() as sct:
                 while not self.runtime.char_status_stop.is_set():
@@ -1437,7 +1437,7 @@ class CharacterStatusService:
                     except pytesseract.TesseractNotFoundError:
                         with self.runtime.settings_lock:
                             state.char_status_last_error = "Tesseract executable not found"
-                        self.runtime.ui._module_log("char_status", "❌ Tesseract executable not found for character status OCR")
+                        self.runtime.ui.log("❌ Tesseract executable not found for character status OCR")
                         self.runtime.ui.set_status("Configure a Tesseract path in Character Status", RED)
                         self.runtime.char_status_stop.set()
                         break
@@ -1467,7 +1467,7 @@ class CharacterStatusService:
                         break
         finally:
             state.char_status_active = False
-            self.runtime.ui._module_log("char_status", "⏹ Character status watcher end")
+            self.runtime.ui.log("⏹ Character status watcher end")
 
     def _extract_values(self, frame) -> dict[str, int | None]:
         values: dict[str, int | None] = self._extract_values_from_text(frame)
@@ -1603,8 +1603,8 @@ class CharacterStatusService:
         match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
         if not match:
             return None
-        # Format is HH:MM, converting to seconds
-        return (int(match.group(1)) * 60 + int(match.group(2))) * 60
+        # Format is MM:SS (minutes:seconds), converting to total seconds
+        return int(match.group(1)) * 60 + int(match.group(2))
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
         base_w, base_h = self.BASE_SIZE
@@ -1668,11 +1668,11 @@ class FishingService:
         if state.fish_active:
             return
         if state.fish_rod_pos == (0, 0):
-            self.runtime.ui._module_log("fish", "❌ Record rod position first")
+            self.runtime.ui.log("❌ Record rod position first")
             self.runtime.ui.set_status("Record rod position first", ORANGE)
             return
         if not state.fish_spots:
-            self.runtime.ui._module_log("fish", "❌ Record at least one spot")
+            self.runtime.ui.log("❌ Record at least one spot")
             self.runtime.ui.set_status("Record at least one fishing spot", ORANGE)
             return
         if state.fish_min_cap > 0:
@@ -1687,7 +1687,7 @@ class FishingService:
                 with self.runtime.settings_lock:
                     fish_cap = state.char_status_cap
             if fish_cap is not None and fish_cap <= state.fish_min_cap:
-                self.runtime.ui._module_log("fish", "⚠️  Capacity is already at or below the fishing stop threshold")
+                self.runtime.ui.log("⚠️  Capacity is already at or below the fishing stop threshold")
                 self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
                 return
         self.runtime.fish_stop.clear()
@@ -1706,7 +1706,7 @@ class FishingService:
             f"Fishing session running ({state.fish_session_minutes} min + {bonus_secs//60} min random bonus)",
             GREEN,
         )
-        self.runtime.ui._module_log("fish", f"🎣 Session setup: {state.fish_session_minutes} min base + {bonus_secs//60}m {bonus_secs%60}s randomized padding")
+        self.runtime.ui.log(f"🎣 Session setup: {state.fish_session_minutes} min base + {bonus_secs//60}m {bonus_secs%60}s randomized padding")
 
     def stop(self) -> None:
         state = self.runtime.state
@@ -1720,9 +1720,10 @@ class FishingService:
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("fish", f"▶ Fishing start — rod={state.fish_rod_pos}  spots={len(state.fish_spots)}")
+        self.runtime.ui.log(f"▶ Fishing start — rod={state.fish_rod_pos}  spots={len(state.fish_spots)}")
+        stopped_by_food = False
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("fish", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             state.fish_active = False
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
@@ -1752,7 +1753,7 @@ class FishingService:
 
         while not self.runtime.fish_stop.is_set():
             if not update_remaining():
-                self.runtime.ui._module_log("fish", "⏲️ Fishing session complete")
+                self.runtime.ui.log("⏲️ Fishing session complete")
                 self.runtime.ui.set_status("Fishing session finished", ORANGE)
                 self.runtime.fish_stop.set()
                 break
@@ -1766,6 +1767,9 @@ class FishingService:
                 wait_min = state.fish_wait_min_ms
                 wait_max = state.fish_wait_max_ms
                 min_cap = state.fish_min_cap
+                food_seconds = state.char_status_food_seconds
+                auto_restart_enabled = state.fish_auto_restart_enabled
+                auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
                 # Use pointer-based Cap first, fall back to OCR
                 current_cap = None
                 if self.runtime.cap_service is not None:
@@ -1776,31 +1780,27 @@ class FishingService:
                 if current_cap is None:
                     current_cap = state.char_status_cap
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
-                self.runtime.ui._module_log("fish", f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
+                self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
                 self.runtime.fish_stop.set()
                 break
-
-            # Auto-restart on low food check
-            with self.runtime.settings_lock:
-                restart_enabled = state.fish_auto_restart_enabled
-                restart_food_min = state.fish_auto_restart_food_min_secs
-                food_seconds = state.char_status_food_seconds
+            # Check food level for auto-restart (only stop if no other session is running)
+            if not auto_restart_enabled:
+                self.runtime.ui.log("⚠️  Food check skipped — auto-restart disabled")
+            elif food_seconds is None:
+                self.runtime.ui.log("⚠️  Food check skipped — food value not available (ensure Character Status OCR is running)")
+            else:
+                self.runtime.ui.log(f"🍖 Food check: {food_seconds}s / threshold {auto_restart_food_min_secs}s")
             if (
-                restart_enabled
+                auto_restart_enabled
                 and food_seconds is not None
-                and food_seconds < restart_food_min
-                and self.runtime.fishing_service is not None
+                and food_seconds <= auto_restart_food_min_secs
             ):
-                self.runtime.ui.log(f"🍖 Food low ({food_seconds}s) — auto-restarting session")
-                self.runtime.ui.set_status("Low food — restarting fishing session", ORANGE)
+                self.runtime.ui.log(f"🍖 Food running low ({food_seconds}s) — stopping session to eat")
+                self.runtime.ui.set_status("Food low — stopping fishing to eat", ORANGE)
                 self.runtime.fish_stop.set()
-                state.fish_active = False
-                time.sleep(1.0)
-                if not self.runtime.fish_stop.is_set():
-                    self.runtime.fishing_service.start()
+                stopped_by_food = True
                 break
-
             cycle_locked = False
             try:
                 cycle_window = max(0.90, max(cast_max, 0) / 1000.0 + 1.20)
@@ -1817,7 +1817,7 @@ class FishingService:
                 HumanMouse.move(mouse, rod_target)
                 time.sleep(random.uniform(0.07, 0.17))
                 mouse.click(pynput_mouse.Button.right, 1)
-                self.runtime.ui._module_log("fish", f"🎣 Rod clicked at {rod_target}")
+                self.runtime.ui.log(f"🎣 Rod clicked at {rod_target}")
                 if not wait_with_session_limit(random.randint(cast_min, cast_max) / 1000.0):
                     break
                 if index >= len(deck):
@@ -1831,17 +1831,17 @@ class FishingService:
                 mouse.click(pynput_mouse.Button.left, 1)
                 with self.runtime.record_lock:
                     state.stats["fish_casts"] += 1
-                self.runtime.ui._module_log("fish", f"🪣 Cast → {spot_target}")
+                self.runtime.ui.log(f"🪣 Cast → {spot_target}")
                 self.runtime.ui.refresh_stats()
             except Exception as exc:
-                self.runtime.ui._module_log("fish", f"❌ Fish cycle: {exc}")
+                self.runtime.ui.log(f"❌ Fish cycle: {exc}")
                 self.runtime.fish_stop.set()
                 break
             finally:
                 if cycle_locked:
                     self.runtime.mouse.release()
             if not update_remaining():
-                self.runtime.ui._module_log("fish", "⏲️ Fishing session complete")
+                self.runtime.ui.log("⏲️ Fishing session complete")
                 self.runtime.ui.set_status("Fishing session finished", ORANGE)
                 self.runtime.fish_stop.set()
                 break
@@ -1851,7 +1851,24 @@ class FishingService:
         if self.runtime.fish_stop.is_set():
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
-        self.runtime.ui._module_log("fish", f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
+        # Check if we stopped due to low food and auto-restart is enabled
+        with self.runtime.settings_lock:
+            food_seconds = state.char_status_food_seconds
+            auto_restart_enabled = state.fish_auto_restart_enabled
+            auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
+        if (
+            stopped_by_food
+            and auto_restart_enabled
+            and food_seconds is not None
+            and food_seconds <= auto_restart_food_min_secs
+        ):
+            self.runtime.ui.log(
+                f"🔄 Auto-restart triggered — waiting 1s for cleanup, then starting fresh session"
+            )
+            time.sleep(1.0)
+            self.start()
+        else:
+            self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
 
 
 class AutoHealerService:
@@ -1865,7 +1882,7 @@ class AutoHealerService:
         if state.healer_mode == "rune" and (
             state.healer_character_pos == (0, 0) or state.healer_rune_pos == (0, 0)
         ):
-            self.runtime.ui._module_log("healer", "⚠️  Record character center and healing rune position first")
+            self.runtime.ui.log("⚠️  Record character center and healing rune position first")
             self.runtime.ui.set_status("Record healer positions first", ORANGE)
             return
         self.runtime.healer_stop.clear()
@@ -1883,9 +1900,9 @@ class AutoHealerService:
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("healer", "▶ Auto healer start")
+        self.runtime.ui.log("▶ Auto healer start")
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("healer", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             state.healer_active = False
             return
         keyboard = pynput_kb.Controller()
@@ -1952,7 +1969,7 @@ class AutoHealerService:
                 if mode == "spell":
                     spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
                     if not spell_key:
-                        self.runtime.ui._module_log("healer", f"❌ Unknown healer spell key: {spell_key_name}")
+                        self.runtime.ui.log(f"❌ Unknown healer spell key: {spell_key_name}")
                         break
                     if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=0.25, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
@@ -1966,7 +1983,7 @@ class AutoHealerService:
                         session.release_all()
                         self.runtime.execution.release()
                     cooldown_until = time.monotonic() + 0.35
-                    self.runtime.ui._module_log("healer", f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
+                    self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
                 else:
                     if not self.runtime.mouse.acquire(self.runtime.healer_stop, max_wait=0.35, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
@@ -1985,15 +2002,15 @@ class AutoHealerService:
                     finally:
                         self.runtime.mouse.release()
                     cooldown_until = time.monotonic() + max(0.45, rune_delay_ms / 1000.0 + 0.15)
-                    self.runtime.ui._module_log("healer", f"❤️ Rune heal at HP {hp_value}")
+                    self.runtime.ui.log(f"❤️ Rune heal at HP {hp_value}")
                 with self.runtime.record_lock:
                     state.stats["heals"] += 1
                 self.runtime.ui.refresh_stats()
             except Exception as exc:
-                self.runtime.ui._module_log("healer", f"❌ Auto healer: {exc}")
+                self.runtime.ui.log(f"❌ Auto healer: {exc}")
                 break
         state.healer_active = False
-        self.runtime.ui._module_log("healer", "⏹ Auto healer end")
+        self.runtime.ui.log("⏹ Auto healer end")
 
 
 class RuneMakerService:
@@ -2005,7 +2022,7 @@ class RuneMakerService:
         if state.rune_active:
             return
         if any(position == (0, 0) for position in [state.rune_hand_pos, state.rune_storage_pos, state.rune_blank_pos]):
-            self.runtime.ui._module_log("rune", "⚠️  Record all 3 positions before starting")
+            self.runtime.ui.log("⚠️  Record all 3 positions before starting")
             self.runtime.ui.set_status("Record all 3 rune positions first", ORANGE)
             return
         self.runtime.rune_stop.clear()
@@ -2023,19 +2040,19 @@ class RuneMakerService:
 
     def _worker(self) -> None:
         state = self.runtime.state
-        self.runtime.ui._module_log("rune", 
+        self.runtime.ui.log(
             f"▶ Rune session start — spell={state.rune_spell_key.upper()}  "
             f"cycle={state.rune_cycle_delay_ms}ms  post-settle={state.rune_post_cast_settle_ms}ms"
         )
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("rune", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             state.rune_active = False
             return
         keyboard = pynput_kb.Controller()
         mouse = pynput_mouse.Controller()
         spell = HotkeyService.key_str_to_pynput(state.rune_spell_key)
         if not spell:
-            self.runtime.ui._module_log("rune", f"❌ Unknown spell key: {state.rune_spell_key}")
+            self.runtime.ui.log(f"❌ Unknown spell key: {state.rune_spell_key}")
             state.rune_active = False
             return
 
@@ -2072,7 +2089,7 @@ class RuneMakerService:
                 settle_max_ms = state.rune_mouse_settle_max_ms
                 post_cast_settle_ms = state.rune_post_cast_settle_ms
             if blank_rune_limit > 0 and cycles_completed >= blank_rune_limit:
-                self.runtime.ui._module_log("rune", f"⏲️ Rune session stopped — avb blank runes limit reached ({blank_rune_limit})")
+                self.runtime.ui.log(f"⏲️ Rune session stopped — avb blank runes limit reached ({blank_rune_limit})")
                 self.runtime.ui.set_status("Rune session finished by avb blank runes limit", ORANGE)
                 break
             if min_mana > 0 and current_mana is not None:
@@ -2098,7 +2115,7 @@ class RuneMakerService:
             session = SafeKeyboardSession(keyboard)
             try:
                 session.tap(spell, hold_seconds=0.04)
-                self.runtime.ui._module_log("rune", f"✨ Spell cast ({state.rune_spell_key.upper()})")
+                self.runtime.ui.log(f"✨ Spell cast ({state.rune_spell_key.upper()})")
                 if not self.runtime.pause.wait_interruptible(cast_delay_ms / 1000.0, self.runtime.rune_stop):
                     break
 
@@ -2115,7 +2132,7 @@ class RuneMakerService:
                     hold_delay_range=press_delay_range,
                     settle_delay_range=settle_delay_range,
                 )
-                self.runtime.ui._module_log("rune", "📦 Rune moved → storage")
+                self.runtime.ui.log("📦 Rune moved → storage")
                 time.sleep(random.uniform(*settle_delay_range))
                 HumanMouse.drag(
                     mouse,
@@ -2126,11 +2143,11 @@ class RuneMakerService:
                     hold_delay_range=press_delay_range,
                     settle_delay_range=settle_delay_range,
                 )
-                self.runtime.ui._module_log("rune", "📥 Blank rune → hand slot")
+                self.runtime.ui.log("📥 Blank rune → hand slot")
                 # Settle before next cast — lets mana deplete and OCR catch up
                 time.sleep(post_cast_settle_ms / 1000.0)
             except Exception as exc:
-                self.runtime.ui._module_log("rune", f"❌ Rune cycle: {exc}")
+                self.runtime.ui.log(f"❌ Rune cycle: {exc}")
                 break
             finally:
                 session.release_all()
@@ -2143,11 +2160,11 @@ class RuneMakerService:
                 max(0, cycle_delay_ms - cycle_variation_ms),
                 max(0, cycle_delay_ms + cycle_variation_ms),
             ) / 1000.0
-            self.runtime.ui._module_log("rune", f"⏳ Waiting {wait_s:.1f}s before next cast…")
+            self.runtime.ui.log(f"⏳ Waiting {wait_s:.1f}s before next cast…")
             if not self.runtime.pause.wait_interruptible(wait_s, self.runtime.rune_stop):
                 break
         state.rune_active = False
-        self.runtime.ui._module_log("rune", f"⏹ Rune session stopped — {state.stats['runes_made']} runes moved")
+        self.runtime.ui.log(f"⏹ Rune session stopped — {state.stats['runes_made']} runes moved")
 
 
 class HotkeyJobService:
@@ -2204,21 +2221,21 @@ class HotkeyJobService:
         stop_rune()
         if self.runtime.pause.paused:
             self.runtime.pause.toggle()
-        self.runtime.ui._module_log("hotkey", "🛑 ALL STOPPED (stop_all hotkey)")
+        self.runtime.ui.log("🛑 ALL STOPPED (stop_all hotkey)")
         self.runtime.ui.set_status("All stopped", RED)
 
     def _worker(self, job: HotkeyJob) -> None:
         if not HAS_PYNPUT:
-            self.runtime.ui._module_log("hotkey", "❌ pynput missing")
+            self.runtime.ui.log("❌ pynput missing")
             job.running = False
             return
         keyboard = pynput_kb.Controller()
         pressed_key = self.key_map.get(job.key.upper())
         if not pressed_key:
-            self.runtime.ui._module_log("hotkey", f"❌ Unknown key {job.key}")
+            self.runtime.ui.log(f"❌ Unknown key {job.key}")
             job.running = False
             return
-        self.runtime.ui._module_log("hotkey", f"▶ Job #{job.job_id} — key={job.key} {job.min_ms}–{job.max_ms}ms focus={job.use_focus}")
+        self.runtime.ui.log(f"▶ Job #{job.job_id} — key={job.key} {job.min_ms}–{job.max_ms}ms focus={job.use_focus}")
         while not job.stop_evt.is_set():
             self.runtime.pause.wait()
             delay = random.randint(job.min_ms, job.max_ms) / 1000.0
@@ -2244,7 +2261,7 @@ class HotkeyJobService:
             if job.use_focus and job.window_name.strip():
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):
-                    self.runtime.ui._module_log("hotkey", f"⚠️  Job #{job.job_id}: window '{job.window_name}' not found")
+                    self.runtime.ui.log(f"⚠️  Job #{job.job_id}: window '{job.window_name}' not found")
             if not self.runtime.execution.acquire(job.stop_evt, max_wait=0.45, module_id=f"job:{job.job_id}"):
                 if job.stop_evt.is_set():
                     break
@@ -2268,7 +2285,7 @@ class HotkeyJobService:
                     if sent:
                         self.runtime.state.stats["bursts"] += 1
                 if sent:
-                    self.runtime.ui._module_log("hotkey", f"⚡ Job #{job.job_id} burst {job.key} ×{sent}")
+                    self.runtime.ui.log(f"⚡ Job #{job.job_id} burst {job.key} ×{sent}")
             else:
                 try:
                     self._press_key(keyboard, pressed_key)
@@ -2276,13 +2293,13 @@ class HotkeyJobService:
                     self.runtime.execution.release()
                 with self.runtime.record_lock:
                     self.runtime.state.stats["hotkeys"] += 1
-                self.runtime.ui._module_log("hotkey", f"🎮 Job #{job.job_id} pressed {job.key}")
+                self.runtime.ui.log(f"🎮 Job #{job.job_id} pressed {job.key}")
             if job.use_focus and job.restore_focus and prev_hwnd:
                 time.sleep(0.05)
                 WindowService.restore(prev_hwnd)
             self.runtime.ui.refresh_stats()
         job.running = False
-        self.runtime.ui._module_log("hotkey", f"⏹ Job #{job.job_id} stopped")
+        self.runtime.ui.log(f"⏹ Job #{job.job_id} stopped")
         self.runtime.ui.job_state_changed(job)
 
     @staticmethod
