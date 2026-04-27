@@ -641,21 +641,15 @@ class HpService:
             return None
 
         module_base = ctrl.get_module_base(HP_PROFILE.module_name)
-        self.runtime.ui.log(f"[HP] Module base: 0x{module_base:X}")
-        self.runtime.ui.log(f"[HP] Pointer chains: {HP_PROFILE.pointer_chains}, offset: +0x{HP_PROFILE.structure_value_offset:X}")
 
         for chain_idx, chain in enumerate(HP_PROFILE.pointer_chains):
-            self.runtime.ui.log(f"[HP] Trying chain #{chain_idx}: {chain}")
             try:
                 base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
                 target_candidate = base_candidate + HP_PROFILE.structure_value_offset
-                self.runtime.ui.log(f"[HP] Chain resolved -> base=0x{base_candidate:X}, target=0x{target_candidate:X}")
                 # Verify we can read the double at this address (same type as MP/Cap)
                 hp_verify = ctrl.read_double(target_candidate)
-                self.runtime.ui.log(f"[HP] Verification read: {hp_verify} (type={type(hp_verify).__name__})")
                 return target_candidate
-            except Exception as exc:
-                self.runtime.ui.log(f"[HP] Chain #{chain_idx} failed: {exc}")
+            except Exception:
                 continue
 
         return None
@@ -802,21 +796,15 @@ class MpService:
             return None
 
         module_base = ctrl.get_module_base(MP_PROFILE.module_name)
-        self.runtime.ui.log(f"[MP] Module base: 0x{module_base:X}")
-        self.runtime.ui.log(f"[MP] Pointer chains: {MP_PROFILE.pointer_chains}, offset: +0x{MP_PROFILE.structure_value_offset:X}")
 
         for chain_idx, chain in enumerate(MP_PROFILE.pointer_chains):
-            self.runtime.ui.log(f"[MP] Trying chain #{chain_idx}: {chain}")
             try:
                 base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
                 target_candidate = base_candidate + MP_PROFILE.structure_value_offset
-                self.runtime.ui.log(f"[MP] Chain resolved -> base=0x{base_candidate:X}, target=0x{target_candidate:X}")
                 # Verify we can read the double at this address
                 mp_verify = ctrl.read_double(target_candidate)
-                self.runtime.ui.log(f"[MP] Verification read: {mp_verify} (type={type(mp_verify).__name__})")
                 return target_candidate
-            except Exception as exc:
-                self.runtime.ui.log(f"[MP] Chain #{chain_idx} failed: {exc}")
+            except Exception:
                 continue
 
         return None
@@ -963,21 +951,15 @@ class CapService:
             return None
 
         module_base = ctrl.get_module_base(CAP_PROFILE.module_name)
-        self.runtime.ui.log(f"[Cap] Module base: 0x{module_base:X}")
-        self.runtime.ui.log(f"[Cap] Pointer chains: {CAP_PROFILE.pointer_chains}, offset: +0x{CAP_PROFILE.structure_value_offset:X}")
 
         for chain_idx, chain in enumerate(CAP_PROFILE.pointer_chains):
-            self.runtime.ui.log(f"[Cap] Trying chain #{chain_idx}: {chain}")
             try:
                 base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
                 target_candidate = base_candidate + CAP_PROFILE.structure_value_offset
-                self.runtime.ui.log(f"[Cap] Chain resolved -> base=0x{base_candidate:X}, target=0x{target_candidate:X}")
                 # Verify we can read the double at this address
                 cap_verify = ctrl.read_double(target_candidate)
-                self.runtime.ui.log(f"[Cap] Verification read: {cap_verify} (type={type(cap_verify).__name__})")
                 return target_candidate
-            except Exception as exc:
-                self.runtime.ui.log(f"[Cap] Chain #{chain_idx} failed: {exc}")
+            except Exception:
                 continue
 
         return None

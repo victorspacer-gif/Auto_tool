@@ -224,6 +224,7 @@ class SystemMonitorApp:
         pause_bar = tk.Frame(self.root, bg=BG)
         pause_bar.pack(fill="x", padx=14, pady=(2, 0))
         self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
+        self._btn(pause_bar, "🔗  Attach", self.attach_light_process, BLUE).pack(side="left", padx=(8, 0))
         self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
         if HAS_SANDBOX_LAUNCHER:
             self._btn(pause_bar, "🔒  Sandbox Launcher UNSAFE", self._show_sandbox_launcher_popup, PURPLE).pack(side="left", padx=(8, 0))
