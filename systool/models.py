@@ -184,6 +184,10 @@ class AppState:
     cap_source: str = "none"  # 'pointer', 'ocr', or 'none'
     cap_value: float | None = None  # Current Cap from pointer resolution
 
+    # Resolved addresses for batch memory reads (shared across HP/MP/Cap services)
+    _mp_resolved_addr: int | None = None  # MP address resolved by MpService.attach()
+    _cap_resolved_addr: int | None = None  # Cap address resolved by CapService.attach()
+
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
             "hotkeys": 0,

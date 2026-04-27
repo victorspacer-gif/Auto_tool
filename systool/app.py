@@ -168,6 +168,7 @@ class SystemMonitorApp:
         self._poll_settings()
         self._refresh_stats()
         self._refresh_character_status_display()
+        self._refresh_variables_display()
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()
         if HAS_TRAY:
@@ -240,6 +241,7 @@ class SystemMonitorApp:
         light_tab = tk.Frame(notebook, bg=BG)
         alarm_tab = tk.Frame(notebook, bg=BG)
         char_status_tab = tk.Frame(notebook, bg=BG)
+        variables_tab = tk.Frame(notebook, bg=BG)
         fish_tab = tk.Frame(notebook, bg=BG)
         hotkeys_tab = tk.Frame(notebook, bg=BG)
         config_tab = tk.Frame(notebook, bg=BG)
@@ -251,6 +253,7 @@ class SystemMonitorApp:
         self.light_tab = light_tab
         self.alarm_tab = alarm_tab
         self.char_status_tab = char_status_tab
+        self.variables_tab = variables_tab
         self.fish_tab = fish_tab
         self.hotkeys_tab = hotkeys_tab
         self.config_tab = config_tab
@@ -261,6 +264,7 @@ class SystemMonitorApp:
         notebook.add(light_tab, text="💡  Light Control??")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
         notebook.add(char_status_tab, text="📊  Character Status")
+        notebook.add(variables_tab, text="🔬  Variables")
         notebook.add(fish_tab, text="🎣  Fishing Session")
         notebook.add(hotkeys_tab, text="⌨️  Hotkeys")
         notebook.add(config_tab, text="💾  Config")
@@ -271,6 +275,7 @@ class SystemMonitorApp:
         self._build_light_tab(light_tab)
         self._build_alarm_tab(alarm_tab)
         self._build_character_status_tab(char_status_tab)
+        self._build_variables_tab(variables_tab)
         self._build_fish_tab(fish_tab)
         self._build_hotkeys_tab(hotkeys_tab)
         self._build_config_tab(config_tab)
@@ -891,6 +896,67 @@ class SystemMonitorApp:
         dep_ready = dependency_error is None
         dep_text = "Python OCR packages loaded" if dep_ready else f"OCR dependency status: {dependency_error}"
         tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if dep_ready else ORANGE, bg=PANEL, justify="left", wraplength=300).pack(anchor="w", pady=(10, 0))
+
+    def _build_variables_tab(self, parent: tk.Frame) -> None:
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        # Left column: live values
+        left = tk.Frame(content_frame, bg=BG)
+        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
+
+        vars_panel = tk.LabelFrame(left, text=" 📡  Live Variables ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        vars_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_level_label = tk.Label(vars_panel, text="Level: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.var_level_label.pack(fill="x", pady=2)
+        self.var_hp_label = tk.Label(vars_panel, text="HP: —", font=HEADER, fg=RED, bg=PANEL, anchor="w")
+        self.var_hp_label.pack(fill="x", pady=2)
+        self.var_cap_label = tk.Label(vars_panel, text="Cap: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.var_cap_label.pack(fill="x", pady=2)
+        self.var_mp_label = tk.Label(vars_panel, text="MP: —", font=HEADER, fg=BLUE, bg=PANEL, anchor="w")
+        self.var_mp_label.pack(fill="x", pady=2)
+        self.var_food_label = tk.Label(vars_panel, text="Food: —", font=HEADER, fg=GREEN, bg=PANEL, anchor="w")
+        self.var_food_label.pack(fill="x", pady=2)
+
+        # Right column: metadata & stats
+        right = tk.Frame(content_frame, bg=BG)
+        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+
+        meta_panel = tk.LabelFrame(right, text=" 📋  Source Metadata ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        meta_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_hp_source_label = tk.Label(meta_panel, text="HP source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_hp_source_label.pack(fill="x", pady=2)
+        self.var_mp_source_label = tk.Label(meta_panel, text="MP source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_mp_source_label.pack(fill="x", pady=2)
+        self.var_cap_source_label = tk.Label(meta_panel, text="Cap source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_cap_source_label.pack(fill="x", pady=2)
+
+        addr_frame = tk.Frame(meta_panel, bg=PANEL)
+        addr_frame.pack(fill="x", pady=(4, 0))
+        self.var_hp_addr_label = tk.Label(addr_frame, text="HP address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_hp_addr_label.pack(fill="x", pady=1)
+        self.var_mp_addr_label = tk.Label(addr_frame, text="MP address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_mp_addr_label.pack(fill="x", pady=1)
+        self.var_cap_addr_label = tk.Label(addr_frame, text="Cap address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_cap_addr_label.pack(fill="x", pady=1)
+
+        stats_panel = tk.LabelFrame(right, text=" 📊  Read Statistics ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        stats_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_regen_label = tk.Label(stats_panel, text="Regen: HP 0.0/min | Mana 0.0/min", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_regen_label.pack(fill="x", pady=2)
+        self.var_read_stats_label = tk.Label(stats_panel, text="Reads: — | Misses: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_read_stats_label.pack(fill="x", pady=2)
+        self.var_last_update_label = tk.Label(stats_panel, text="Last update: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_last_update_label.pack(fill="x", pady=(10, 2))
 
     def _build_hotkeys_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
@@ -1981,6 +2047,7 @@ class SystemMonitorApp:
             else:
                 self.alarm_region_label.config(text="Area: centre 200×200 px (default)")
         self._refresh_character_status_display()
+        self._refresh_variables_display()
         if self.spots_listbox:
             self.spots_listbox.delete(0, "end")
             for index, spot in enumerate(state.fish_spots, start=1):
@@ -2175,6 +2242,101 @@ class SystemMonitorApp:
             message = state.char_status_last_error or "OCR locked on the last good frame"
             color = ORANGE if state.char_status_last_error else MUTED
             self.char_status_error_label.config(text=f"OCR: {message}", fg=color)
+
+    def _refresh_variables_display(self) -> None:
+        state = self.runtime.state
+
+        # Trigger batch memory read from HP service (reads HP, MP, Cap together)
+        if self.hp_service is not None and hasattr(self.hp_service, "_read_all_stats"):
+            try:
+                self.hp_service._read_all_stats()
+            except Exception:
+                pass
+        else:
+            # Fallback to individual reads if batch method unavailable
+            if self.hp_service is not None:
+                try:
+                    self.hp_service.get_hp()
+                except Exception:
+                    pass
+            if self.mp_service is not None:
+                try:
+                    self.mp_service.get_mp()
+                except Exception:
+                    pass
+            if self.cap_service is not None:
+                try:
+                    self.cap_service.get_cap()
+                except Exception:
+                    pass
+
+        # Left column: live values (pointer-based when available, OCR fallback)
+        if self.var_level_label:
+            self.var_level_label.config(
+                text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}"
+            )
+        if self.var_hp_label:
+            hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
+            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
+            self.var_hp_label.config(
+                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
+            )
+        if self.var_cap_label:
+            cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
+            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
+            self.var_cap_label.config(
+                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
+            )
+        if self.var_mp_label:
+            mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
+            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
+            self.var_mp_label.config(
+                text=f"MP: {mp_display if mp_display is not None else '—'}{source_tag}"
+            )
+        if self.var_food_label:
+            food_text = state.char_status_food_text or "—"
+            self.var_food_label.config(text=f"Food: {food_text}")
+
+        # Right column: source metadata (pointer/ocr/none)
+        if self.var_hp_source_label:
+            src = state.hp_source if state.hp_value is not None else ("ocr" if state.char_status_hp is not None else "none")
+            self.var_hp_source_label.config(text=f"HP source: {src}")
+        if self.var_mp_source_label:
+            src = state.mp_source if state.mp_value is not None else ("ocr" if state.char_status_mana is not None else "none")
+            self.var_mp_source_label.config(text=f"MP source: {src}")
+        if self.var_cap_source_label:
+            src = state.cap_source if state.cap_value is not None else ("ocr" if state.char_status_cap is not None else "none")
+            self.var_cap_source_label.config(text=f"Cap source: {src}")
+
+        # Right column: pointer addresses (hex)
+        if self.var_hp_addr_label:
+            addr = state.hp_pointer_address_hex or "—"
+            self.var_hp_addr_label.config(text=f"HP address: {addr}")
+        if self.var_mp_addr_label:
+            addr = state.mp_pointer_address_hex or "—"
+            self.var_mp_addr_label.config(text=f"MP address: {addr}")
+        if self.var_cap_addr_label:
+            addr = state.cap_pointer_address_hex or "—"
+            self.var_cap_addr_label.config(text=f"Cap address: {addr}")
+
+        # Right column: read statistics (from OCR character status service)
+        if self.var_regen_label:
+            self.var_regen_label.config(
+                text=f"Regen: HP {state.char_status_hp_regen_per_min:.1f}/min | Mana {state.char_status_mana_regen_per_min:.1f}/min"
+            )
+        if self.var_read_stats_label:
+            self.var_read_stats_label.config(
+                text=f"Reads: {state.char_status_reads}  |  Misses: {state.char_status_failures}"
+            )
+        if self.var_last_update_label:
+            if state.char_status_last_seen:
+                seen = time.strftime("%H:%M:%S", time.localtime(state.char_status_last_seen))
+                peak_text = f"  |  HP max: {state.char_status_hp_peak}" if state.char_status_hp_peak else ""
+                self.var_last_update_label.config(
+                    text=f"Last update: {seen}  |  Reads: {state.char_status_reads}{peak_text}"
+                )
+            else:
+                self.var_last_update_label.config(text="Last update: —")
 
     @staticmethod
     def _refresh_character_status_region_label(label: tk.Label | None, title: str, region: tuple[int, int, int, int] | None) -> None:
