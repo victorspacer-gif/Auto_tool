@@ -537,11 +537,18 @@ class SystemMonitorApp:
         self._btn(mp3_row, "Browse", self.browse_alarm_sound, PURPLE).pack(side="left")
 
         alarm_threshold = tk.StringVar(value=str(int(self.runtime.state.alarm_threshold * 100)))
-        alarm_hp_percent = tk.StringVar(value=str(self.runtime.state.alarm_hp_percent))
+        alarm_hp_value = tk.StringVar(value=str(self.runtime.state.alarm_hp_value))
+        alarm_mp_value = tk.StringVar(value=str(self.runtime.state.alarm_mp_value))
+        alarm_cap_value = tk.StringVar(value=str(self.runtime.state.alarm_cap_value))
         self.ui_vars["alarm_thresh_var"] = alarm_threshold
-        self.ui_vars["alarm_hp_percent_var"] = alarm_hp_percent
+        self.ui_vars["alarm_hp_value_var"] = alarm_hp_value
+        self.ui_vars["alarm_mp_value_var"] = alarm_mp_value
+        self.ui_vars["alarm_cap_value_var"] = alarm_cap_value
         self._label_entry(panel, "Change threshold (%):", alarm_threshold, width=6)
-        self._label_entry(panel, "Low HP alert (%):", alarm_hp_percent, width=6)
+        tk.Label(panel, text="— or —", font=SMALL, fg=MUTED, bg=PANEL).pack(anchor="w")
+        self._label_entry(panel, "Low HP alert (value):", alarm_hp_value, width=8)
+        self._label_entry(panel, "Low MP/Mana alert (value):", alarm_mp_value, width=8)
+        self._label_entry(panel, "Low Cap alert (value):", alarm_cap_value, width=8)
         auto_pause = tk.BooleanVar(value=self.runtime.state.alarm_auto_pause)
         self.ui_vars["alarm_auto_pause_var"] = auto_pause
         tk.Checkbutton(panel, text="Auto-pause all activities when screen watch triggers", variable=auto_pause, font=BOLD, bg=PANEL, fg=ORANGE, selectcolor=PANEL, activebackground=PANEL, activeforeground=ORANGE).pack(anchor="w", pady=(8, 2))
@@ -1997,7 +2004,9 @@ class SystemMonitorApp:
         mappings = {
             "alarm_mp3_var": state.alarm_mp3,
             "alarm_thresh_var": int(state.alarm_threshold * 100),
-            "alarm_hp_percent_var": state.alarm_hp_percent,
+            "alarm_hp_value_var": state.alarm_hp_value,
+            "alarm_mp_value_var": state.alarm_mp_value,
+            "alarm_cap_value_var": state.alarm_cap_value,
             "char_status_tesseract_var": state.char_status_tesseract_path,
             "char_status_samples_var": state.char_status_samples,
             "fish_min_cap_var": state.fish_min_cap,
@@ -2099,7 +2108,9 @@ class SystemMonitorApp:
             state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, get_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))
             state.rclick_post_click_settle_ms = max(100, get_ms("rclick_post_settle_ms_var", state.rclick_post_click_settle_ms))
             state.alarm_threshold = get_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
-            state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent_var", state.alarm_hp_percent)))
+            state.alarm_hp_value = max(0, get_int("alarm_hp_value_var", state.alarm_hp_value))
+            state.alarm_mp_value = max(0, get_int("alarm_mp_value_var", state.alarm_mp_value))
+            state.alarm_cap_value = max(0, get_int("alarm_cap_value_var", state.alarm_cap_value))
             state.char_status_poll_ms = max(250, get_ms("char_status_poll_var", state.char_status_poll_ms))
             state.char_status_samples = max(1, get_int("char_status_samples_var", state.char_status_samples))
             state.char_status_sample_delay_ms = max(0, get_ms("char_status_sample_delay_var", state.char_status_sample_delay_ms))

@@ -83,6 +83,9 @@ class AppState:
     alarm_region: tuple[int, int, int, int] | None = None
     alarm_auto_pause: bool = False
     alarm_hp_percent: int = 0
+    alarm_hp_value: int = 0
+    alarm_mp_value: int = 0
+    alarm_cap_value: int = 0
     char_status_active: bool = False
     char_status_region: tuple[int, int, int, int] | None = None
     char_status_hp_region: tuple[int, int, int, int] | None = None

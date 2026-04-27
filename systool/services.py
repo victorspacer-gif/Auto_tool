@@ -1218,6 +1218,9 @@ class AlarmService:
                     hp_peak = state.char_status_hp_peak
                     auto_pause = state.alarm_auto_pause
                     threshold = state.alarm_threshold
+                    alarm_hp_value = state.alarm_hp_value
+                    alarm_mp_value = state.alarm_mp_value
+                    alarm_cap_value = state.alarm_cap_value
                 # Try pointer-based HP first, fall back to OCR
                 hp_value = None
                 if self.runtime.hp_service is not None:
@@ -1242,6 +1245,64 @@ class AlarmService:
                             self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
                             self.runtime.ui.dispatch(self.runtime.pause.toggle)
                         continue
+                # Absolute value alerts (no % needed — uses live pointer reads)
+                mp_value = None
+                cap_value = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        mp_value = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
+                if mp_value is None:
+                    with self.runtime.settings_lock:
+                        mp_value = state.char_status_mana
+                if self.runtime.cap_service is not None:
+                    try:
+                        cap_value = self.runtime.cap_service.get_cap()
+                    except Exception:
+                        pass
+                if cap_value is None:
+                    with self.runtime.settings_lock:
+                        cap_value = state.char_status_cap
+                # Low HP (absolute value)
+                if alarm_hp_value > 0 and hp_value is not None and now >= cooldown_until:
+                    if hp_value <= alarm_hp_value:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW HP — {hp_value:.0f} (below {alarm_hp_value})")
+                        self.runtime.ui.set_status(f"⚠️  LOW HP — {hp_value:.0f}", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
+                # Low MP (absolute value)
+                elif alarm_mp_value > 0 and mp_value is not None and now >= cooldown_until:
+                    if mp_value <= alarm_mp_value:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW MP — {mp_value:.0f} (below {alarm_mp_value})")
+                        self.runtime.ui.set_status(f"⚠️  LOW MP — {mp_value:.0f}", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low MP")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
+                # Low Cap (absolute value)
+                elif alarm_cap_value > 0 and cap_value is not None and now >= cooldown_until:
+                    if cap_value <= alarm_cap_value:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW CAP — {cap_value:.0f} (below {alarm_cap_value})")
+                        self.runtime.ui.set_status(f"⚠️  LOW CAP — {cap_value:.0f}", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low Cap")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 try:
                     frame = np.array(sct.grab(get_region()))[:, :, :3]
                 except Exception as exc:

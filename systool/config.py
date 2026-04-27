@@ -50,6 +50,9 @@ class ConfigSerializer:
             "alarm_cooldown": state.alarm_cooldown,
             "alarm_auto_pause": state.alarm_auto_pause,
             "alarm_hp_percent": state.alarm_hp_percent,
+            "alarm_hp_value": state.alarm_hp_value,
+            "alarm_mp_value": state.alarm_mp_value,
+            "alarm_cap_value": state.alarm_cap_value,
             "alarm_region": list(state.alarm_region) if state.alarm_region else None,
             "char_status_region": list(state.char_status_region) if state.char_status_region else None,
             "char_status_hp_region": list(state.char_status_hp_region) if state.char_status_hp_region else None,
@@ -290,6 +293,9 @@ class ConfigSerializer:
         state.alarm_cooldown = get_int("alarm_cooldown", state.alarm_cooldown)
         state.alarm_auto_pause = get_bool("alarm_auto_pause", state.alarm_auto_pause)
         state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent", state.alarm_hp_percent)))
+        state.alarm_hp_value = max(0, get_int("alarm_hp_value", state.alarm_hp_value))
+        state.alarm_mp_value = max(0, get_int("alarm_mp_value", state.alarm_mp_value))
+        state.alarm_cap_value = max(0, get_int("alarm_cap_value", state.alarm_cap_value))
         state.alarm_region = alarm_region
         state.char_status_region = char_status_region
         state.char_status_hp_region = char_status_hp_region
