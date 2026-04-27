@@ -71,6 +71,13 @@ class SystemMonitorApp:
         self.fishing_service = self.container.fishing_service
         self.healer_service = self.container.healer_service
         self.light_service = self.container.light_service
+        self.hp_service = self.container.hp_service
+        # Wire HP service into runtime so alarm/healer services can access it
+        self.runtime.hp_service = self.hp_service
+        self.mp_service = self.container.mp_service
+        self.runtime.mp_service = self.mp_service
+        self.cap_service = self.container.cap_service
+        self.runtime.cap_service = self.cap_service
         self.rune_service = self.container.rune_service
         self.job_service = self.container.job_service
 
@@ -132,6 +139,10 @@ class SystemMonitorApp:
         self.hotkey_vars: dict[str, tk.StringVar] = {}
         self.log_history: list[str] = []
 
+        # Background stats polling (HP/MP/Cap pointer reads)
+        self._stats_poll_timer_id: int | None = None
+        self._prev_stats_values: tuple[float | None, float | None, float | None] = (None, None, None)
+
     def run(self) -> None:
         self.build_ui()
         self.root.mainloop()
@@ -161,6 +172,10 @@ class SystemMonitorApp:
         self._poll_settings()
         self._refresh_stats()
         self._refresh_character_status_display()
+        self._refresh_variables_display()
+        # Start background stats polling (100ms interval, UI-only-on-change)
+        self._start_stats_polling()
+
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()
         if HAS_TRAY:
@@ -209,6 +224,7 @@ class SystemMonitorApp:
         pause_bar = tk.Frame(self.root, bg=BG)
         pause_bar.pack(fill="x", padx=14, pady=(2, 0))
         self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
+        self._btn(pause_bar, "🔗  Attach", self.attach_light_process, BLUE).pack(side="left", padx=(8, 0))
         self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
         if HAS_SANDBOX_LAUNCHER:
             self._btn(pause_bar, "🔒  Sandbox Launcher UNSAFE", self._show_sandbox_launcher_popup, PURPLE).pack(side="left", padx=(8, 0))
@@ -233,6 +249,7 @@ class SystemMonitorApp:
         light_tab = tk.Frame(notebook, bg=BG)
         alarm_tab = tk.Frame(notebook, bg=BG)
         char_status_tab = tk.Frame(notebook, bg=BG)
+        variables_tab = tk.Frame(notebook, bg=BG)
         fish_tab = tk.Frame(notebook, bg=BG)
         hotkeys_tab = tk.Frame(notebook, bg=BG)
         config_tab = tk.Frame(notebook, bg=BG)
@@ -244,6 +261,7 @@ class SystemMonitorApp:
         self.light_tab = light_tab
         self.alarm_tab = alarm_tab
         self.char_status_tab = char_status_tab
+        self.variables_tab = variables_tab
         self.fish_tab = fish_tab
         self.hotkeys_tab = hotkeys_tab
         self.config_tab = config_tab
@@ -254,6 +272,7 @@ class SystemMonitorApp:
         notebook.add(light_tab, text="💡  Light Control??")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
         notebook.add(char_status_tab, text="📊  Character Status")
+        notebook.add(variables_tab, text="🔬  Variables")
         notebook.add(fish_tab, text="🎣  Fishing Session")
         notebook.add(hotkeys_tab, text="⌨️  Hotkeys")
         notebook.add(config_tab, text="💾  Config")
@@ -264,6 +283,7 @@ class SystemMonitorApp:
         self._build_light_tab(light_tab)
         self._build_alarm_tab(alarm_tab)
         self._build_character_status_tab(char_status_tab)
+        self._build_variables_tab(variables_tab)
         self._build_fish_tab(fish_tab)
         self._build_hotkeys_tab(hotkeys_tab)
         self._build_config_tab(config_tab)
@@ -884,6 +904,67 @@ class SystemMonitorApp:
         dep_ready = dependency_error is None
         dep_text = "Python OCR packages loaded" if dep_ready else f"OCR dependency status: {dependency_error}"
         tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if dep_ready else ORANGE, bg=PANEL, justify="left", wraplength=300).pack(anchor="w", pady=(10, 0))
+
+    def _build_variables_tab(self, parent: tk.Frame) -> None:
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        # Left column: live values
+        left = tk.Frame(content_frame, bg=BG)
+        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
+
+        vars_panel = tk.LabelFrame(left, text=" 📡  Live Variables ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        vars_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_level_label = tk.Label(vars_panel, text="Level: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.var_level_label.pack(fill="x", pady=2)
+        self.var_hp_label = tk.Label(vars_panel, text="HP: —", font=HEADER, fg=RED, bg=PANEL, anchor="w")
+        self.var_hp_label.pack(fill="x", pady=2)
+        self.var_cap_label = tk.Label(vars_panel, text="Cap: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.var_cap_label.pack(fill="x", pady=2)
+        self.var_mp_label = tk.Label(vars_panel, text="MP: —", font=HEADER, fg=BLUE, bg=PANEL, anchor="w")
+        self.var_mp_label.pack(fill="x", pady=2)
+        self.var_food_label = tk.Label(vars_panel, text="Food: —", font=HEADER, fg=GREEN, bg=PANEL, anchor="w")
+        self.var_food_label.pack(fill="x", pady=2)
+
+        # Right column: metadata & stats
+        right = tk.Frame(content_frame, bg=BG)
+        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+
+        meta_panel = tk.LabelFrame(right, text=" 📋  Source Metadata ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        meta_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_hp_source_label = tk.Label(meta_panel, text="HP source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_hp_source_label.pack(fill="x", pady=2)
+        self.var_mp_source_label = tk.Label(meta_panel, text="MP source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_mp_source_label.pack(fill="x", pady=2)
+        self.var_cap_source_label = tk.Label(meta_panel, text="Cap source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_cap_source_label.pack(fill="x", pady=2)
+
+        addr_frame = tk.Frame(meta_panel, bg=PANEL)
+        addr_frame.pack(fill="x", pady=(4, 0))
+        self.var_hp_addr_label = tk.Label(addr_frame, text="HP address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_hp_addr_label.pack(fill="x", pady=1)
+        self.var_mp_addr_label = tk.Label(addr_frame, text="MP address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_mp_addr_label.pack(fill="x", pady=1)
+        self.var_cap_addr_label = tk.Label(addr_frame, text="Cap address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_cap_addr_label.pack(fill="x", pady=1)
+
+        stats_panel = tk.LabelFrame(right, text=" 📊  Read Statistics ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        stats_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_regen_label = tk.Label(stats_panel, text="Regen: HP 0.0/min | Mana 0.0/min", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_regen_label.pack(fill="x", pady=2)
+        self.var_read_stats_label = tk.Label(stats_panel, text="Reads: — | Misses: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_read_stats_label.pack(fill="x", pady=2)
+        self.var_last_update_label = tk.Label(stats_panel, text="Last update: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_last_update_label.pack(fill="x", pady=(10, 2))
 
     def _build_hotkeys_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
@@ -1700,6 +1781,28 @@ class SystemMonitorApp:
 
     def attach_light_process(self) -> None:
         ok, message = self.light_service.attach()
+        # Also resolve HP/MP/Cap pointers on light attach (same process handle)
+        if ok and self.hp_service is not None:
+            try:
+                hp_ok, hp_msg = self.hp_service.attach()
+                if hp_ok:
+                    message += f" | {hp_msg}"
+            except Exception as exc:
+                message += f" | HP attach warning: {exc}"
+        if ok and self.mp_service is not None:
+            try:
+                mp_ok, mp_msg = self.mp_service.attach()
+                if mp_ok:
+                    message += f" | {mp_msg}"
+            except Exception as exc:
+                message += f" | MP attach warning: {exc}"
+        if ok and self.cap_service is not None:
+            try:
+                cap_ok, cap_msg = self.cap_service.attach()
+                if cap_ok:
+                    message += f" | {cap_msg}"
+            except Exception as exc:
+                message += f" | Cap attach warning: {exc}"
         self._set_light_status(ok, message)
 
     def toggle_light_freeze(self) -> None:
@@ -1952,6 +2055,7 @@ class SystemMonitorApp:
             else:
                 self.alarm_region_label.config(text="Area: centre 200×200 px (default)")
         self._refresh_character_status_display()
+        self._refresh_variables_display()
         if self.spots_listbox:
             self.spots_listbox.delete(0, "end")
             for index, spot in enumerate(state.fish_spots, start=1):
@@ -2107,11 +2211,26 @@ class SystemMonitorApp:
         if self.char_status_level_label:
             self.char_status_level_label.config(text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}")
         if self.char_status_hp_label:
-            self.char_status_hp_label.config(text=f"HP: {state.char_status_hp if state.char_status_hp is not None else '—'}")
+            # Show pointer-derived HP when available, fall back to OCR
+            hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
+            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
+            self.char_status_hp_label.config(
+                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_mana_label:
-            self.char_status_mana_label.config(text=f"Mana: {state.char_status_mana if state.char_status_mana is not None else '—'}")
+            # Show pointer-derived MP when available, fall back to OCR
+            mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
+            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
+            self.char_status_mana_label.config(
+                text=f"Mana: {mp_display if mp_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_cap_label:
-            self.char_status_cap_label.config(text=f"Cap: {state.char_status_cap if state.char_status_cap is not None else '—'}")
+            # Show pointer-derived Cap when available, fall back to OCR
+            cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
+            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
+            self.char_status_cap_label.config(
+                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_food_label:
             self.char_status_food_label.config(text=f"Food: {state.char_status_food_text or '—'}")
         if self.char_status_regen_label:
@@ -2132,6 +2251,105 @@ class SystemMonitorApp:
             color = ORANGE if state.char_status_last_error else MUTED
             self.char_status_error_label.config(text=f"OCR: {message}", fg=color)
 
+    def _refresh_variables_display(self) -> None:
+        state = self.runtime.state
+
+        # Trigger batch memory read from HP service (reads HP, MP, Cap together)
+        if self.hp_service is not None and hasattr(self.hp_service, "_read_all_stats"):
+            try:
+                self.hp_service._read_all_stats()
+            except Exception:
+                pass
+        else:
+            # Fallback to individual reads if batch method unavailable
+            if self.hp_service is not None:
+                try:
+                    self.hp_service.get_hp()
+                except Exception:
+                    pass
+            if self.mp_service is not None:
+                try:
+                    self.mp_service.get_mp()
+                except Exception:
+                    pass
+            if self.cap_service is not None:
+                try:
+                    self.cap_service.get_cap()
+                except Exception:
+                    pass
+
+        # Left column: live values (pointer-based when available, OCR fallback)
+        if self.var_level_label:
+            self.var_level_label.config(
+                text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}"
+            )
+        if self.var_hp_label:
+            hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
+            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
+            self.var_hp_label.config(
+                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
+            )
+        if self.var_cap_label:
+            cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
+            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
+            self.var_cap_label.config(
+                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
+            )
+        if self.var_mp_label:
+            mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
+            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
+            self.var_mp_label.config(
+                text=f"MP: {mp_display if mp_display is not None else '—'}{source_tag}"
+            )
+        if self.var_food_label:
+            food_text = state.char_status_food_text or "—"
+            self.var_food_label.config(text=f"Food: {food_text}")
+
+        # Right column: source metadata (pointer/ocr/none)
+        if self.var_hp_source_label:
+            src = state.hp_source if state.hp_value is not None else ("ocr" if state.char_status_hp is not None else "none")
+            self.var_hp_source_label.config(text=f"HP source: {src}")
+        if self.var_mp_source_label:
+            src = state.mp_source if state.mp_value is not None else ("ocr" if state.char_status_mana is not None else "none")
+            self.var_mp_source_label.config(text=f"MP source: {src}")
+        if self.var_cap_source_label:
+            src = state.cap_source if state.cap_value is not None else ("ocr" if state.char_status_cap is not None else "none")
+            self.var_cap_source_label.config(text=f"Cap source: {src}")
+
+        # Right column: pointer addresses (hex)
+        if self.var_hp_addr_label:
+            addr = state.hp_pointer_address_hex or "—"
+            self.var_hp_addr_label.config(text=f"HP address: {addr}")
+        if self.var_mp_addr_label:
+            addr = state.mp_pointer_address_hex or "—"
+            self.var_mp_addr_label.config(text=f"MP address: {addr}")
+        if self.var_cap_addr_label:
+            addr = state.cap_pointer_address_hex or "—"
+            self.var_cap_addr_label.config(text=f"Cap address: {addr}")
+
+        # Right column: regen rates & read statistics (from OCR character status service)
+        if self.var_regen_label:
+            hp_regen = state.char_status_hp_regen_per_min if hasattr(state, 'char_status_hp_regen_per_min') else 0.0
+            mp_regen = state.char_status_mana_regen_per_min if hasattr(state, 'char_status_mana_regen_per_min') else 0.0
+            self.var_regen_label.config(
+                text=f"Regen: HP {hp_regen:.1f}/min | Mana {mp_regen:.1f}/min"
+            )
+        if self.var_read_stats_label:
+            reads = state.char_status_reads if hasattr(state, 'char_status_reads') else 0
+            misses = state.char_status_failures if hasattr(state, 'char_status_failures') else 0
+            self.var_read_stats_label.config(
+                text=f"Reads: {reads} | Misses: {misses}"
+            )
+        if self.var_last_update_label:
+            if state.char_status_last_seen:
+                seen = time.strftime("%H:%M:%S", time.localtime(state.char_status_last_seen))
+                peak_text = f"  |  HP max: {state.char_status_hp_peak}" if hasattr(state, 'char_status_hp_peak') and state.char_status_hp_peak else ""
+                self.var_last_update_label.config(
+                    text=f"Last update: {seen}  |  Reads: {reads}{peak_text}"
+                )
+            else:
+                self.var_last_update_label.config(text="Last update: —")
+
     @staticmethod
     def _refresh_character_status_region_label(label: tk.Label | None, title: str, region: tuple[int, int, int, int] | None) -> None:
         if not label:
@@ -2142,9 +2360,59 @@ class SystemMonitorApp:
         else:
             label.config(text=f"{title}: not selected")
 
+    def _start_stats_polling(self) -> None:
+        """Start background HP/MP/Cap pointer polling (100ms interval)."""
+        self._stats_poll_timer_id = 100
+        self.root.after(100, self._poll_stats_background)
+
+    def _poll_stats_background(self) -> None:
+        """Background poller: read HP/MP/Cap every 100ms, update UI only on change."""
+        state = self.runtime.state
+        old_hp, old_mp, old_cap = self._prev_stats_values
+
+        # Trigger batch memory read (updates state.hp_value, state.mp_value, state.cap_value)
+        if self.hp_service is not None and hasattr(self.hp_service, "_read_all_stats"):
+            try:
+                self.hp_service._read_all_stats()
+            except Exception:
+                pass
+
+        new_hp = state.hp_value
+        new_mp = state.mp_value
+        new_cap = state.cap_value
+
+        # Only update UI if at least one value changed
+        if (new_hp != old_hp or new_mp != old_mp or new_cap != old_cap):
+            self._prev_stats_values = (new_hp, new_mp, new_cap)
+            self.root.after(0, self._refresh_variables_display)
+
+        # Schedule next poll (non-blocking via root.after)
+        if self._stats_poll_timer_id is not None:
+            self.root.after(100, self._poll_stats_background)
+
+    def _stop_stats_polling(self) -> None:
+        """Stop background stats polling."""
+        self._stats_poll_timer_id = None
+
+
     def on_close(self) -> None:
         try:
             self.light_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.hp_service is not None:
+                self.hp_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.mp_service is not None:
+                self.mp_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.cap_service is not None:
+                self.cap_service.detach()
         except Exception:
             pass
         self._hide_log_window()
@@ -2249,6 +2517,9 @@ class SystemMonitorApp:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift(), self.root.focus_force()))
 
     def exit_app(self, *args) -> None:
+        # Stop background stats polling
+        self._stop_stats_polling()
+
         self.char_status_service.stop()
         if self.tray_icon:
             self.tray_icon.stop()

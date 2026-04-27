@@ -401,6 +401,549 @@ class LightControlService:
         return self.controller
 
 
+class HpService:
+    """HP value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves all known pointer chains (HP, light) against the
+    target process using a Double-precision read.  If a pointer resolves
+    successfully its address is cached and used as the primary HP source.
+    When the pointer fails to resolve the service falls back to OCR-derived
+    HP from the character status window.
+
+    Public API::
+
+        hp_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        hp_service.get_hp()          -> float | None  # current HP value (pointer or OCR)
+        hp_service.get_hp_peak()     -> int           # peak HP from OCR (0 if unavailable)
+        hp_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller = None  # LightMemoryController instance
+        self._hp_address: int | None = None  # resolved HP pointer address
+        self._light_address: int | None = None  # resolved light pointer address (for logging)
+        self._hp_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._HP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._HP_CACHE_TTL:
+            return True
+        # Cache expired — force re-resolution on next get_hp() call
+        return False
+
+    def _ensure_address_resolved(self) -> bool:
+        """Re-resolve HP pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_hp_pointer()
+        if new_addr is not None:
+            self._hp_address = new_addr
+            self._hp_cache_time = time.time()
+            state.hp_pointer_address_hex = f"{new_addr:X}"
+            state.hp_source = "pointer"
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return HAS_LIGHT_MODULE
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve all known pointers.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        if not HAS_LIGHT_MODULE:
+            return False, "Install psutil and pymem to use HP pointer"
+
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = self._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve HP pointer chain
+        hp_address = self._resolve_hp_pointer()
+
+        # Resolve light pointer (for logging / future use)
+        light_address = None
+        try:
+            from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as LIGHT_PROFILE
+            light_address = self.controller.resolve_light_address(
+                module_name=LIGHT_PROFILE.module_name,
+                pointer_chains=LIGHT_PROFILE.pointer_chains,
+                structure_value_offset=LIGHT_PROFILE.structure_value_offset,
+                signature_pattern=LIGHT_PROFILE.signature_pattern,
+                signature_offset_to_base=LIGHT_PROFILE.signature_offset_to_base,
+            )
+        except Exception:
+            pass
+
+        # Build status message
+        parts = []
+        if hp_address is not None:
+            self._hp_address = hp_address
+            self._hp_cache_time = time.time()  # start TTL clock on first resolution
+            state = self.runtime.state
+            state.hp_pointer_address_hex = f"{hp_address:X}"
+            state.hp_source = "pointer"
+            parts.append(f"HP pointer resolved at 0x{hp_address:X}")
+
+            # Read current HP value from pointer (Double, same as MP/Cap)
+            try:
+                hp_val = self.controller.read_double(hp_address)
+                with self.runtime.settings_lock:
+                    state.hp_value = hp_val
+                parts.append(f"HP={hp_val:.1f}")
+            except Exception as exc:
+                parts.append(f"HP read failed: {exc}")
+
+        if light_address is not None:
+            self._light_address = light_address
+            parts.append(f"Light pointer resolved at 0x{light_address:X}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._hp_address = None
+        self._light_address = None
+        return True, "Detached"
+
+    def get_hp(self) -> float | None:
+        """Return current HP value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source) — Double precision like MP/Cap
+        if not self._is_address_valid(self._hp_address, self._hp_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_address_resolved()
+
+        if self._hp_address is not None and self.controller is not None:
+            try:
+                hp_val = self.controller.read_double(self._hp_address)
+                with self.runtime.settings_lock:
+                    state.hp_value = hp_val
+                return hp_val
+            except Exception:
+                pass
+
+        # Fallback to OCR-derived HP from character status service
+        with self.runtime.settings_lock:
+            ocr_hp = state.char_status_hp
+        if ocr_hp is not None and ocr_hp > 0:
+            return float(ocr_hp)
+        return None
+
+    def get_hp_peak(self) -> int:
+        """Return peak HP value (from OCR)."""
+        with self.runtime.settings_lock:
+            return self.runtime.state.char_status_hp_peak
+
+    def _read_all_stats(self) -> tuple[float | None, float | None, float | None]:
+        """Batch read HP, MP, Cap from memory in a single controller call.
+
+        Since all three stats share the same base address (0x00A783E0), batching
+        reduces redundant module lookups and pointer chain resolution overhead.
+        Returns ``(hp_val, mp_val, cap_val)`` — any value can be None if its
+        specific address wasn't resolved yet.
+        """
+        state = self.runtime.state
+
+        # Try batch read from HP service's controller (primary source)
+        hp_val = None
+        mp_val = None
+        cap_val = None
+
+        if self._hp_address is not None and self.controller is not None:
+            try:
+                hp_val = self.controller.read_double(self._hp_address)
+            except Exception:
+                pass
+
+        # Read MP if address resolved (from MpService)
+        mp_addr = getattr(state, "_mp_resolved_addr", None)
+        if mp_addr is not None and self.controller is not None:
+            try:
+                mp_val = self.controller.read_double(mp_addr)
+            except Exception:
+                pass
+
+        # Read Cap if address resolved (from CapService)
+        cap_addr = getattr(state, "_cap_resolved_addr", None)
+        if cap_addr is not None and self.controller is not None:
+            try:
+                cap_val = self.controller.read_double(cap_addr)
+            except Exception:
+                pass
+
+        # Update state with batch results under lock once
+        with self.runtime.settings_lock:
+            if hp_val is not None:
+                state.hp_value = hp_val
+            if mp_val is not None:
+                state.mp_value = mp_val
+            if cap_val is not None:
+                state.cap_value = cap_val
+
+        return (hp_val, mp_val, cap_val)
+
+    @staticmethod
+    def _find_game_process_name() -> str | None:
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        for proc in psutil.process_iter(attrs=["name"]):
+            name = (proc.info.get("name") or "").strip()
+            if pattern.fullmatch(name):
+                return name
+        return None
+
+    def _resolve_hp_pointer(self) -> int | None:
+        """Resolve the HP pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_hp_module.hp_profile import DEFAULT_HP_PROFILE as HP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(HP_PROFILE.module_name)
+
+        for chain_idx, chain in enumerate(HP_PROFILE.pointer_chains):
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + HP_PROFILE.structure_value_offset
+                # Verify we can read the double at this address (same type as MP/Cap)
+                hp_verify = ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
+class MpService:
+    """MP (Mana) value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves the MP pointer chain against the target process using
+    a Double-precision read.  If the pointer resolves successfully its address
+    is cached and used as the primary MP source.  When the pointer fails to
+    resolve the service falls back to OCR-derived MP from the character status
+    window.
+
+    Public API::
+
+        mp_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        mp_service.get_mp()          -> float | None  # current MP value (pointer or OCR)
+        mp_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller: LightMemoryController | None = None
+        self._mp_address: int | None = None  # resolved MP pointer address
+        self._mp_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._MP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_mp_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached MP pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._MP_CACHE_TTL:
+            return True
+        return False
+
+    def _ensure_mp_address_resolved(self) -> bool:
+        """Re-resolve MP pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_mp_pointer()
+        if new_addr is not None:
+            self._mp_address = new_addr
+            self._mp_cache_time = time.time()
+            state.mp_pointer_address_hex = f"{new_addr:X}"
+            state.mp_source = "pointer"
+            state._mp_resolved_addr = new_addr  # also update batch-read address
+            return True
+        return False
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve the MP pointer.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = HpService._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve MP pointer chain (same base as HP, different offset)
+        mp_address = self._resolve_mp_pointer()
+
+        parts = []
+        if mp_address is not None:
+            self._mp_address = mp_address
+            self._mp_cache_time = time.time()  # start TTL clock on first resolution
+            state = self.runtime.state
+            state.mp_pointer_address_hex = f"{mp_address:X}"
+            state.mp_source = "pointer"
+            # Store resolved address for batch reads
+            state._mp_resolved_addr = mp_address
+            parts.append(f"MP pointer resolved at 0x{mp_address:X}")
+
+            # Read current MP value from pointer (Double)
+            try:
+                mp_val = self.controller.read_double(mp_address)
+                with self.runtime.settings_lock:
+                    state.mp_value = mp_val
+                parts.append(f"MP={mp_val:.1f}")
+            except Exception as exc:
+                parts.append(f"MP read failed: {exc}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._mp_address = None
+        return True, "Detached"
+
+    def get_mp(self) -> float | None:
+        """Return current MP value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if not self._is_mp_address_valid(self._mp_address, self._mp_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_mp_address_resolved()
+
+        if self._mp_address is not None and self.controller is not None:
+            try:
+                mp_val = self.controller.read_double(self._mp_address)
+                with self.runtime.settings_lock:
+                    state.mp_value = mp_val
+                return mp_val
+            except Exception:
+                pass
+
+        # Fallback to OCR-derived MP from character status service
+        with self.runtime.settings_lock:
+            ocr_mana = state.char_status_mana
+        if ocr_mana is not None and ocr_mana > 0:
+            return float(ocr_mana)
+        return None
+
+    def _resolve_mp_pointer(self) -> int | None:
+        """Resolve the MP pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_mp_module.mp_profile import DEFAULT_MP_PROFILE as MP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(MP_PROFILE.module_name)
+
+        for chain_idx, chain in enumerate(MP_PROFILE.pointer_chains):
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + MP_PROFILE.structure_value_offset
+                # Verify we can read the double at this address
+                mp_verify = ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
+class CapService:
+    """Cap (Max HP) value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves the Cap pointer chain against the target process using
+    a Double-precision read.  If the pointer resolves successfully its address
+    is cached and used as the primary Cap source.  When the pointer fails to
+    resolve the service falls back to OCR-derived Cap from the character status
+    window.
+
+    Public API::
+
+        cap_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        cap_service.get_cap()         -> float | None  # current Cap value (pointer or OCR)
+        cap_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller: LightMemoryController | None = None
+        self._cap_address: int | None = None  # resolved Cap pointer address
+        self._cap_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._CAP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_cap_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached Cap pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._CAP_CACHE_TTL:
+            return True
+        return False
+
+    def _ensure_cap_address_resolved(self) -> bool:
+        """Re-resolve Cap pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_cap_pointer()
+        if new_addr is not None:
+            self._cap_address = new_addr
+            self._cap_cache_time = time.time()
+            state.cap_pointer_address_hex = f"{new_addr:X}"
+            state.cap_source = "pointer"
+            state._cap_resolved_addr = new_addr  # also update batch-read address
+            return True
+        return False
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve the Cap pointer.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = HpService._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve Cap pointer chain (same base as HP, different offset)
+        cap_address = self._resolve_cap_pointer()
+
+        parts = []
+        if cap_address is not None:
+            self._cap_address = cap_address
+            self._cap_cache_time = time.time()  # start TTL clock on first resolution
+            state = self.runtime.state
+            state.cap_pointer_address_hex = f"{cap_address:X}"
+            state.cap_source = "pointer"
+            # Store resolved address for batch reads
+            state._cap_resolved_addr = cap_address
+            parts.append(f"Cap pointer resolved at 0x{cap_address:X}")
+
+            # Read current Cap value from pointer (Double)
+            try:
+                cap_val = self.controller.read_double(cap_address)
+                with self.runtime.settings_lock:
+                    state.cap_value = cap_val
+                parts.append(f"Cap={cap_val:.1f}")
+            except Exception as exc:
+                parts.append(f"Cap read failed: {exc}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._cap_address = None
+        return True, "Detached"
+
+    def get_cap(self) -> float | None:
+        """Return current Cap value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if not self._is_cap_address_valid(self._cap_address, self._cap_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_cap_address_resolved()
+
+        if self._cap_address is not None and self.controller is not None:
+            try:
+                cap_val = self.controller.read_double(self._cap_address)
+                with self.runtime.settings_lock:
+                    state.cap_value = cap_val
+                return cap_val
+            except Exception:
+                pass
+
+        # Fallback to OCR-derived Cap from character status service
+        with self.runtime.settings_lock:
+            ocr_cap = state.char_status_cap
+        if ocr_cap is not None and ocr_cap > 0:
+            return float(ocr_cap)
+        return None
+
+    def get_cap_peak(self) -> int:
+        """Return peak Cap value (from OCR)."""
+        with self.runtime.settings_lock:
+            return self.runtime.state.char_status_cap_peak
+
+    def _resolve_cap_pointer(self) -> int | None:
+        """Resolve the Cap pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_cap_module.cap_profile import DEFAULT_CAP_PROFILE as CAP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(CAP_PROFILE.module_name)
+
+        for chain_idx, chain in enumerate(CAP_PROFILE.pointer_chains):
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + CAP_PROFILE.structure_value_offset
+                # Verify we can read the double at this address
+                cap_verify = ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
 class PositionCaptureService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
@@ -672,10 +1215,19 @@ class AlarmService:
                 now = time.monotonic()
                 with self.runtime.settings_lock:
                     hp_percent = state.alarm_hp_percent
-                    hp_value = state.char_status_hp
                     hp_peak = state.char_status_hp_peak
                     auto_pause = state.alarm_auto_pause
                     threshold = state.alarm_threshold
+                # Try pointer-based HP first, fall back to OCR
+                hp_value = None
+                if self.runtime.hp_service is not None:
+                    try:
+                        hp_value = self.runtime.hp_service.get_hp()
+                    except Exception:
+                        pass
+                if hp_value is None:
+                    with self.runtime.settings_lock:
+                        hp_value = state.char_status_hp
                 if hp_percent > 0 and hp_value is not None and hp_peak > 0 and now >= cooldown_until:
                     hp_ratio = (hp_value / hp_peak) * 100.0
                     if hp_ratio <= hp_percent:
@@ -1062,10 +1614,21 @@ class FishingService:
             self.runtime.ui.log("❌ Record at least one spot")
             self.runtime.ui.set_status("Record at least one fishing spot", ORANGE)
             return
-        if state.fish_min_cap > 0 and state.char_status_cap is not None and state.char_status_cap <= state.fish_min_cap:
-            self.runtime.ui.log("⚠️  Capacity is already at or below the fishing stop threshold")
-            self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
-            return
+        if state.fish_min_cap > 0:
+            # Use pointer-based Cap first, fall back to OCR
+            fish_cap = None
+            if self.runtime.cap_service is not None:
+                try:
+                    fish_cap = self.runtime.cap_service.get_cap()
+                except Exception:
+                    pass
+            if fish_cap is None:
+                with self.runtime.settings_lock:
+                    fish_cap = state.char_status_cap
+            if fish_cap is not None and fish_cap <= state.fish_min_cap:
+                self.runtime.ui.log("⚠️  Capacity is already at or below the fishing stop threshold")
+                self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
+                return
         self.runtime.fish_stop.clear()
         
         # Calculate random bonus time scaled by user configuration (up to 15 minutes at 60min mark)
@@ -1142,7 +1705,16 @@ class FishingService:
                 wait_min = state.fish_wait_min_ms
                 wait_max = state.fish_wait_max_ms
                 min_cap = state.fish_min_cap
-                current_cap = state.char_status_cap
+                # Use pointer-based Cap first, fall back to OCR
+                current_cap = None
+                if self.runtime.cap_service is not None:
+                    try:
+                        current_cap = self.runtime.cap_service.get_cap()
+                    except Exception:
+                        pass
+                if current_cap is None:
+                    with self.runtime.settings_lock:
+                        current_cap = state.char_status_cap
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
                 self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
@@ -1248,9 +1820,14 @@ class AutoHealerService:
                     break
                 continue
             with self.runtime.settings_lock:
-                hp_value = state.char_status_hp
                 hp_peak = state.char_status_hp_peak
-                mana_value = state.char_status_mana
+                # Use pointer-based MP first, fall back to OCR
+                mana_value = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        mana_value = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
                 mode = state.healer_mode
                 spell_key_name = state.healer_spell_key
                 use_percent = state.healer_use_percent
@@ -1261,6 +1838,13 @@ class AutoHealerService:
                 rune_pos = state.healer_rune_pos
                 mouse_speed = state.healer_mouse_speed
                 rune_delay_ms = state.healer_rune_delay_ms
+            # Try pointer-based HP first, fall back to OCR
+            hp_value = None
+            if self.runtime.hp_service is not None:
+                try:
+                    hp_value = self.runtime.hp_service.get_hp()
+                except Exception:
+                    pass
             if hp_value is None:
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
                     break
@@ -1384,7 +1968,16 @@ class RuneMakerService:
                 cycle_delay_ms = state.rune_cycle_delay_ms
                 cycle_variation_ms = state.rune_cycle_delay_variation_ms
                 min_mana = state.rune_min_mana
-                current_mana = state.char_status_mana
+                # Use pointer-based MP first, fall back to OCR
+                current_mana = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        current_mana = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
+                if current_mana is None:
+                    with self.runtime.settings_lock:
+                        current_mana = state.char_status_mana
                 blank_rune_limit = state.rune_available_blank_runes
                 move_min_ms = state.rune_mouse_move_min_ms
                 move_max_ms = state.rune_mouse_move_max_ms
@@ -1545,7 +2138,16 @@ class HotkeyJobService:
                 break
             prev_hwnd = None
             if job.min_mana > 0:
-                current_mana = self.runtime.state.char_status_mana
+                # Use pointer-based MP first, fall back to OCR
+                current_mana = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        current_mana = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
+                if current_mana is None:
+                    with self.runtime.settings_lock:
+                        current_mana = self.runtime.state.char_status_mana
                 if current_mana is not None and current_mana < job.min_mana:
                     continue
             if job.use_focus and job.window_name.strip():

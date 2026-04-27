@@ -161,14 +161,33 @@ class AppState:
     light_process_name: str = "miracle_gl.exe"
     light_direct_address_hex: str = ""
     light_freeze_enabled: bool = False
-    light_freeze_color_value: int = 215
-    light_freeze_intensity_value: int = 7
-    light_freeze_interval_ms: int = 50
-    light_last_mode: str = "default"
+    light_freeze_color_value: int | None = None
+    light_freeze_intensity_value: int | None = None
+    light_freeze_interval_ms: int = 1000
+    light_last_mode: str = ""
     light_last_color_address_hex: str = ""
     light_last_intensity_address_hex: str = ""
     light_original_color_value: int | None = None
     light_original_intensity_value: int | None = None
+
+    # HP pointer (primary source, falls back to OCR)
+    hp_pointer_address_hex: str = ""
+    hp_source: str = "ocr"  # 'pointer' or 'ocr'
+    hp_value: int | None = None  # Current HP from pointer resolution (primary source)
+
+    # MP pointer (primary source, falls back to OCR)
+    mp_pointer_address_hex: str = ""
+    mp_source: str = "none"  # 'pointer', 'ocr', or 'none'
+    mp_value: float | None = None  # Current MP from pointer resolution
+
+    # Cap (Max HP) pointer (primary source, falls back to OCR)
+    cap_pointer_address_hex: str = ""
+    cap_source: str = "none"  # 'pointer', 'ocr', or 'none'
+    cap_value: float | None = None  # Current Cap from pointer resolution
+
+    # Resolved addresses for batch memory reads (shared across HP/MP/Cap services)
+    _mp_resolved_addr: int | None = None  # MP address resolved by MpService.attach()
+    _cap_resolved_addr: int | None = None  # Cap address resolved by CapService.attach()
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
