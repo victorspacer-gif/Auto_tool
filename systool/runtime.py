@@ -200,6 +200,11 @@ class CursorRequest:
 
 
 class ExecutionGate:
+    # High-priority modules that need exclusive mouse/execution access during their session.
+    # While a high-priority module holds the gate, lower-priority modules (right-click, healer, afk)
+    # must skip their attempts to avoid interrupting critical A->B sequences.
+    HIGH_PRIORITY_MODULES = frozenset({"fishing", "rune"})
+
     def __init__(self, pause: PauseController) -> None:
         self._pause = pause
         self._owner: object | None = None
@@ -208,6 +213,21 @@ class ExecutionGate:
         self._last_module_id: str | None = None
         self._consecutive_grants = 0
         self._max_consecutive_grants = 2
+        # Track which high-priority module currently holds exclusive access.
+        # When set, only that module (and other high-priority modules) can acquire the gate.
+        self._session_owner: str | None = None
+
+    def set_session_active(self, module_id: str) -> None:
+        """Mark a high-priority session as active. Blocks lower-priority modules."""
+        if module_id in self.HIGH_PRIORITY_MODULES:
+            with self._condition:
+                self._session_owner = module_id
+
+    def clear_session(self) -> None:
+        """Clear the exclusive session lock, allowing all modules to compete again."""
+        with self._condition:
+            self._session_owner = None
+            self._condition.notify_all()
 
     def acquire(
         self,
@@ -229,11 +249,34 @@ class ExecutionGate:
             self._pause.wait()
             with self._condition:
                 self._prune_expired_locked()
+                # Session priority check: block lower-priority modules when a high-priority
+                # session (fishing/rune) holds exclusive access. High-priority modules can
+                # always acquire; lower-priority modules must wait or skip.
+                if (
+                    self._session_owner is not None
+                    and self._session_owner != request.module_id
+                    and request.module_id not in self.HIGH_PRIORITY_MODULES
+                ):
+                    # Lower-priority module blocked by active high-priority session.
+                    # Don't queue it — let the caller's loop handle retry/skip logic.
+                    self._remove_request_locked(request)
+                    return False
                 self._rebalance_queue_for_fairness_locked()
                 if not self._is_request_queued_locked(request):
                     return False
                 if self._owner is None and self._is_next_request_locked(request):
                     self._owner = request.token
+                    # Track session ownership for high-priority modules
+                    if request.module_id in self.HIGH_PRIORITY_MODULES:
+                        self._session_owner = request.module_id
+                    elif self._session_owner == request.module_id:
+                        # Same session continuing — keep it active
+                        pass
+                    else:
+                        # Non-high-priority module acquired while session was set;
+                        # this shouldn't happen due to check above, but be safe.
+                        if self._session_owner is not None:
+                            self._session_owner = None
                     if request.module_id == self._last_module_id:
                         self._consecutive_grants += 1
                     else:
@@ -246,8 +289,17 @@ class ExecutionGate:
 
     def release(self) -> None:
         with self._condition:
+            was_session_owner = (self._session_owner is not None and self._owner is not None)
             self._owner = None
             self._prune_expired_locked()
+            # Clear session lock only if no high-priority requests are still queued.
+            # This allows the next high-priority module to grab the gate immediately
+            # without going through the fairness queue.
+            has_high_priority_queued = any(
+                r.module_id in self.HIGH_PRIORITY_MODULES for r in self._queue
+            )
+            if was_session_owner and not has_high_priority_queued:
+                self._session_owner = None
             self._condition.notify_all()
 
     def _queue_request_locked(self, request: CursorRequest) -> None:
@@ -311,6 +363,14 @@ class MouseGate:
 
     def release(self) -> None:
         self._execution.release()
+
+    def set_session_active(self, module_id: str) -> None:
+        """Delegate to execution gate — mark a high-priority session as active."""
+        self._execution.set_session_active(module_id)
+
+    def clear_session(self) -> None:
+        """Delegate to execution gate — clear the exclusive session lock."""
+        self._execution.clear_session()
 
 
 class AppRuntime:
