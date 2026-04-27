@@ -1721,6 +1721,7 @@ class FishingService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log(f"▶ Fishing start — rod={state.fish_rod_pos}  spots={len(state.fish_spots)}")
+        stopped_by_food = False
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
             state.fish_active = False
@@ -1783,11 +1784,16 @@ class FishingService:
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
                 self.runtime.fish_stop.set()
                 break
-            # Check food level for auto-restart
-            if auto_restart_enabled and food_seconds is not None and food_seconds <= auto_restart_food_min_secs:
+            # Check food level for auto-restart (only stop if no other session is running)
+            if (
+                auto_restart_enabled
+                and food_seconds is not None
+                and food_seconds <= auto_restart_food_min_secs
+            ):
                 self.runtime.ui.log(f"🍖 Food running low ({food_seconds}s) — stopping session to eat")
                 self.runtime.ui.set_status("Food low — stopping fishing to eat", ORANGE)
                 self.runtime.fish_stop.set()
+                stopped_by_food = True
                 break
             cycle_locked = False
             try:
@@ -1845,7 +1851,8 @@ class FishingService:
             auto_restart_enabled = state.fish_auto_restart_enabled
             auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
         if (
-            auto_restart_enabled
+            stopped_by_food
+            and auto_restart_enabled
             and food_seconds is not None
             and food_seconds <= auto_restart_food_min_secs
         ):
