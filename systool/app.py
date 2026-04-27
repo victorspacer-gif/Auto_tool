@@ -2168,6 +2168,7 @@ class SystemMonitorApp:
             state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent_var", state.healer_hp_percent)))
             state.healer_hp_value = max(1, get_int("healer_hp_value_var", state.healer_hp_value))
             state.healer_min_mana = max(0, get_int("healer_min_mana_var", state.healer_min_mana))
+            state.healer_max_mana = max(state.healer_min_mana, get_int("healer_max_mana_var", state.healer_max_mana))
             try:
                 state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
             except (KeyError, ValueError):

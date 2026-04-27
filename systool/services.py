@@ -1894,6 +1894,7 @@ class AutoHealerService:
                 hp_percent = state.healer_hp_percent
                 hp_fixed = state.healer_hp_value
                 min_mana = state.healer_min_mana
+                max_mana = state.healer_max_mana
                 character_pos = state.healer_character_pos
                 rune_pos = state.healer_rune_pos
                 mouse_speed = state.healer_mouse_speed
@@ -1919,10 +1920,13 @@ class AutoHealerService:
                 if not self.runtime.pause.wait_interruptible(0.12, self.runtime.healer_stop):
                     break
                 continue
-            if min_mana > 0 and mana_value is not None and mana_value < min_mana:
-                if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
-                    break
-                continue
+            if min_mana > 0 and mana_value is not None:
+                # Pick a random threshold between min and max (if max set), otherwise use min
+                threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
+                if mana_value < threshold:
+                    if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
+                        break
+                    continue
             try:
                 if mode == "spell":
                     spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
