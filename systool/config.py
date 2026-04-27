@@ -96,6 +96,7 @@ class ConfigSerializer:
             "healer_hp_percent": state.healer_hp_percent,
             "healer_hp_value": state.healer_hp_value,
             "healer_min_mana": state.healer_min_mana,
+            "healer_max_mana": state.healer_max_mana,
             "healer_character_x": state.healer_character_pos[0],
             "healer_character_y": state.healer_character_pos[1],
             "healer_rune_x": state.healer_rune_pos[0],
@@ -365,6 +366,7 @@ class ConfigSerializer:
         state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent", state.healer_hp_percent)))
         state.healer_hp_value = max(1, get_int("healer_hp_value", state.healer_hp_value))
         state.healer_min_mana = max(0, get_int("healer_min_mana", state.healer_min_mana))
+        state.healer_max_mana = max(state.healer_min_mana, get_int("healer_max_mana", state.healer_max_mana))
         state.healer_character_pos = (
             get_int("healer_character_x", state.healer_character_pos[0]),
             get_int("healer_character_y", state.healer_character_pos[1]),
