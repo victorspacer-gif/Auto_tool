@@ -1603,8 +1603,8 @@ class CharacterStatusService:
         match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
         if not match:
             return None
-        # Format is HH:MM, converting to seconds
-        return (int(match.group(1)) * 60 + int(match.group(2))) * 60
+        # Format is MM:SS (minutes:seconds), converting to total seconds
+        return int(match.group(1)) * 60 + int(match.group(2))
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
         base_w, base_h = self.BASE_SIZE
@@ -1785,6 +1785,12 @@ class FishingService:
                 self.runtime.fish_stop.set()
                 break
             # Check food level for auto-restart (only stop if no other session is running)
+            if not auto_restart_enabled:
+                self.runtime.ui.log("⚠️  Food check skipped — auto-restart disabled")
+            elif food_seconds is None:
+                self.runtime.ui.log("⚠️  Food check skipped — food value not available (ensure Character Status OCR is running)")
+            else:
+                self.runtime.ui.log(f"🍖 Food check: {food_seconds}s / threshold {auto_restart_food_min_secs}s")
             if (
                 auto_restart_enabled
                 and food_seconds is not None
