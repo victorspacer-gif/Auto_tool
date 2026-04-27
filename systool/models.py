@@ -206,6 +206,11 @@ class AppState:
     cap_source: str = "none"  # 'pointer', 'ocr', or 'none'
     cap_value: float | None = None  # Current Cap from pointer resolution
 
+    # Previous OCR values for change detection in background poller (internal)
+    _prev_ocr_hp: int | None = None
+    _prev_ocr_mp: int | None = None
+    _prev_ocr_cap: int | None = None
+
     # Resolved addresses for batch memory reads (shared across HP/MP/Cap services)
     _mp_resolved_addr: int | None = None  # MP address resolved by MpService.attach()
     _cap_resolved_addr: int | None = None  # Cap address resolved by CapService.attach()

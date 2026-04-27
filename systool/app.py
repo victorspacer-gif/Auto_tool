@@ -1688,11 +1688,12 @@ class SystemMonitorApp:
             job.key = vars_map["key"].get()
             job.min_ms = self._display_to_ms(float(vars_map["min"].get()))
             job.max_ms = self._display_to_ms(float(vars_map["max"].get()))
-            job.min_mana = int(vars_map["min_mana"].get())
+            job.min_mana = max(0, int(vars_map["min_mana"].get()))
+            job.max_mana = max(job.min_mana, int(vars_map["max_mana"].get()))
             job.burst_enabled = vars_map["burst"].get()
-            job.burst_chance = int(vars_map["b_chance"].get()) / 100.0
-            job.burst_cnt_min = int(vars_map["b_cmin"].get())
-            job.burst_cnt_max = int(vars_map["b_cmax"].get())
+            job.burst_chance = min(1.0, max(0.0, int(vars_map["b_chance"].get()) / 100.0))
+            job.burst_cnt_min = max(0, int(vars_map["b_cmin"].get()))
+            job.burst_cnt_max = max(job.burst_cnt_min, int(vars_map["b_cmax"].get()))
             job.burst_int_ms = self._display_to_ms(float(vars_map["b_int"].get()))
             job.use_focus = vars_map["focus"].get()
             job.window_name = vars_map["win_name"].get()
@@ -2453,9 +2454,23 @@ class SystemMonitorApp:
         new_mp = state.mp_value
         new_cap = state.cap_value
 
-        # Only update UI if at least one value changed
-        if (new_hp != old_hp or new_mp != old_mp or new_cap != old_cap):
+        # Also read OCR fallback values (char_status_hp/mana/cap) which are updated by the
+        # CharStatusService running in a separate thread. When pointers fail, these provide
+        # the live values that should be displayed.
+        ocr_hp = state.char_status_hp
+        ocr_mp = state.char_status_mana
+        ocr_cap = state.char_status_cap
+
+        # Only update UI if at least one value changed (pointer OR OCR)
+        if (new_hp != old_hp or new_mp != old_mp or new_cap != old_cap or
+            ocr_hp is not None and ocr_hp != state._prev_ocr_hp or
+            ocr_mp is not None and ocr_mp != state._prev_ocr_mp or
+            ocr_cap is not None and ocr_cap != state._prev_ocr_cap):
             self._prev_stats_values = (new_hp, new_mp, new_cap)
+            # Store OCR values for next comparison
+            state._prev_ocr_hp = ocr_hp if ocr_hp is not None else 0
+            state._prev_ocr_mp = ocr_mp if ocr_mp is not None else 0
+            state._prev_ocr_cap = ocr_cap if ocr_cap is not None else 0
             self.root.after(0, self._refresh_variables_display)
 
         # Schedule next poll (non-blocking via root.after)

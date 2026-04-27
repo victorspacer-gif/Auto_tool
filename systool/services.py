@@ -1028,6 +1028,13 @@ class AntiAfkService:
                 max_ms = state.afk_max_ms
             if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.afk_stop):
                 break
+            # Skip AFK activity while fishing or rune sessions are active — these high-priority
+            # sessions need exclusive keyboard/mouse access for their full A->B sequences.
+            with self.runtime.settings_lock:
+                fish_active = state.fish_active
+                rune_active = state.rune_active
+            if fish_active or rune_active:
+                continue
             direction_name, direction_key = random.choice(list(directions.items()))
             if not self.runtime.execution.acquire(self.runtime.afk_stop, max_wait=0.50, module_id="afk"):
                 if self.runtime.afk_stop.is_set():
@@ -1121,7 +1128,18 @@ class RightClickService:
                     continue
                 clicks_to_send = 1
                 queue_window = 0.80
+            # Skip gate acquisition if fishing or rune session is active — these high-priority
+            # sessions need exclusive mouse access for their full A->B sequences.
+            with self.runtime.settings_lock:
+                fish_active = state.fish_active
+                rune_active = state.rune_active
+            if fish_active or rune_active:
+                if not self.runtime.pause.wait_interruptible(0.2, self.runtime.rclick_stop):
+                    break
+                continue
             if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window, module_id="right_click"):
+                # Gate acquisition failed — either blocked by high-priority session (fishing/rune)
+                # or another module holds the gate. Skip this iteration to avoid disrupting critical sessions.
                 if self.runtime.rclick_stop.is_set():
                     break
                 continue
@@ -1700,6 +1718,9 @@ class FishingService:
         state.fish_session_remaining_secs = total_seconds
         state.fish_session_deadline = time.monotonic() + total_seconds
         state.fish_active = True
+        # Claim exclusive mouse/execution access for the full fishing session.
+        # This blocks right-click, healer, AFK from interrupting mid-cycle.
+        self.runtime.mouse.set_session_active("fishing")
         threading.Thread(target=self._worker, daemon=True).start()
         
         self.runtime.ui.set_status(
@@ -1847,6 +1868,8 @@ class FishingService:
                 break
             if not wait_with_session_limit(random.randint(wait_min, wait_max) / 1000.0):
                 break
+        # Release exclusive session lock so other modules can use the mouse again.
+        self.runtime.mouse.clear_session()
         state.fish_active = False
         if self.runtime.fish_stop.is_set():
             state.fish_session_remaining_secs = 0
@@ -1965,6 +1988,15 @@ class AutoHealerService:
                     if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
                         break
                     continue
+            # Skip healer actions while fishing or rune sessions are active — these high-priority
+            # sessions need exclusive execution/mouse access for their full A->B sequences.
+            with self.runtime.settings_lock:
+                fish_active = state.fish_active
+                rune_active = state.rune_active
+            if fish_active or rune_active:
+                if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
+                    break
+                continue
             try:
                 if mode == "spell":
                     spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
@@ -2027,6 +2059,9 @@ class RuneMakerService:
             return
         self.runtime.rune_stop.clear()
         state.rune_active = True
+        # Claim exclusive mouse/execution access for the full rune session.
+        # This blocks right-click, healer, AFK from interrupting mid-cycle A->B sequences.
+        self.runtime.mouse.set_session_active("rune")
         threading.Thread(target=self._worker, daemon=True).start()
         self.runtime.ui.set_status("Rune session running…", GREEN)
 
@@ -2163,6 +2198,8 @@ class RuneMakerService:
             self.runtime.ui.log(f"⏳ Waiting {wait_s:.1f}s before next cast…")
             if not self.runtime.pause.wait_interruptible(wait_s, self.runtime.rune_stop):
                 break
+        # Release exclusive session lock so other modules can use execution again.
+        self.runtime.execution.clear_session()
         state.rune_active = False
         self.runtime.ui.log(f"⏹ Rune session stopped — {state.stats['runes_made']} runes moved")
 
@@ -2209,7 +2246,13 @@ class HotkeyJobService:
         self.runtime.ui.set_status(f"Job #{job.job_id} ({job.key}) started", GREEN)
 
     def stop_job(self, job: HotkeyJob) -> None:
+        if not job.running:
+            return
         job.stop_evt.set()
+        job.running = False
+        self.runtime.ui.job_state_changed(job)
+        self.runtime.ui.log(f"⏹ Job #{job.job_id} ({job.key}) stopped")
+        self.runtime.ui.set_status(f"Job #{job.job_id} stopped", RED)
 
     def stop_all(self, stop_afk, stop_rclick, stop_alarm, stop_fishing, stop_rune) -> None:
         for job in list(self.runtime.state.jobs):
