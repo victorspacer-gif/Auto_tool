@@ -323,8 +323,8 @@ class AppRuntime:
                 ConfigSerializer.apply_loaded(self.state, payload)
             except Exception as e:
                 print(f"Failed to load config: {e}")
-        self.settings_lock = threading.Lock()
-        self.record_lock = threading.Lock()
+        self.settings_lock = threading.RLock()
+        self.record_lock = threading.RLock()
         self.ui = UINotifier()
         self.pause = PauseController(self.ui)
         self.execution = ExecutionGate(self.pause)

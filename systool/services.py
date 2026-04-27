@@ -1713,8 +1713,7 @@ class FishingService:
                     except Exception:
                         pass
                 if current_cap is None:
-                    with self.runtime.settings_lock:
-                        current_cap = state.char_status_cap
+                    current_cap = state.char_status_cap
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
                 self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
@@ -1976,8 +1975,7 @@ class RuneMakerService:
                     except Exception:
                         pass
                 if current_mana is None:
-                    with self.runtime.settings_lock:
-                        current_mana = state.char_status_mana
+                    current_mana = state.char_status_mana
                 blank_rune_limit = state.rune_available_blank_runes
                 move_min_ms = state.rune_mouse_move_min_ms
                 move_max_ms = state.rune_mouse_move_max_ms
