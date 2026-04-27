@@ -423,6 +423,33 @@ class HpService:
         self.controller = None  # LightMemoryController instance
         self._hp_address: int | None = None  # resolved HP pointer address
         self._light_address: int | None = None  # resolved light pointer address (for logging)
+        self._hp_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._HP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._HP_CACHE_TTL:
+            return True
+        # Cache expired — force re-resolution on next get_hp() call
+        self.runtime.ui.log(f"[HP] Pointer cache expired ({self._HP_CACHE_TTL}s), will re-resolve")
+        return False
+
+    def _ensure_address_resolved(self) -> bool:
+        """Re-resolve HP pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_hp_pointer()
+        if new_addr is not None:
+            self._hp_address = new_addr
+            self._hp_cache_time = time.time()
+            state.hp_pointer_address_hex = f"{new_addr:X}"
+            state.hp_source = "pointer"
+            self.runtime.ui.log(f"[HP] Re-resolved pointer -> 0x{new_addr:X}")
+            return True
+        return False
 
     def is_available(self) -> bool:
         return HAS_LIGHT_MODULE
@@ -473,6 +500,7 @@ class HpService:
         parts = []
         if hp_address is not None:
             self._hp_address = hp_address
+            self._hp_cache_time = time.time()  # start TTL clock on first resolution
             state = self.runtime.state
             state.hp_pointer_address_hex = f"{hp_address:X}"
             state.hp_source = "pointer"
@@ -505,6 +533,10 @@ class HpService:
         """Return current HP value.  Uses pointer if available, otherwise OCR."""
         state = self.runtime.state
         # Try pointer first (primary source) — Double precision like MP/Cap
+        if not self._is_address_valid(self._hp_address, self._hp_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_address_resolved()
+
         if self._hp_address is not None and self.controller is not None:
             try:
                 hp_val = self.controller.read_double(self._hp_address)
@@ -649,6 +681,33 @@ class MpService:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
         self._mp_address: int | None = None  # resolved MP pointer address
+        self._mp_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._MP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_mp_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached MP pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._MP_CACHE_TTL:
+            return True
+        self.runtime.ui.log(f"[MP] Pointer cache expired ({self._MP_CACHE_TTL}s), will re-resolve")
+        return False
+
+    def _ensure_mp_address_resolved(self) -> bool:
+        """Re-resolve MP pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_mp_pointer()
+        if new_addr is not None:
+            self._mp_address = new_addr
+            self._mp_cache_time = time.time()
+            state.mp_pointer_address_hex = f"{new_addr:X}"
+            state.mp_source = "pointer"
+            state._mp_resolved_addr = new_addr  # also update batch-read address
+            self.runtime.ui.log(f"[MP] Re-resolved pointer -> 0x{new_addr:X}")
+            return True
+        return False
 
     def attach(self) -> tuple[bool, str]:
         """Hook into the target process and resolve the MP pointer.
@@ -678,6 +737,7 @@ class MpService:
         parts = []
         if mp_address is not None:
             self._mp_address = mp_address
+            self._mp_cache_time = time.time()  # start TTL clock on first resolution
             state = self.runtime.state
             state.mp_pointer_address_hex = f"{mp_address:X}"
             state.mp_source = "pointer"
@@ -707,6 +767,10 @@ class MpService:
         """Return current MP value.  Uses pointer if available, otherwise OCR."""
         state = self.runtime.state
         # Try pointer first (primary source)
+        if not self._is_mp_address_valid(self._mp_address, self._mp_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_mp_address_resolved()
+
         if self._mp_address is not None and self.controller is not None:
             try:
                 mp_val = self.controller.read_double(self._mp_address)
@@ -778,6 +842,33 @@ class CapService:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
         self._cap_address: int | None = None  # resolved Cap pointer address
+        self._cap_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._CAP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_cap_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached Cap pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._CAP_CACHE_TTL:
+            return True
+        self.runtime.ui.log(f"[Cap] Pointer cache expired ({self._CAP_CACHE_TTL}s), will re-resolve")
+        return False
+
+    def _ensure_cap_address_resolved(self) -> bool:
+        """Re-resolve Cap pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_cap_pointer()
+        if new_addr is not None:
+            self._cap_address = new_addr
+            self._cap_cache_time = time.time()
+            state.cap_pointer_address_hex = f"{new_addr:X}"
+            state.cap_source = "pointer"
+            state._cap_resolved_addr = new_addr  # also update batch-read address
+            self.runtime.ui.log(f"[Cap] Re-resolved pointer -> 0x{new_addr:X}")
+            return True
+        return False
 
     def attach(self) -> tuple[bool, str]:
         """Hook into the target process and resolve the Cap pointer.
@@ -807,6 +898,7 @@ class CapService:
         parts = []
         if cap_address is not None:
             self._cap_address = cap_address
+            self._cap_cache_time = time.time()  # start TTL clock on first resolution
             state = self.runtime.state
             state.cap_pointer_address_hex = f"{cap_address:X}"
             state.cap_source = "pointer"
@@ -836,6 +928,10 @@ class CapService:
         """Return current Cap value.  Uses pointer if available, otherwise OCR."""
         state = self.runtime.state
         # Try pointer first (primary source)
+        if not self._is_cap_address_valid(self._cap_address, self._cap_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_cap_address_resolved()
+
         if self._cap_address is not None and self.controller is not None:
             try:
                 cap_val = self.controller.read_double(self._cap_address)

@@ -2362,6 +2362,7 @@ class SystemMonitorApp:
     def _start_stats_polling(self) -> None:
         """Start background HP/MP/Cap pointer polling (100ms interval)."""
         self._stats_poll_timer_id = 100
+        self.root.after(100, self._poll_stats_background)
 
     def _poll_stats_background(self) -> None:
         """Background poller: read HP/MP/Cap every 100ms, update UI only on change."""
