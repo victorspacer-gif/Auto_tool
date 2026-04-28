@@ -122,7 +122,7 @@ class TestExecutionGateFIFO:
 
 
 class TestFishingCycle:
-    def test_fishing_cycle_right_clicks_casts_and_returns_to_start(self):
+    def test_fishing_cycle_right_clicks_then_casts_without_returning_to_start(self):
         from systool.runtime import AppRuntime
         from systool.services import FishingService
 
@@ -174,7 +174,7 @@ class TestFishingCycle:
             ("right", (100, 200)),
             ("left", (300, 400)),
         ]
-        assert moves == [(100, 200), (300, 400), (10, 20)]
+        assert moves == [(100, 200), (300, 400)]
         assert release_calls == ["released"]
         assert state.stats["fish_casts"] == 1
         assert state.fish_active is False

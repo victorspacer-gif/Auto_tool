@@ -1813,7 +1813,6 @@ class FishingService:
                     if self.runtime.fish_stop.is_set():
                         break
                     continue
-                start_position = mouse.position
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
                 HumanMouse.move(mouse, rod_target)
                 time.sleep(random.uniform(0.07, 0.17))
@@ -1828,10 +1827,9 @@ class FishingService:
                 HumanMouse.move(mouse, spot_target)
                 time.sleep(random.uniform(0.10, 0.26))
                 mouse.click(pynput_mouse.Button.left, 1)
-                HumanMouse.move(mouse, start_position)
                 with self.runtime.record_lock:
                     state.stats["fish_casts"] += 1
-                self.runtime.ui.log(f"🪣 Cast → {spot_target} and returned to {start_position}")
+                self.runtime.ui.log(f"🪣 Cast → {spot_target}")
                 self.runtime.ui.refresh_stats()
             except Exception as exc:
                 self.runtime.ui.log(f"❌ Fish cycle: {exc}")
