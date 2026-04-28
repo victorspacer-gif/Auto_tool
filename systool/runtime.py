@@ -211,7 +211,107 @@ class CursorRequest:
     module_id: str = "anonymous"
 
 
+class ModuleQueue:
+    """Manages a FIFO queue of module execution requests.
+
+    Enforces single-thread execution per module — only one module can be scheduled
+    and executed at a time. When a module enters the queue, it must complete its
+    execution before the next module is allowed to run. If another module requests
+    execution while one is running, it is added to the queue and waits its turn.
+
+    After a module finishes, the system checks whether other modules are waiting
+    in the queue before allowing that module to re-queue. This prevents any single
+    module from monopolizing execution and ensures fair task distribution.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        # FIFO queue of module IDs (preserves insertion order, no duplicates)
+        self._queue: list[str] = []
+        # Module currently executing (None when idle)
+        self._current_module: str | None = None
+        # Condition variable for signaling queue state changes
+        self._condition = threading.Condition(self._lock)
+
+    def enqueue(self, module_id: str) -> bool:
+        """Add a module to the execution queue if not already queued or executing.
+
+        Returns True if successfully enqueued, False if module is already in queue
+        or currently executing (prevents duplicate entries).
+        """
+        with self._lock:
+            # Reject if module is already queued or currently executing
+            if module_id in self._queue or module_id == self._current_module:
+                return False
+            self._queue.append(module_id)
+            self._condition.notify_all()
+            return True
+
+    def dequeue(self, stop_evt: threading.Event | None = None) -> str | None:
+        """Get the next module from the front of the queue.
+
+        Blocks until a module is available or stop_evt is set.
+        Returns the module_id string, or None if stopped/empty.
+        """
+        with self._condition:
+            while not self._queue:
+                if stop_evt and stop_evt.is_set():
+                    return None
+                self._condition.wait(timeout=0.1)
+                if stop_evt and stop_evt.is_set():
+                    return None
+
+            module_id = self._queue.pop(0)
+            self._current_module = module_id
+            return module_id
+
+    def complete(self, module_id: str | None = None) -> None:
+        """Mark a module as completed and release execution ownership.
+
+        If module_id is provided and matches the current module, clears ownership.
+        Otherwise, clears any stale ownership reference.
+        """
+        with self._lock:
+            if module_id is not None and self._current_module == module_id:
+                self._current_module = None
+            elif module_id is None:
+                self._current_module = None
+
+    def is_empty(self) -> bool:
+        """Check if the queue has no waiting modules."""
+        with self._lock:
+            return len(self._queue) == 0
+
+    def peek_next(self) -> str | None:
+        """Peek at the next module without removing it from the queue."""
+        with self._lock:
+            return self._queue[0] if self._queue else None
+
+    def has_module_waiting(self, module_id: str) -> bool:
+        """Check if a specific module is waiting in the queue."""
+        with self._lock:
+            return module_id in self._queue
+
+    def get_queue_length(self) -> int:
+        """Get the number of modules waiting in the queue."""
+        with self._lock:
+            return len(self._queue)
+
+    def clear(self) -> None:
+        """Clear all queued modules and release current execution."""
+        with self._lock:
+            self._queue.clear()
+            self._current_module = None
+
+
 class ExecutionGate:
+    """Manages execution and mouse access with single-thread per-module enforcement.
+
+    Uses ModuleQueue to ensure only one module executes at a time. When a module
+    enters the queue, it must complete before the next module runs. After completion,
+    other queued modules get their turn before the same module can re-queue.
+    """
+
     # High-priority modules that need exclusive mouse/execution access during their session.
     # While a high-priority module holds the gate, lower-priority modules (right-click, healer, afk)
     # must skip their attempts to avoid interrupting critical A->B sequences.
@@ -228,6 +328,8 @@ class ExecutionGate:
         # Track which high-priority module currently holds exclusive access.
         # When set, only that module (and other high-priority modules) can acquire the gate.
         self._session_owner: str | None = None
+        # Module-level queue for single-thread execution enforcement per module
+        self._module_queue = ModuleQueue()
 
     def set_session_active(self, module_id: str) -> None:
         """Mark a high-priority session as active. Blocks lower-priority modules."""
@@ -247,6 +349,12 @@ class ExecutionGate:
         max_wait: float | None = None,
         module_id: str = "anonymous",
     ) -> bool:
+        # Check ModuleQueue first — if this module is already executing or queued, reject.
+        # This enforces single-thread execution per module and prevents re-queueing
+        # until the current execution completes and other modules get a chance.
+        if self._module_queue.has_module_waiting(module_id):
+            return False
+
         request = CursorRequest(
             expires_at=None if max_wait is None else time.monotonic() + max(0.0, max_wait),
             module_id=module_id,
@@ -299,7 +407,7 @@ class ExecutionGate:
                 wait_time = self._wait_timeout_locked(request)
                 self._condition.wait(timeout=wait_time)
 
-    def release(self) -> None:
+    def release(self, module_id: str | None = None) -> None:
         with self._condition:
             was_session_owner = (self._session_owner is not None and self._owner is not None)
             self._owner = None
@@ -312,6 +420,14 @@ class ExecutionGate:
             )
             if was_session_owner and not has_high_priority_queued:
                 self._session_owner = None
+
+            # Notify ModuleQueue that this module has completed its execution.
+            # This allows other waiting modules to be dequeued.
+            if module_id is not None:
+                self._module_queue.complete(module_id)
+            else:
+                self._module_queue.complete()
+
             self._condition.notify_all()
 
     def _queue_request_locked(self, request: CursorRequest) -> None:
@@ -373,8 +489,8 @@ class MouseGate:
     ) -> bool:
         return self._execution.acquire(stop_evt, max_wait=max_wait, module_id=module_id)
 
-    def release(self) -> None:
-        self._execution.release()
+    def release(self, module_id: str | None = None) -> None:
+        self._execution.release(module_id=module_id)
 
     def set_session_active(self, module_id: str) -> None:
         """Delegate to execution gate — mark a high-priority session as active."""
@@ -383,6 +499,26 @@ class MouseGate:
     def clear_session(self) -> None:
         """Delegate to execution gate — clear the exclusive session lock."""
         self._execution.clear_session()
+
+    def enqueue_module(self, module_id: str) -> bool:
+        """Add a module to the ModuleQueue for fair scheduling."""
+        return self._execution._module_queue.enqueue(module_id)
+
+    def dequeue_next_module(self, stop_evt: threading.Event | None = None) -> str | None:
+        """Get the next module from the ModuleQueue."""
+        return self._execution._module_queue.dequeue(stop_evt)
+
+    def complete_module(self, module_id: str | None = None) -> None:
+        """Mark a module as completed in the ModuleQueue."""
+        self._execution._module_queue.complete(module_id)
+
+    def has_queued_modules(self) -> bool:
+        """Check if there are modules waiting in the queue."""
+        return not self._execution._module_queue.is_empty()
+
+    def peek_next_module(self) -> str | None:
+        """Peek at the next module without removing it from the queue."""
+        return self._execution._module_queue.peek_next()
 
 
 class AppRuntime:
