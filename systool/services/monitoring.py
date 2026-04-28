@@ -48,7 +48,7 @@ from ..runtime import (
     resolve_tesseract_cmd,
 )
 from ..theme import GREEN, ORANGE, RED, TEAL
-from ..constants import LIGHT_FREEZE_MIN_INTERVAL_MS, MIN_POLL_MS
+from ..constants import LIGHT_FREEZE_MIN_INTERVAL_MS, MIN_POLL_MS, MONITOR_POLL_SLEEP, MONITOR_ERROR_RETRY_SLEEP
 
 class LightControlService:
     def __init__(self, runtime: AppRuntime) -> None:
@@ -602,7 +602,7 @@ class AlarmService:
             last_frame = None
             cooldown_until = 0.0
             while not self.runtime.alarm_stop.is_set():
-                time.sleep(0.1)
+                time.sleep(MONITOR_POLL_SLEEP)
                 now = time.monotonic()
                 with self.runtime.settings_lock:
                     hp_percent = state.alarm_hp_percent
@@ -840,7 +840,7 @@ class CharacterStatusService:
                         with self.runtime.settings_lock:
                             state.char_status_failures += 1
                             state.char_status_last_error = str(exc)
-                        time.sleep(0.5)
+                        time.sleep(MONITOR_ERROR_RETRY_SLEEP)
                         continue
 
                     if parsed:

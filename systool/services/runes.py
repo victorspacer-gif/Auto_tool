@@ -10,7 +10,7 @@ import time
 logger = logging.getLogger(__name__)
 
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb, pynput_mouse
-from ..constants import RUNE_WAIT_INTERRUPTIBLE, RUNE_POST_CAST_SETTLE
+from ..constants import RUNE_WAIT_INTERRUPTIBLE, RUNE_POST_CAST_SETTLE, RUNE_QUEUE_WINDOW_BASE, RUNE_QUEUE_WINDOW_BUFFER, RUNE_SPELL_HOLD_SECONDS
 from ..theme import GREEN, ORANGE, RED
 from .hotkeys import HotkeyService
 from .input_services import HumanMouse, SafeKeyboardSession
@@ -106,11 +106,11 @@ class RuneMakerService:
                         break
                     continue
             queue_window = max(
-                0.90,
+                RUNE_QUEUE_WINDOW_BASE,
                 cast_delay_ms / 1000.0
                 + (move_max_ms * 2 + press_max_ms * 2 + settle_max_ms * 2) / 1000.0
                 + post_cast_settle_ms / 1000.0
-                + 0.40,
+                + RUNE_QUEUE_WINDOW_BUFFER,
             )
             if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window, module_id="rune"):
                 if self.runtime.rune_stop.is_set():
@@ -120,7 +120,7 @@ class RuneMakerService:
                 continue
             session = SafeKeyboardSession(keyboard)
             try:
-                session.tap(spell, hold_seconds=0.04)
+                session.tap(spell, hold_seconds=RUNE_SPELL_HOLD_SECONDS)
                 self.runtime.ui.log(f"✨ Spell cast ({state.rune_spell_key.upper()})")
                 if not self.runtime.pause.wait_interruptible(cast_delay_ms / 1000.0, self.runtime.rune_stop):
                     break

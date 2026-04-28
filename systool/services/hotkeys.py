@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from ..models import HotkeyJob
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb
-from ..constants import HOTKEY_EXEC_MAX_WAIT, RCCLICK_INTER_CLICK_MIN, RCCLICK_INTER_CLICK_JITTER
+from ..constants import HOTKEY_EXEC_MAX_WAIT, RCCLICK_INTER_CLICK_MIN, RCCLICK_INTER_CLICK_JITTER, HOTKEY_FOCUS_RESTORE_DELAY, HOTKEY_KEY_TAP_HOLD
 from ..theme import GREEN, RED
 from .input_services import SafeKeyboardSession, WindowService
 
@@ -149,7 +149,7 @@ class HotkeyJobService:
                     self.runtime.state.stats["hotkeys"] += 1
                 self.runtime.ui.log(f"🎮 Job #{job.job_id} pressed {job.key}")
             if job.use_focus and job.restore_focus and prev_hwnd:
-                time.sleep(0.05)
+                time.sleep(HOTKEY_FOCUS_RESTORE_DELAY)
                 WindowService.restore(prev_hwnd)
             self.runtime.ui.refresh_stats()
         job.running = False
@@ -160,7 +160,7 @@ class HotkeyJobService:
     def _press_key(keyboard, pressed_key) -> None:
         session = SafeKeyboardSession(keyboard)
         try:
-            session.tap(pressed_key, hold_seconds=0.03)
+            session.tap(pressed_key, hold_seconds=HOTKEY_KEY_TAP_HOLD)
         finally:
             session.release_all()
 

@@ -11,7 +11,38 @@ import time
 logger = logging.getLogger(__name__)
 
 from ..runtime import AppRuntime, HAS_PYNPUT, HAS_WIN32, pynput_kb, pynput_mouse, win32con, win32gui
-from ..constants import AFK_EXEC_MAX_WAIT, RCCLICK_INTER_CLICK_MIN, RCCLICK_INTER_CLICK_JITTER, EXEC_WAIT_TIMEOUT_DEFAULT
+from ..constants import (
+    AFK_EXEC_MAX_WAIT,
+    RCCLICK_INTER_CLICK_MIN,
+    RCCLICK_INTER_CLICK_JITTER,
+    RCCLICK_WAIT_INTERRUPTIBLE,
+    RCCLICK_QUEUE_WINDOW_MIN,
+    EXEC_WAIT_TIMEOUT_DEFAULT,
+    INPUT_MOUSE_DURATION_MIN,
+    INPUT_MOUSE_DURATION_MAX,
+    INPUT_MOUSE_SPEED_DIVISOR_MIN,
+    INPUT_MOUSE_SPEED_DIVISOR_MAX,
+    INPUT_CONTROL_SCALE_RANGE,
+    INPUT_FAKE_JITTER_RANGE,
+    INPUT_PRESS_DELAY_MIN,
+    INPUT_PRESS_DELAY_MAX,
+    INPUT_HOLD_DELAY_MIN,
+    INPUT_HOLD_DELAY_MAX,
+    INPUT_SETTLE_DELAY_MIN,
+    INPUT_SETTLE_DELAY_MAX,
+    INPUT_POST_CLICK_SLEEP,
+    INPUT_RCCLICK_PAUSE_1,
+    INPUT_RCCLICK_PAUSE_2,
+    INPUT_RCCLICK_PAUSE_3,
+    INPUT_RCCLICK_MAX_WAIT,
+    INPUT_QUEUE_WINDOW,
+    AFK_CTRL_HOLD_MIN,
+    AFK_CTRL_HOLD_MAX,
+    AFK_DIR_PRESS_MIN,
+    AFK_DIR_PRESS_MAX,
+    AFK_DIR_RELEASE_MIN,
+    AFK_DIR_RELEASE_MAX,
+)
 from ..theme import GREEN, ORANGE, RED
 
 class HumanMouse:
@@ -32,9 +63,9 @@ class HumanMouse:
             mouse.position = (int(ex), int(ey))
             return
         if duration is None:
-            duration = max(0.12, min(0.55, distance / random.uniform(900, 1500)))
+            duration = max(INPUT_MOUSE_DURATION_MIN, min(INPUT_MOUSE_DURATION_MAX, distance / random.uniform(INPUT_MOUSE_SPEED_DIVISOR_MIN, INPUT_MOUSE_SPEED_DIVISOR_MAX)))
         steps = max(10, int(distance / 7))
-        control_scale = random.uniform(-35, 35)
+        control_scale = random.uniform(*INPUT_CONTROL_SCALE_RANGE)
         cx = (sx + ex) / 2 + (-dy / distance) * control_scale
         cy = (sy + ey) / 2 + (dx / distance) * control_scale
         step_duration = duration / steps
@@ -44,8 +75,8 @@ class HumanMouse:
             x_pos = (1 - eased) ** 2 * sx + 2 * (1 - eased) * eased * cx + eased**2 * ex
             y_pos = (1 - eased) ** 2 * sy + 2 * (1 - eased) * eased * cy + eased**2 * ey
             fade = 1.0 - t_value
-            x_pos += random.uniform(-0.9, 0.9) * fade
-            y_pos += random.uniform(-0.9, 0.9) * fade
+            x_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade
+            y_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade
             mouse.position = (int(x_pos), int(y_pos))
             time.sleep(step_duration)
         mouse.position = (int(ex), int(ey))
@@ -57,9 +88,9 @@ class HumanMouse:
         dest: tuple[int, int],
         *,
         move_duration: float | None = None,
-        press_delay_range: tuple[float, float] = (0.06, 0.14),
-        hold_delay_range: tuple[float, float] = (0.05, 0.10),
-        settle_delay_range: tuple[float, float] = (0.04, 0.09),
+        press_delay_range: tuple[float, float] = (INPUT_PRESS_DELAY_MIN, INPUT_PRESS_DELAY_MAX),
+        hold_delay_range: tuple[float, float] = (INPUT_HOLD_DELAY_MIN, INPUT_HOLD_DELAY_MAX),
+        settle_delay_range: tuple[float, float] = (INPUT_SETTLE_DELAY_MIN, INPUT_SETTLE_DELAY_MAX),
     ) -> None:
         HumanMouse.move(mouse, source, duration=move_duration)
         time.sleep(random.uniform(*press_delay_range))
@@ -131,7 +162,7 @@ class WindowService:
             if found[0]:
                 win32gui.ShowWindow(found[0], win32con.SW_RESTORE)
                 win32gui.SetForegroundWindow(found[0])
-                time.sleep(0.08)
+                time.sleep(INPUT_POST_CLICK_SLEEP)
                 return True
         except Exception:
             return False
@@ -200,11 +231,11 @@ class AntiAfkService:
             session = SafeKeyboardSession(keyboard)
             try:
                 session.press(pynput_kb.Key.ctrl)
-                time.sleep(random.uniform(0.04, 0.08))
+                time.sleep(random.uniform(AFK_CTRL_HOLD_MIN, AFK_CTRL_HOLD_MAX))
                 session.press(direction_key)
-                time.sleep(random.uniform(0.03, 0.06))
+                time.sleep(random.uniform(AFK_DIR_PRESS_MIN, AFK_DIR_PRESS_MAX))
                 session.release(direction_key)
-                time.sleep(random.uniform(0.02, 0.04))
+                time.sleep(random.uniform(AFK_DIR_RELEASE_MIN, AFK_DIR_RELEASE_MAX))
             except Exception as exc:
                 self.runtime.ui.log(f"❌ AFK: {exc}")
             finally:
@@ -278,12 +309,12 @@ class RightClickService:
             food_ok = self.food_timer_meets_threshold(food_seconds, food_min_minutes)
             if mode == "food":
                 if food_ok:
-                    if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rclick_stop):
+                    if not self.runtime.pause.wait_interruptible(RCCLICK_WAIT_INTERRUPTIBLE, self.runtime.rclick_stop):
                         break
                     continue
                 clicks_to_send = random.randint(burst_count_min, burst_count_max)
                 queue_window = max(
-                    0.35,
+                    RCCLICK_QUEUE_WINDOW_MIN,
                     clicks_to_send * (click_delay_max_ms / 1000.0) + max(0, clicks_to_send - 1) * max(click_delay_min_ms / 1000.0, burst_interval_ms / 1000.0),
                 )
             else:
@@ -298,7 +329,7 @@ class RightClickService:
                         )
                     continue
                 clicks_to_send = 1
-                queue_window = 0.80
+                queue_window = INPUT_QUEUE_WINDOW
             if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window, module_id="right_click"):
                 if self.runtime.rclick_stop.is_set():
                     break

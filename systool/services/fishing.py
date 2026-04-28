@@ -11,7 +11,7 @@ import time
 logger = logging.getLogger(__name__)
 
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_mouse
-from ..constants import FISHING_BONUS_MULTIPLIER, FISHING_MIN_BONUS_SECS
+from ..constants import FISHING_BONUS_MULTIPLIER, FISHING_MIN_BONUS_SECS, FISHING_CHUNK_MIN, FISHING_CYCLE_WINDOW_BASE, FISHING_CYCLE_WINDOW_ADDITION, FISHING_PAUSE_SHORT_MIN, FISHING_PAUSE_SHORT_MAX, FISHING_PAUSE_MEDIUM_MIN, FISHING_PAUSE_MEDIUM_MAX
 from ..theme import GREEN, ORANGE, RED
 from .input_services import HumanMouse
 
@@ -102,7 +102,7 @@ class FishingService:
             while seconds > 0:
                 if not update_remaining():
                     return False
-                chunk = min(seconds, 0.25, max(0.0, session_deadline - time.monotonic()))
+                chunk = min(seconds, FISHING_CHUNK_MIN, max(0.0, session_deadline - time.monotonic()))
                 if chunk <= 0:
                     return False
                 if not self.runtime.pause.wait_interruptible(chunk, self.runtime.fish_stop):
@@ -162,7 +162,7 @@ class FishingService:
                 break
             cycle_locked = False
             try:
-                cycle_window = max(0.90, max(cast_max, 0) / 1000.0 + 1.20)
+                cycle_window = max(FISHING_CYCLE_WINDOW_BASE, max(cast_max, 0) / 1000.0 + FISHING_CYCLE_WINDOW_ADDITION)
                 cycle_locked = self.runtime.mouse.acquire(
                     self.runtime.fish_stop,
                     max_wait=cycle_window,
@@ -174,7 +174,7 @@ class FishingService:
                     continue
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
                 HumanMouse.move(mouse, rod_target)
-                time.sleep(random.uniform(0.07, 0.17))
+                time.sleep(random.uniform(FISHING_PAUSE_SHORT_MIN, FISHING_PAUSE_SHORT_MAX))
                 mouse.click(pynput_mouse.Button.right, 1)
                 self.runtime.ui.log(f"🎣 Rod clicked at {rod_target}")
                 if index >= len(deck):
@@ -184,7 +184,7 @@ class FishingService:
                 spot_target = HumanMouse.jitter(deck[index], spot_jitter)
                 index += 1
                 HumanMouse.move(mouse, spot_target)
-                time.sleep(random.uniform(0.10, 0.26))
+                time.sleep(random.uniform(FISHING_PAUSE_MEDIUM_MIN, FISHING_PAUSE_MEDIUM_MAX))
                 mouse.click(pynput_mouse.Button.left, 1)
                 with self.runtime.record_lock:
                     state.stats["fish_casts"] += 1
