@@ -20,7 +20,7 @@ It combines configurable hotkey automation, screen monitoring, OCR-driven charac
 - Hotkeys
   Rebindable global hotkeys for pause, stop, and feature toggles.
 - Config
-  Save and load complete app state in JSON or XML.
+  Save and load complete app state in JSON.
 
 ## OCR-Driven Integrations
 
@@ -103,7 +103,7 @@ Auto_tool/
 - `systool/services.py`
   Background automation services and feature logic.
 - `systool/config.py`
-  JSON/XML save and load support for the full app state.
+  JSON save and load support for the full app state.
 - `systool/theme.py`
   Shared colors and font constants.
 - `SystemMonitor.spec`
@@ -204,10 +204,7 @@ If you build manually and want bundled OCR support, make sure `vendor\tesseract`
 
 ## Configuration
 
-The application supports saving and loading:
-
-- JSON
-- XML
+The application supports saving and loading JSON configuration.
 
 Saved configuration includes:
 

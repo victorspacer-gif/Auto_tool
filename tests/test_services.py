@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 # Mock pynput only for tests that need mocked mouse/keyboard objects.
 with patch("systool.services.pynput_kb"), \
      patch("systool.services.pynput_mouse"):
-    from systool.services import HumanMouse, SafeKeyboardSession
+    from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
 try:
@@ -94,6 +94,21 @@ class TestSafeKeyboardSession:
         session.press("b")
         session.release_all()
         assert session._pressed == []
+
+
+class TestFoodTimerParsing:
+    def test_parse_food_timer_h_mm(self):
+        assert CharacterStatusService._parse_food_seconds("1:05") == 3900
+
+    def test_parse_food_timer_rejects_invalid_minutes(self):
+        assert CharacterStatusService._parse_food_seconds("1:75") is None
+
+    def test_food_threshold_requires_available_timer(self):
+        assert RightClickService.food_timer_meets_threshold(None, 10) is False
+
+    def test_food_threshold_uses_minutes(self):
+        assert RightClickService.food_timer_meets_threshold(15 * 60, 10) is True
+        assert RightClickService.food_timer_meets_threshold(9 * 60, 10) is False
 
     def test_release_all_calls_keyboard_release_for_each(self):
         mock_keyboard = MagicMock()

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
-from pathlib import Path
 
 from .models import AppState, HotkeyJob
 
@@ -31,7 +29,6 @@ class ConfigSerializer:
             for job in state.jobs
         ]
         return {
-            "time_unit": state.time_unit,
             "jobs": jobs_data,
             "hotkey_bindings": dict(state.hotkey_bindings),
             "afk_min_ms": state.afk_min_ms,
@@ -42,9 +39,14 @@ class ConfigSerializer:
             "rclick_max_ms": state.rclick_max_ms,
             "rclick_mode": state.rclick_mode,
             "rclick_require_food": state.rclick_require_food,
-            "rclick_food_min_secs": state.rclick_food_min_secs,
+            "rclick_food_min_minutes": state.rclick_food_min_minutes,
             "rclick_food_burst_count": state.rclick_food_burst_count,
+            "rclick_food_burst_count_min": state.rclick_food_burst_count_min,
+            "rclick_food_burst_count_max": state.rclick_food_burst_count_max,
             "rclick_food_burst_interval_ms": state.rclick_food_burst_interval_ms,
+            "rclick_click_delay_min_ms": state.rclick_click_delay_min_ms,
+            "rclick_click_delay_max_ms": state.rclick_click_delay_max_ms,
+            "rclick_post_click_settle_ms": state.rclick_post_click_settle_ms,
             "alarm_mp3": state.alarm_mp3,
             "alarm_threshold": state.alarm_threshold,
             "alarm_cooldown": state.alarm_cooldown,
@@ -130,52 +132,7 @@ class ConfigSerializer:
             json.dump(ConfigSerializer.to_dict(state), handle, indent=2)
 
     @staticmethod
-    def save_xml(path: str, state: AppState) -> None:
-        config = ConfigSerializer.to_dict(state)
-        root = ET.Element("SystemMonitorConfig")
-        jobs_el = ET.SubElement(root, "jobs")
-        for job_data in config.pop("jobs", []):
-            job_el = ET.SubElement(jobs_el, "job")
-            for key, value in job_data.items():
-                child = ET.SubElement(job_el, key)
-                child.text = str(value)
-        hotkeys_el = ET.SubElement(root, "hotkey_bindings")
-        for key, value in config.pop("hotkey_bindings", {}).items():
-            child = ET.SubElement(hotkeys_el, key)
-            child.text = str(value)
-        spots_el = ET.SubElement(root, "fish_spots")
-        for x, y in config.pop("fish_spots", []):
-            spot = ET.SubElement(spots_el, "spot")
-            spot.text = f"{x},{y}"
-        def _region_text(val):
-            return ",".join(map(str, val)) if val else ""
-
-        region = config.pop("alarm_region", None)
-        region_el = ET.SubElement(root, "alarm_region")
-        region_el.text = _region_text(region)
-        csr = config.pop("char_status_region", None)
-        csr_el = ET.SubElement(root, "char_status_region")
-        csr_el.text = _region_text(csr)
-        chr_el = config.pop("char_status_hp_region", None)
-        char_hp_el = ET.SubElement(root, "char_status_hp_region")
-        char_hp_el.text = _region_text(chr_el)
-        cmr_el = config.pop("char_status_mana_region", None)
-        char_mana_el = ET.SubElement(root, "char_status_mana_region")
-        char_mana_el.text = _region_text(cmr_el)
-        ccr_el = config.pop("char_status_cap_region", None)
-        char_cap_el = ET.SubElement(root, "char_status_cap_region")
-        char_cap_el.text = _region_text(ccr_el)
-        for key, value in config.items():
-            child = ET.SubElement(root, key)
-            child.text = str(value)
-        tree = ET.ElementTree(root)
-        ET.indent(tree, space="  ")
-        tree.write(path, encoding="utf-8", xml_declaration=True)
-
-    @staticmethod
     def load_file(path: str) -> dict:
-        if path.endswith(".xml"):
-            return ConfigSerializer._load_xml(path)
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
         return {
@@ -188,63 +145,6 @@ class ConfigSerializer:
             "char_status_mana_region": tuple(raw["char_status_mana_region"]) if raw.get("char_status_mana_region") else None,
             "char_status_cap_region": tuple(raw["char_status_cap_region"]) if raw.get("char_status_cap_region") else None,
             "hotkeys": raw.get("hotkey_bindings", {}),
-        }
-
-    @staticmethod
-    def _load_xml(path: str) -> dict:
-        root = ET.parse(path).getroot()
-        cfg: dict[str, str] = {}
-        jobs: list[dict] = []
-        spots: list[tuple[int, int]] = []
-        alarm_region = None
-        char_status_region = None
-        char_status_hp_region = None
-        char_status_mana_region = None
-        char_status_cap_region = None
-        hotkeys: dict[str, str] = {}
-        for child in root:
-            if child.tag == "jobs":
-                for job_el in child:
-                    jobs.append({field.tag: field.text for field in job_el})
-            elif child.tag == "fish_spots":
-                for spot in child:
-                    if spot.text:
-                        x_val, y_val = spot.text.split(",")
-                        spots.append((int(x_val), int(y_val)))
-            elif child.tag == "alarm_region" and child.text:
-                parts = child.text.split(",")
-                if len(parts) == 4:
-                    alarm_region = tuple(int(part) for part in parts)
-            elif child.tag == "char_status_region" and child.text:
-                parts = child.text.split(",")
-                if len(parts) == 4:
-                    char_status_region = tuple(int(part) for part in parts)
-            elif child.tag == "char_status_hp_region" and child.text:
-                parts = child.text.split(",")
-                if len(parts) == 4:
-                    char_status_hp_region = tuple(int(part) for part in parts)
-            elif child.tag == "char_status_mana_region" and child.text:
-                parts = child.text.split(",")
-                if len(parts) == 4:
-                    char_status_mana_region = tuple(int(part) for part in parts)
-            elif child.tag == "char_status_cap_region" and child.text:
-                parts = child.text.split(",")
-                if len(parts) == 4:
-                    char_status_cap_region = tuple(int(part) for part in parts)
-            elif child.tag == "hotkey_bindings":
-                hotkeys = {field.tag: field.text or "" for field in child}
-            else:
-                cfg[child.tag] = child.text or ""
-        return {
-            "cfg": cfg,
-            "jobs": jobs,
-            "spots": spots,
-            "alarm_region": alarm_region,
-            "char_status_region": char_status_region,
-            "char_status_hp_region": char_status_hp_region,
-            "char_status_mana_region": char_status_mana_region,
-            "char_status_cap_region": char_status_cap_region,
-            "hotkeys": hotkeys,
         }
 
     @staticmethod
@@ -277,7 +177,6 @@ class ConfigSerializer:
         def get_bool(name: str, default: bool) -> bool:
             return str(cfg.get(name, str(default))).lower() == "true"
 
-        state.time_unit = get_str("time_unit", state.time_unit)
         state.afk_min_ms = get_int("afk_min_ms", state.afk_min_ms)
         state.afk_max_ms = get_int("afk_max_ms", state.afk_max_ms)
         state.rclick_pos = (
@@ -288,9 +187,25 @@ class ConfigSerializer:
         state.rclick_max_ms = get_int("rclick_max_ms", state.rclick_max_ms)
         state.rclick_mode = get_str("rclick_mode", state.rclick_mode)
         state.rclick_require_food = get_bool("rclick_require_food", state.rclick_require_food)
-        state.rclick_food_min_secs = max(0, get_int("rclick_food_min_secs", state.rclick_food_min_secs))
+        legacy_food_secs = get_int("rclick_food_min_secs", state.rclick_food_min_minutes * 60)
+        food_minutes = get_int(
+            "rclick_food_min_minutes",
+            max(1, round(legacy_food_secs / 60)),
+        )
+        state.rclick_food_min_minutes = max(1, min(40, food_minutes))
         state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count", state.rclick_food_burst_count))
+        state.rclick_food_burst_count_min = max(1, get_int("rclick_food_burst_count_min", state.rclick_food_burst_count_min))
+        state.rclick_food_burst_count_max = max(
+            state.rclick_food_burst_count_min,
+            get_int("rclick_food_burst_count_max", state.rclick_food_burst_count_max),
+        )
         state.rclick_food_burst_interval_ms = max(50, get_int("rclick_food_burst_interval_ms", state.rclick_food_burst_interval_ms))
+        state.rclick_click_delay_min_ms = max(100, get_int("rclick_click_delay_min_ms", state.rclick_click_delay_min_ms))
+        state.rclick_click_delay_max_ms = max(
+            state.rclick_click_delay_min_ms,
+            get_int("rclick_click_delay_max_ms", state.rclick_click_delay_max_ms),
+        )
+        state.rclick_post_click_settle_ms = max(100, get_int("rclick_post_click_settle_ms", state.rclick_post_click_settle_ms))
         state.alarm_mp3 = get_str("alarm_mp3", state.alarm_mp3)
         state.alarm_threshold = get_float("alarm_threshold", state.alarm_threshold)
         state.alarm_cooldown = get_int("alarm_cooldown", state.alarm_cooldown)

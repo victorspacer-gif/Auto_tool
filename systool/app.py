@@ -138,6 +138,7 @@ class SystemMonitorApp:
         self.ui_vars: dict[str, tk.Variable] = {}
         self.hotkey_vars: dict[str, tk.StringVar] = {}
         self.log_history: list[str] = []
+        self.module_indicators: dict[str, tk.Label] = {}
 
         # Background stats polling (HP/MP/Cap pointer reads)
         self._stats_poll_timer_id: int | None = None
@@ -163,6 +164,7 @@ class SystemMonitorApp:
             refresh_stats=self._refresh_stats,
             set_pause_label=self._sync_pause_state,
             job_state_changed=self._refresh_job_indicator,
+            module_state_changed=self._refresh_module_indicator,
         )
 
         self.sandbox_sbie_info = find_installation() if HAS_SANDBOX_LAUNCHER and find_installation else None
@@ -289,10 +291,7 @@ class SystemMonitorApp:
         self._build_config_tab(config_tab)
 
     def _build_automation_tab(self, parent: tk.Frame) -> None:
-        left = tk.Frame(parent, bg=BG)
-        right = tk.Frame(parent, bg=BG, width=340)
-        left.pack(side="left", fill="both", expand=True, padx=(0, 6), pady=6)
-        right.pack(side="right", fill="both", expand=False, padx=(0, 2), pady=6)
+        left, right = self._create_responsive_columns(parent, threshold=1180)
 
         jobs_frame = tk.LabelFrame(left, text=" 🎮  Hotkey Tasks — independent threads ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=6, padx=8)
         jobs_frame.pack(fill="both", expand=True)
@@ -316,6 +315,7 @@ class SystemMonitorApp:
     def _build_afk_panel(self, parent: tk.Frame) -> None:
         panel = tk.LabelFrame(parent, text=" 🚶  Activity Monitor ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         panel.pack(fill="x", pady=(0, 8))
+        self._register_module_indicator(panel, "afk", self.runtime.state.afk_active)
         afk_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.afk_min_ms)))
         afk_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.afk_max_ms)))
         self.ui_vars["afk_min_var"] = afk_min
@@ -358,6 +358,7 @@ class SystemMonitorApp:
     def _build_right_click_panel(self, parent: tk.Frame) -> None:
         panel = tk.LabelFrame(parent, text=" 🖱️  Right-Click Monitor ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         panel.pack(fill="x", pady=(0, 8))
+        self._register_module_indicator(panel, "rclick", self.runtime.state.rclick_active)
         self.pos_label = tk.Label(panel, text="Pos: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
         self.pos_label.pack(anchor="w", pady=(0, 4))
         self._btn(panel, "🎯 Record Position", self.record_rclick_pos, BLUE).pack(fill="x", pady=(0, 6))
@@ -372,7 +373,7 @@ class SystemMonitorApp:
         self._label_entry(panel, f"Timer Max ({unit}):", max_var)
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
         rclick_require_food = tk.BooleanVar(value=self.runtime.state.rclick_require_food)
-        rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
+        rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_minutes))
         rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
         rclick_food_burst_count_max = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_max))
         rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
@@ -396,7 +397,7 @@ class SystemMonitorApp:
         mode_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
         mode_menu.pack(side="left", padx=4)
         tk.Checkbutton(panel, text="Timer checks food threshold first", variable=rclick_require_food, font=BOLD, fg=FG, bg=PANEL, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w", pady=(2, 2))
-        self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
+        self._label_entry(panel, "Min food timer (minutes):", rclick_food_min, width=6)
         self._label_entry(panel, f"Burst clicks min:", rclick_food_burst_count_min, width=6)
         self._label_entry(panel, f"Burst clicks max:", rclick_food_burst_count_max, width=6)
         self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
@@ -418,13 +419,11 @@ class SystemMonitorApp:
         canvas.create_window((0, 0), window=content_frame, anchor="nw")
         content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-        left = tk.Frame(content_frame, bg=BG)
-        right = tk.Frame(content_frame, bg=BG)
-        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
-        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+        left, right = self._create_responsive_columns(content_frame)
 
         spell_panel = tk.LabelFrame(left, text=" ✨  Rune Session Timing ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         spell_panel.pack(fill="x", pady=(0, 8))
+        self._register_module_indicator(spell_panel, "rune", self.runtime.state.rune_active)
         unit = self._get_unit_label()
         rune_spell = tk.StringVar(value=self.runtime.state.rune_spell_key)
         rune_cycle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_cycle_delay_ms)))
@@ -522,6 +521,7 @@ class SystemMonitorApp:
         wrapper.pack(fill="both", expand=True, padx=16, pady=10)
         panel = tk.LabelFrame(wrapper, text=" 👁️  Screen Change Watch ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
         panel.pack(fill="x")
+        self._register_module_indicator(panel, "alarm", self.runtime.state.alarm_active)
         area_row = tk.Frame(panel, bg=PANEL)
         area_row.pack(fill="x", pady=4)
         self.alarm_region_label = tk.Label(area_row, text="Area: centre 200×200 px (default)", font=MONO, fg=TEAL, bg=PANEL)
@@ -571,13 +571,11 @@ class SystemMonitorApp:
         canvas.create_window((0, 0), window=content_frame, anchor="nw")
         content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-        left = tk.Frame(content_frame, bg=BG)
-        right = tk.Frame(content_frame, bg=BG)
-        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
-        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+        left, right = self._create_responsive_columns(content_frame)
 
         mode_panel = tk.LabelFrame(left, text=" ❤️  Healing Mode ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         mode_panel.pack(fill="x", pady=(0, 8))
+        self._register_module_indicator(mode_panel, "healer", self.runtime.state.healer_active)
         healer_mode = tk.StringVar(value=self.runtime.state.healer_mode)
         healer_spell_key = tk.StringVar(value=self.runtime.state.healer_spell_key)
         healer_use_percent = tk.BooleanVar(value=self.runtime.state.healer_use_percent)
@@ -653,6 +651,7 @@ class SystemMonitorApp:
         wrapper.pack(fill="both", expand=True, padx=16, pady=10)
         panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control - Alpha test ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
         panel.pack(fill="x")
+        self._register_module_indicator(panel, "light", self.runtime.state.light_freeze_enabled)
         light_process = tk.StringVar(value=self.runtime.state.light_process_name)
         light_direct_address = tk.StringVar(value=self.runtime.state.light_direct_address_hex)
         light_freeze_enabled = tk.BooleanVar(value=self.runtime.state.light_freeze_enabled)
@@ -698,13 +697,11 @@ class SystemMonitorApp:
         canvas.create_window((0, 0), window=content_frame, anchor="nw")
         content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-        left = tk.Frame(content_frame, bg=BG)
-        right = tk.Frame(content_frame, bg=BG)
-        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
-        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+        left, right = self._create_responsive_columns(content_frame)
 
         rod_panel = tk.LabelFrame(left, text=" 🎣  Rod Position ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         rod_panel.pack(fill="x", pady=(0, 8))
+        self._register_module_indicator(rod_panel, "fish", self.runtime.state.fish_active)
         self.rod_label = tk.Label(rod_panel, text="Rod: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
         self.rod_label.pack(anchor="w", pady=(0, 4))
         self._btn(rod_panel, "🎯 Record Rod Pos", self.record_rod_pos, BLUE).pack(fill="x")
@@ -837,7 +834,7 @@ class SystemMonitorApp:
             "2. Use F12 to save one or more fishing spots.",
             f"3. Recording stops 5 seconds after the last F12 press.",
             "4. Start the session; the automation repeats until stopped.",
-            f"5. Timing values display in {self._get_unit_label()} and update instantly when toggled.",
+            f"5. Timing values display in {self._get_unit_label()}.",
         ]:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
 
@@ -852,13 +849,11 @@ class SystemMonitorApp:
         canvas.create_window((0, 0), window=content_frame, anchor="nw")
         content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-        left = tk.Frame(content_frame, bg=BG)
-        right = tk.Frame(content_frame, bg=BG)
-        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
-        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+        left, right = self._create_responsive_columns(content_frame)
 
         watch_panel = tk.LabelFrame(left, text=" 📊  Status Window Watch ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         watch_panel.pack(fill="x", pady=(0, 8))
+        self._register_module_indicator(watch_panel, "char_status", self.runtime.state.char_status_active)
         self.char_status_region_label = tk.Label(
             watch_panel,
             text="Window: not selected",
@@ -951,9 +946,7 @@ class SystemMonitorApp:
         canvas.create_window((0, 0), window=content_frame, anchor="nw")
         content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-        # Left column: live values
-        left = tk.Frame(content_frame, bg=BG)
-        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
+        left, right = self._create_responsive_columns(content_frame)
 
         vars_panel = tk.LabelFrame(left, text=" 📡  Live Variables ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         vars_panel.pack(fill="both", expand=True, pady=(0, 8))
@@ -968,10 +961,6 @@ class SystemMonitorApp:
         self.var_mp_label.pack(fill="x", pady=2)
         self.var_food_label = tk.Label(vars_panel, text="Food: —", font=HEADER, fg=GREEN, bg=PANEL, anchor="w")
         self.var_food_label.pack(fill="x", pady=2)
-
-        # Right column: metadata & stats
-        right = tk.Frame(content_frame, bg=BG)
-        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
 
         meta_panel = tk.LabelFrame(right, text=" 📋  Source Metadata ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         meta_panel.pack(fill="both", expand=True, pady=(0, 8))
@@ -1024,30 +1013,16 @@ class SystemMonitorApp:
         buttons = tk.Frame(wrapper, bg=BG)
         buttons.pack()
         self._btn(buttons, "💾 Save JSON", self.save_config_json, BLUE).pack(side="left", padx=8, ipadx=12)
-#        self._btn(buttons, "💾 Save XML", self.save_config_xml, PURPLE).pack(side="left", padx=8, ipadx=12)
         self._btn(buttons, "📂 Load", self.load_config, ORANGE).pack(side="left", padx=8, ipadx=12)
-
-        # Time unit toggle
-        toggle_frame = tk.Frame(wrapper, bg=BG)
-        toggle_frame.pack(pady=(20, 0))
-        tk.Label(toggle_frame, text="Timer Units:", font=BOLD, fg=FG, bg=BG).pack(side="left", padx=(0, 10))
-        self.time_unit_var = tk.StringVar(value=self.runtime.state.time_unit)
-        ms_btn = tk.Radiobutton(toggle_frame, text="Milliseconds", variable=self.time_unit_var, value="ms", bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG, command=self._on_time_unit_change)
-        ms_btn.pack(side="left", padx=(0, 10))
-        s_btn = tk.Radiobutton(toggle_frame, text="Seconds", variable=self.time_unit_var, value="s", bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG, command=self._on_time_unit_change)
-        s_btn.pack(side="left")
-
-    def _on_time_unit_change(self) -> None:
-        new_unit = self.time_unit_var.get()
-        if self.runtime.state.time_unit == new_unit:
-            return
-        # Force a poll with the current unit to save anything the user typed
-        self._root_poll_settings_now()
-        
-        self.runtime.state.time_unit = new_unit
-        self.runtime.ui.log(f"Timer units changed to {self.runtime.state.time_unit}")
-        # Refresh all tabs to update displayed values
-        self._refresh_all_tabs()
+        tk.Label(
+            wrapper,
+            text="All timing inputs use milliseconds. The only exception is Right-Click Min food timer, which uses minutes.",
+            font=SMALL,
+            fg=MUTED,
+            bg=BG,
+            justify="center",
+            wraplength=680,
+        ).pack(pady=(20, 0))
 
     def _root_poll_settings_now(self) -> None:
         self._poll_settings(schedule_next=False)
@@ -1056,42 +1031,45 @@ class SystemMonitorApp:
                 self._read_job_vars(job)
 
     def _ms_to_display(self, ms: int) -> float:
-        if self.runtime.state.time_unit == "s":
-            return ms / 1000.0
         return float(ms)
 
     def _display_to_ms(self, display: float) -> int:
-        if self.runtime.state.time_unit == "s":
-            return int(display * 1000)
         return int(display)
 
     def _get_unit_label(self) -> str:
-        return "s" if self.runtime.state.time_unit == "s" else "ms"
+        return "ms"
 
-    def _refresh_all_tabs(self) -> None:
-        # Rebuild all tabs to reflect the new time unit
-        notebook = self.notebook_widget
-        if notebook is None:
-            return
+    @staticmethod
+    def _normalize_food_threshold_minutes(value: str, fallback: int) -> int:
+        try:
+            minutes = int(float(value))
+        except (TypeError, ValueError):
+            return fallback
+        return max(1, min(40, minutes))
 
-        for tab_name in notebook.tabs():
-            tab = notebook.nametowidget(tab_name)
-            for child in tab.winfo_children():
-                child.destroy()
-        
-        # Rebuild each tab
-        self._build_automation_tab(self.automation_tab)
-        self._build_rune_tab(self.rune_tab)
-        self._build_healer_tab(self.healer_tab)
-        self._build_light_tab(self.light_tab)
-        self._build_alarm_tab(self.alarm_tab)
-        self._build_character_status_tab(self.char_status_tab)
-        self._build_fish_tab(self.fish_tab)
-        self._build_hotkeys_tab(self.hotkeys_tab)
-        self._build_config_tab(self.config_tab)
-        
-        # Restore lists and labels from state
-        self._sync_ui_from_state()
+    @staticmethod
+    def _format_food_timer(food_seconds: int | None, food_text: str) -> str:
+        if food_seconds is None:
+            return food_text or "—"
+        hours = food_seconds // 3600
+        minutes = (food_seconds % 3600) // 60
+        timer_text = f"{hours}:{minutes:02d}"
+        return f"{food_text} ({timer_text})" if food_text else timer_text
+
+    def _refresh_all_module_indicators_from_state(self) -> None:
+        state = self.runtime.state
+        indicator_states = {
+            "afk": state.afk_active,
+            "rclick": state.rclick_active,
+            "alarm": state.alarm_active,
+            "char_status": state.char_status_active,
+            "fish": state.fish_active,
+            "healer": state.healer_active,
+            "rune": state.rune_active,
+            "light": state.light_freeze_enabled,
+        }
+        for module_id, running in indicator_states.items():
+            self._refresh_module_indicator(module_id, running)
 
     def toggle_log_window(self) -> None:
         if self.log_window and self.log_window.winfo_exists() and self.log_window.state() != "withdrawn":
@@ -1384,6 +1362,41 @@ class SystemMonitorApp:
         self._entry(row, var, width).pack(side="left", padx=4)
         return row
 
+    def _register_module_indicator(self, parent, module_id: str, running: bool = False) -> tk.Label:
+        row = tk.Frame(parent, bg=PANEL)
+        row.pack(fill="x", pady=(0, 6))
+        tk.Label(row, text="Status", font=SMALL_B, fg=MUTED, bg=PANEL).pack(side="left")
+        indicator = tk.Label(row, text="●", font=BOLD, fg=GREEN if running else MUTED, bg=PANEL)
+        indicator.pack(side="left", padx=(8, 4))
+        text = tk.Label(row, text="Running" if running else "Stopped", font=SMALL, fg=FG, bg=PANEL)
+        text.pack(side="left")
+        indicator._state_text = text
+        self.module_indicators[module_id] = indicator
+        return indicator
+
+    def _create_responsive_columns(self, parent: tk.Frame, threshold: int = 1080) -> tuple[tk.Frame, tk.Frame]:
+        left = tk.Frame(parent, bg=BG)
+        right = tk.Frame(parent, bg=BG)
+        parent.grid_columnconfigure(0, weight=1, uniform="columns")
+        parent.grid_columnconfigure(1, weight=1, uniform="columns")
+
+        def relayout(_event=None) -> None:
+            width = parent.winfo_width()
+            left.grid_forget()
+            right.grid_forget()
+            if width and width < threshold:
+                left.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 3))
+                right.grid(row=1, column=0, sticky="nsew", padx=6, pady=(3, 6))
+                parent.grid_columnconfigure(1, weight=0, uniform="")
+            else:
+                left.grid(row=0, column=0, sticky="nsew", padx=(6, 3), pady=6)
+                right.grid(row=0, column=1, sticky="nsew", padx=(3, 6), pady=6)
+                parent.grid_columnconfigure(1, weight=1, uniform="columns")
+
+        parent.bind("<Configure>", relayout)
+        relayout()
+        return left, right
+
     def _build_position_row(self, parent: tk.Frame, title: str, label_text: str, command) -> None:
         frame = tk.Frame(parent, bg=PANEL)
         frame.pack(fill="x", pady=4)
@@ -1441,6 +1454,15 @@ class SystemMonitorApp:
         indicator = getattr(job.row_frame, "_indicator", None)
         if indicator:
             indicator.config(fg=GREEN if job.running else MUTED)
+
+    def _refresh_module_indicator(self, module_id: str, running: bool) -> None:
+        indicator = self.module_indicators.get(module_id)
+        if not indicator:
+            return
+        indicator.config(fg=GREEN if running else MUTED)
+        state_text = getattr(indicator, "_state_text", None)
+        if state_text:
+            state_text.config(text="Running" if running else "Stopped")
 
     def record_rclick_pos(self) -> None:
         def on_done(pos: tuple[int, int]) -> None:
@@ -1866,6 +1888,7 @@ class SystemMonitorApp:
     def toggle_light_freeze(self) -> None:
         enabled = bool(self.ui_vars.get("light_freeze_enabled_var").get()) if "light_freeze_enabled_var" in self.ui_vars else False
         ok, message = self.light_service.set_freeze_enabled(enabled)
+        self._refresh_module_indicator("light", enabled and ok)
         self._set_light_status(ok, message)
 
     def apply_light_default(self) -> None:
@@ -1991,18 +2014,8 @@ class SystemMonitorApp:
         except Exception as exc:
             self.runtime.ui.log(f"❌ Save failed: {exc}")
 
-    def save_config_xml(self) -> None:
-        path = filedialog.asksaveasfilename(defaultextension=".xml", filetypes=[("XML", "*.xml"), ("All", "*.*")], initialfile=f"autotool_{time.strftime('%Y%m%d_%H%M%S')}.xml")
-        if not path:
-            return
-        try:
-            ConfigSerializer.save_xml(path, self.runtime.state)
-            self.runtime.ui.log(f"💾 Saved: {path}")
-        except Exception as exc:
-            self.runtime.ui.log(f"❌ Save failed: {exc}")
-
     def load_config(self) -> None:
-        path = filedialog.askopenfilename(title="Load Config", filetypes=[("Config", "*.json *.xml"), ("JSON", "*.json"), ("XML", "*.xml"), ("All", "*.*")])
+        path = filedialog.askopenfilename(title="Load Config", filetypes=[("JSON", "*.json"), ("All", "*.*")])
         if not path:
             return
         try:
@@ -2067,7 +2080,7 @@ class SystemMonitorApp:
             "fish_auto_restart_enabled_var": bool(state.fish_auto_restart_enabled),
             "fish_auto_restart_food_secs_var": str(state.fish_auto_restart_food_min_secs),
             "rclick_mode_var": state.rclick_mode,
-            "rclick_food_min_var": state.rclick_food_min_secs,
+            "rclick_food_min_var": state.rclick_food_min_minutes,
             "rclick_require_food_var": state.rclick_require_food,
             "rclick_food_burst_count_min_var": state.rclick_food_burst_count_min,
             "rclick_food_burst_count_max_var": state.rclick_food_burst_count_max,
@@ -2098,6 +2111,7 @@ class SystemMonitorApp:
             self.ui_vars["healer_use_percent_var"].set(state.healer_use_percent)
         if "light_freeze_enabled_var" in self.ui_vars:
             self.ui_vars["light_freeze_enabled_var"].set(state.light_freeze_enabled)
+        self._refresh_all_module_indicators_from_state()
         if self.pos_label:
             self.pos_label.config(text=f"Pos: {state.rclick_pos[0]}, {state.rclick_pos[1]}")
         if self.rod_label:
@@ -2155,7 +2169,10 @@ class SystemMonitorApp:
             state.rclick_max_ms = get_ms("rclick_max_var", state.rclick_max_ms)
             if "rclick_mode_var" in self.ui_vars:
                 state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
-            state.rclick_food_min_secs = max(0, get_int("rclick_food_min_var", state.rclick_food_min_secs))
+            raw_food_minutes = self.ui_vars["rclick_food_min_var"].get() if "rclick_food_min_var" in self.ui_vars else state.rclick_food_min_minutes
+            state.rclick_food_min_minutes = self._normalize_food_threshold_minutes(raw_food_minutes, state.rclick_food_min_minutes)
+            if "rclick_food_min_var" in self.ui_vars:
+                self.ui_vars["rclick_food_min_var"].set(str(state.rclick_food_min_minutes))
             state.rclick_food_burst_count_min = max(1, get_int("rclick_food_burst_count_min_var", state.rclick_food_burst_count_min))
             state.rclick_food_burst_count_max = max(state.rclick_food_burst_count_min, get_int("rclick_food_burst_count_max_var", state.rclick_food_burst_count_max))
             state.rclick_food_burst_interval_ms = max(50, get_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
@@ -2230,6 +2247,7 @@ class SystemMonitorApp:
                 state.light_freeze_enabled = bool(self.ui_vars["light_freeze_enabled_var"].get())
             if "light_freeze_interval_ms_var" in self.ui_vars:
                 state.light_freeze_interval_ms = max(30, get_ms("light_freeze_interval_ms_var", state.light_freeze_interval_ms))
+        self._refresh_all_module_indicators_from_state()
         self._refresh_character_status_display()
         self._refresh_fish_session_display()
         if schedule_next:
@@ -2305,7 +2323,9 @@ class SystemMonitorApp:
                 text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
             )
         if self.char_status_food_label:
-            self.char_status_food_label.config(text=f"Food: {state.char_status_food_text or '—'}")
+            self.char_status_food_label.config(
+                text=f"Food: {self._format_food_timer(state.char_status_food_seconds, state.char_status_food_text)}"
+            )
         if self.char_status_regen_label:
             self.char_status_regen_label.config(
                 text=f"Regen: HP {state.char_status_hp_regen_per_min:.1f}/min | Mana {state.char_status_mana_regen_per_min:.1f}/min"
@@ -2375,8 +2395,9 @@ class SystemMonitorApp:
                 text=f"MP: {mp_display if mp_display is not None else '—'}{source_tag}"
             )
         if self.var_food_label:
-            food_text = state.char_status_food_text or "—"
-            self.var_food_label.config(text=f"Food: {food_text}")
+            self.var_food_label.config(
+                text=f"Food: {self._format_food_timer(state.char_status_food_seconds, state.char_status_food_text)}"
+            )
 
         # Right column: source metadata (pointer/ocr/none)
         if self.var_hp_source_label:

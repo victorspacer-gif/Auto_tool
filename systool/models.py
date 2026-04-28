@@ -30,7 +30,6 @@ class HotkeyJob:
 
 @dataclasses.dataclass
 class AppState:
-    time_unit: str = "ms"
     hotkey_bindings: dict[str, str] = dataclasses.field(
         default_factory=lambda: {
             "pause": "f5",
@@ -68,7 +67,7 @@ class AppState:
     rclick_max_ms: int = 31_000
     rclick_mode: str = "timer"
     rclick_require_food: bool = False
-    rclick_food_min_secs: int = 600
+    rclick_food_min_minutes: int = 10
     rclick_food_burst_count: int = 4
     rclick_food_burst_count_min: int = 3
     rclick_food_burst_count_max: int = 6
@@ -216,10 +215,3 @@ class AppState:
     )
     jobs: list[HotkeyJob] = dataclasses.field(default_factory=list)
     job_counter: int = 0
-
-    sandbox_backend: str = "job_object"
-    sandbox_box_name: str = "DefaultBox"
-    sandbox_exe_path: str = ""
-    sandbox_args: str = ""
-    sandbox_drop_admin: bool = False
-    sandbox_spoof_env: bool = False

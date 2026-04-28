@@ -118,6 +118,7 @@ class UINotifier:
         self._refresh_stats: Callable[[], None] = lambda: None
         self._set_pause_label: Callable[[bool], None] = lambda _paused: None
         self._job_state_changed: Callable[[HotkeyJob], None] = lambda _job: None
+        self._module_state_changed: Callable[[str, bool], None] = lambda _module, _running: None
 
     def configure(
         self,
@@ -127,6 +128,7 @@ class UINotifier:
         refresh_stats: Callable[[], None],
         set_pause_label: Callable[[bool], None],
         job_state_changed: Callable[[HotkeyJob], None],
+        module_state_changed: Callable[[str, bool], None],
     ) -> None:
         self._dispatch = dispatch
         self._log = log
@@ -134,6 +136,7 @@ class UINotifier:
         self._refresh_stats = refresh_stats
         self._set_pause_label = set_pause_label
         self._job_state_changed = job_state_changed
+        self._module_state_changed = module_state_changed
 
     def dispatch(self, callback: Callable[[], None]) -> None:
         self._dispatch(callback)
@@ -152,6 +155,9 @@ class UINotifier:
 
     def job_state_changed(self, job: HotkeyJob) -> None:
         self._dispatch(lambda: self._job_state_changed(job))
+
+    def module_state_changed(self, module_id: str, running: bool) -> None:
+        self._dispatch(lambda: self._module_state_changed(module_id, running))
 
 
 class PauseController:

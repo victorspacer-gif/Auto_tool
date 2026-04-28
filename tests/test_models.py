@@ -98,7 +98,7 @@ class TestAppStateDefaults:
         state = AppState()
         assert state.rclick_pos == (0, 0)
         assert state.rclick_mode == "timer"
-        assert state.rclick_food_min_secs == 600
+        assert state.rclick_food_min_minutes == 10
 
     def test_alarm_defaults(self):
         state = AppState()

@@ -995,6 +995,7 @@ class AntiAfkService:
         state.afk_active = True
         self.runtime.afk_stop.clear()
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("afk", True)
         self.runtime.ui.set_status("Activity monitor active", GREEN)
 
     def stop(self) -> None:
@@ -1003,6 +1004,7 @@ class AntiAfkService:
             return
         self.runtime.afk_stop.set()
         state.afk_active = False
+        self.runtime.ui.module_state_changed("afk", False)
         self.runtime.ui.set_status("Activity monitor stopped", RED)
 
     def _worker(self) -> None:
@@ -1051,6 +1053,7 @@ class AntiAfkService:
             self.runtime.ui.log(f"🚶 AFK Ctrl+{direction_name}")
             self.runtime.ui.refresh_stats()
         state.afk_active = False
+        self.runtime.ui.module_state_changed("afk", False)
         self.runtime.ui.log("⏹ Activity monitor end")
 
 
@@ -1069,6 +1072,7 @@ class RightClickService:
         state.rclick_active = True
         self.runtime.rclick_stop.clear()
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("rclick", True)
         self.runtime.ui.set_status("Right-click macro active", GREEN)
 
     def stop(self) -> None:
@@ -1077,7 +1081,12 @@ class RightClickService:
             return
         self.runtime.rclick_stop.set()
         state.rclick_active = False
+        self.runtime.ui.module_state_changed("rclick", False)
         self.runtime.ui.set_status("Right-click macro stopped", RED)
+
+    @staticmethod
+    def food_timer_meets_threshold(food_seconds: int | None, threshold_minutes: int) -> bool:
+        return food_seconds is not None and food_seconds >= max(1, threshold_minutes) * 60
 
     def _worker(self) -> None:
         state = self.runtime.state
@@ -1096,16 +1105,18 @@ class RightClickService:
                 max_ms = state.rclick_max_ms
                 target = state.rclick_pos
                 mode = state.rclick_mode
+                require_food = state.rclick_require_food
                 food_seconds = state.char_status_food_seconds
-                food_min_secs = state.rclick_food_min_secs
+                food_min_minutes = state.rclick_food_min_minutes
                 burst_count_min = state.rclick_food_burst_count_min
                 burst_count_max = state.rclick_food_burst_count_max
                 burst_interval_ms = state.rclick_food_burst_interval_ms
                 click_delay_min_ms = state.rclick_click_delay_min_ms
                 click_delay_max_ms = state.rclick_click_delay_max_ms
                 post_settle_ms = state.rclick_post_click_settle_ms
+            food_ok = self.food_timer_meets_threshold(food_seconds, food_min_minutes)
             if mode == "food":
-                if food_seconds is not None and food_seconds >= food_min_secs:
+                if food_ok:
                     if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rclick_stop):
                         break
                     continue
@@ -1117,7 +1128,13 @@ class RightClickService:
             else:
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
                     break
-                if state.rclick_require_food and food_seconds is not None and food_seconds >= food_min_secs:
+                if require_food and not food_ok:
+                    if food_seconds is None:
+                        self.runtime.ui.log("🍖 Timer click blocked — food timer unavailable")
+                    else:
+                        self.runtime.ui.log(
+                            f"🍖 Timer click blocked — food {food_seconds // 60}:{food_seconds % 60:02d} below {food_min_minutes}:00"
+                        )
                     continue
                 clicks_to_send = 1
                 queue_window = 0.80
@@ -1147,6 +1164,8 @@ class RightClickService:
             else:
                 self.runtime.ui.log(f"🖱️  Right-click at {target}")
             self.runtime.ui.refresh_stats()
+        state.rclick_active = False
+        self.runtime.ui.module_state_changed("rclick", False)
         self.runtime.ui.log("⏹ Right-click end")
 
 
@@ -1164,6 +1183,7 @@ class AlarmService:
         state.alarm_active = True
         self.runtime.alarm_stop.clear()
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("alarm", True)
         self.runtime.ui.set_status("Screen watch active…", TEAL)
 
     def stop(self) -> None:
@@ -1172,6 +1192,7 @@ class AlarmService:
             return
         self.runtime.alarm_stop.set()
         state.alarm_active = False
+        self.runtime.ui.module_state_changed("alarm", False)
         self.runtime.ui.set_status("Screen watch stopped", RED)
 
     def play_alarm(self) -> None:
@@ -1324,6 +1345,8 @@ class AlarmService:
                                 self.runtime.ui.log("⏸  Auto-pausing all activities due to screen watch event")
                                 self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 last_frame = frame
+        self.runtime.state.alarm_active = False
+        self.runtime.ui.module_state_changed("alarm", False)
         self.runtime.ui.log("⏹ Screen watch end")
 
 
@@ -1376,6 +1399,7 @@ class CharacterStatusService:
         state.char_status_last_error = ""
         self.runtime.char_status_stop.clear()
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("char_status", True)
         self.runtime.ui.set_status("Character status watcher active", GREEN)
 
     def stop(self) -> None:
@@ -1384,11 +1408,13 @@ class CharacterStatusService:
             return
         self.runtime.char_status_stop.set()
         state.char_status_active = False
+        self.runtime.ui.module_state_changed("char_status", False)
         self.runtime.ui.set_status("Character status watcher stopped", RED)
 
     def restart_if_needed(self) -> None:
         self.stop()
-        if self.runtime.state.char_status_region:
+        state = self.runtime.state
+        if state.char_status_region or all([state.char_status_hp_region, state.char_status_mana_region, state.char_status_cap_region]):
             self.start()
 
     def _worker(self) -> None:
@@ -1467,6 +1493,7 @@ class CharacterStatusService:
                         break
         finally:
             state.char_status_active = False
+            self.runtime.ui.module_state_changed("char_status", False)
             self.runtime.ui.log("⏹ Character status watcher end")
 
     def _extract_values(self, frame) -> dict[str, int | None]:
@@ -1603,8 +1630,11 @@ class CharacterStatusService:
         match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
         if not match:
             return None
-        # Format is MM:SS (minutes:seconds), converting to total seconds
-        return int(match.group(1)) * 60 + int(match.group(2))
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        if minutes >= 60:
+            return None
+        return hours * 3600 + minutes * 60
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
         base_w, base_h = self.BASE_SIZE
@@ -1701,6 +1731,7 @@ class FishingService:
         state.fish_session_deadline = time.monotonic() + total_seconds
         state.fish_active = True
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("fish", True)
         
         self.runtime.ui.set_status(
             f"Fishing session running ({state.fish_session_minutes} min + {bonus_secs//60} min random bonus)",
@@ -1716,6 +1747,7 @@ class FishingService:
         state.fish_active = False
         state.fish_session_remaining_secs = 0
         state.fish_session_deadline = None
+        self.runtime.ui.module_state_changed("fish", False)
         self.runtime.ui.set_status("Fishing session stopped", RED)
 
     def _worker(self) -> None:
@@ -1727,6 +1759,7 @@ class FishingService:
             state.fish_active = False
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
+            self.runtime.ui.module_state_changed("fish", False)
             return
         mouse = pynput_mouse.Controller()
         deck = list(state.fish_spots)
@@ -1846,6 +1879,7 @@ class FishingService:
             if not wait_with_session_limit(random.randint(wait_min, wait_max) / 1000.0):
                 break
         state.fish_active = False
+        self.runtime.ui.module_state_changed("fish", False)
         if self.runtime.fish_stop.is_set():
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
@@ -1886,6 +1920,7 @@ class AutoHealerService:
         self.runtime.healer_stop.clear()
         state.healer_active = True
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("healer", True)
         self.runtime.ui.set_status("Auto healer active", GREEN)
 
     def stop(self) -> None:
@@ -1894,6 +1929,7 @@ class AutoHealerService:
             return
         self.runtime.healer_stop.set()
         state.healer_active = False
+        self.runtime.ui.module_state_changed("healer", False)
         self.runtime.ui.set_status("Auto healer stopped", RED)
 
     def _worker(self) -> None:
@@ -1902,6 +1938,7 @@ class AutoHealerService:
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
             state.healer_active = False
+            self.runtime.ui.module_state_changed("healer", False)
             return
         keyboard = pynput_kb.Controller()
         mouse = pynput_mouse.Controller()
@@ -2008,6 +2045,7 @@ class AutoHealerService:
                 self.runtime.ui.log(f"❌ Auto healer: {exc}")
                 break
         state.healer_active = False
+        self.runtime.ui.module_state_changed("healer", False)
         self.runtime.ui.log("⏹ Auto healer end")
 
 
@@ -2026,6 +2064,7 @@ class RuneMakerService:
         self.runtime.rune_stop.clear()
         state.rune_active = True
         threading.Thread(target=self._worker, daemon=True).start()
+        self.runtime.ui.module_state_changed("rune", True)
         self.runtime.ui.set_status("Rune session running…", GREEN)
 
     def stop(self) -> None:
@@ -2034,6 +2073,7 @@ class RuneMakerService:
             return
         self.runtime.rune_stop.set()
         state.rune_active = False
+        self.runtime.ui.module_state_changed("rune", False)
         self.runtime.ui.set_status("Rune session stopped", RED)
 
     def _worker(self) -> None:
@@ -2045,6 +2085,7 @@ class RuneMakerService:
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
             state.rune_active = False
+            self.runtime.ui.module_state_changed("rune", False)
             return
         keyboard = pynput_kb.Controller()
         mouse = pynput_mouse.Controller()
@@ -2052,6 +2093,7 @@ class RuneMakerService:
         if not spell:
             self.runtime.ui.log(f"❌ Unknown spell key: {state.rune_spell_key}")
             state.rune_active = False
+            self.runtime.ui.module_state_changed("rune", False)
             return
 
         cycles_completed = 0
@@ -2162,6 +2204,7 @@ class RuneMakerService:
             if not self.runtime.pause.wait_interruptible(wait_s, self.runtime.rune_stop):
                 break
         state.rune_active = False
+        self.runtime.ui.module_state_changed("rune", False)
         self.runtime.ui.log(f"⏹ Rune session stopped — {state.stats['runes_made']} runes moved")
 
 
