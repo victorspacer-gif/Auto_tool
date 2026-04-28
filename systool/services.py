@@ -1094,6 +1094,11 @@ class RightClickService:
             state.rclick_active = False
             return
         mouse = pynput_mouse.Controller()
+
+        # Enqueue right_click module to claim its turn in the execution queue.
+        # This prevents other modules from stealing execution while right-click is active.
+        self.runtime.mouse.enqueue_module("right_click")
+
         while not self.runtime.rclick_stop.is_set():
             self.runtime.pause.wait()
             if self.runtime.rclick_stop.is_set():
@@ -1128,6 +1133,7 @@ class RightClickService:
                     continue
                 clicks_to_send = 1
                 queue_window = 0.80
+
             # Skip gate acquisition if fishing or rune session is active — these high-priority
             # sessions need exclusive mouse access for their full A->B sequences.
             with self.runtime.settings_lock:
@@ -1137,6 +1143,19 @@ class RightClickService:
                 if not self.runtime.pause.wait_interruptible(0.2, self.runtime.rclick_stop):
                     break
                 continue
+
+            # Before acquiring the gate, check if other modules are waiting in the queue.
+            # If so, yield control and let them run before continuing with right-click.
+            queued_modules = self.runtime.mouse.has_queued_modules()
+            if queued_modules:
+                next_module = self.runtime.mouse.peek_next_module()
+                self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
+                # Complete our current turn so other modules can run
+                self.runtime.mouse.complete_module("right_click")
+                # Wait briefly for queued modules to be processed
+                if not self.runtime.pause.wait_interruptible(0.5, self.runtime.rclick_stop):
+                    break
+
             if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window, module_id="right_click"):
                 # Gate acquisition failed — either blocked by high-priority session (fishing/rune)
                 # or another module holds the gate. Skip this iteration to avoid disrupting critical sessions.
@@ -1155,7 +1174,11 @@ class RightClickService:
             except Exception as exc:
                 self.runtime.ui.log(f"❌ R-click: {exc}")
             finally:
-                self.runtime.mouse.release()
+                # Complete this module's turn in the queue before releasing.
+                # This allows other queued modules to be dequeued and run next.
+                self.runtime.mouse.complete_module("right_click")
+                self.runtime.mouse.release(module_id="right_click")
+
             with self.runtime.record_lock:
                 state.stats["right_clicks"] += clicks_to_send
             if mode == "food":
@@ -1772,6 +1795,10 @@ class FishingService:
                 seconds -= chunk
             return update_remaining()
 
+        # Enqueue fishing module to claim its turn in the execution queue.
+        # This prevents other modules from stealing execution while fishing is active.
+        self.runtime.mouse.enqueue_module("fishing")
+
         while not self.runtime.fish_stop.is_set():
             if not update_remaining():
                 self.runtime.ui.log("⏲️ Fishing session complete")
@@ -1822,6 +1849,20 @@ class FishingService:
                 self.runtime.fish_stop.set()
                 stopped_by_food = True
                 break
+
+            # Before each cycle, check if other modules are waiting in the queue.
+            # If so, yield control and let them run before continuing with fishing.
+            # This ensures fair scheduling — no module can monopolize execution.
+            queued_modules = self.runtime.mouse.has_queued_modules()
+            if queued_modules:
+                next_module = self.runtime.mouse.peek_next_module()
+                self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
+                # Complete our current turn so other modules can run
+                self.runtime.mouse.complete_module("fishing")
+                # Wait briefly for queued modules to be processed
+                if not wait_with_session_limit(0.5):
+                    break
+
             cycle_locked = False
             try:
                 cycle_window = max(0.90, max(cast_max, 0) / 1000.0 + 1.20)
@@ -1860,7 +1901,11 @@ class FishingService:
                 break
             finally:
                 if cycle_locked:
-                    self.runtime.mouse.release()
+                    # Complete this module's turn in the queue before releasing.
+                    # This allows other queued modules to be dequeued and run next.
+                    self.runtime.mouse.complete_module("fishing")
+                    self.runtime.mouse.release(module_id="fishing")
+
             if not update_remaining():
                 self.runtime.ui.log("⏲️ Fishing session complete")
                 self.runtime.ui.set_status("Fishing session finished", ORANGE)
@@ -1868,6 +1913,7 @@ class FishingService:
                 break
             if not wait_with_session_limit(random.randint(wait_min, wait_max) / 1000.0):
                 break
+
         # Release exclusive session lock so other modules can use the mouse again.
         self.runtime.mouse.clear_session()
         state.fish_active = False
@@ -1930,6 +1976,11 @@ class AutoHealerService:
             return
         keyboard = pynput_kb.Controller()
         mouse = pynput_mouse.Controller()
+
+        # Enqueue healer module to claim its turn in the execution queue.
+        # This prevents other modules from stealing execution while healer is active.
+        self.runtime.mouse.enqueue_module("healer")
+
         cooldown_until = 0.0
         while not self.runtime.healer_stop.is_set():
             self.runtime.pause.wait()
@@ -1997,6 +2048,19 @@ class AutoHealerService:
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
                     break
                 continue
+
+            # Before acquiring the gate, check if other modules are waiting in the queue.
+            # If so, yield control and let them run before continuing with healer.
+            queued_modules = self.runtime.mouse.has_queued_modules()
+            if queued_modules:
+                next_module = self.runtime.mouse.peek_next_module()
+                self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
+                # Complete our current turn so other modules can run
+                self.runtime.mouse.complete_module("healer")
+                # Wait briefly for queued modules to be processed
+                if not self.runtime.pause.wait_interruptible(0.5, self.runtime.healer_stop):
+                    break
+
             try:
                 if mode == "spell":
                     spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
@@ -2013,7 +2077,7 @@ class AutoHealerService:
                         session.tap(spell_key, hold_seconds=0.03)
                     finally:
                         session.release_all()
-                        self.runtime.execution.release()
+                        self.runtime.execution.release(module_id="healer")
                     cooldown_until = time.monotonic() + 0.35
                     self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
                 else:
@@ -2032,7 +2096,10 @@ class AutoHealerService:
                         time.sleep(0.04)
                         mouse.click(pynput_mouse.Button.left, 1)
                     finally:
-                        self.runtime.mouse.release()
+                        # Complete this module's turn in the queue before releasing.
+                        # This allows other queued modules to be dequeued and run next.
+                        self.runtime.mouse.complete_module("healer")
+                        self.runtime.mouse.release(module_id="healer")
                     cooldown_until = time.monotonic() + max(0.45, rune_delay_ms / 1000.0 + 0.15)
                     self.runtime.ui.log(f"❤️ Rune heal at HP {hp_value}")
                 with self.runtime.record_lock:
@@ -2091,6 +2158,10 @@ class RuneMakerService:
             state.rune_active = False
             return
 
+        # Enqueue rune module to claim its turn in the execution queue.
+        # This prevents other modules from stealing execution while rune is active.
+        self.runtime.mouse.enqueue_module("rune")
+
         cycles_completed = 0
         while not self.runtime.rune_stop.is_set():
             self.runtime.pause.wait()
@@ -2134,6 +2205,19 @@ class RuneMakerService:
                     if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
                         break
                     continue
+
+            # Before acquiring the gate, check if other modules are waiting in the queue.
+            # If so, yield control and let them run before continuing with rune.
+            queued_modules = self.runtime.mouse.has_queued_modules()
+            if queued_modules:
+                next_module = self.runtime.mouse.peek_next_module()
+                self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
+                # Complete our current turn so other modules can run
+                self.runtime.mouse.complete_module("rune")
+                # Wait briefly for queued modules to be processed
+                if not self.runtime.pause.wait_interruptible(0.5, self.runtime.rune_stop):
+                    break
+
             queue_window = max(
                 0.90,
                 cast_delay_ms / 1000.0
@@ -2186,7 +2270,11 @@ class RuneMakerService:
                 break
             finally:
                 session.release_all()
-                self.runtime.execution.release()
+                # Complete this module's turn in the queue before releasing.
+                # This allows other queued modules to be dequeued and run next.
+                self.runtime.mouse.complete_module("rune")
+                self.runtime.execution.release(module_id="rune")
+
             with self.runtime.record_lock:
                 state.stats["runes_made"] += 1
             cycles_completed += 1
@@ -2278,12 +2366,30 @@ class HotkeyJobService:
             self.runtime.ui.log(f"❌ Unknown key {job.key}")
             job.running = False
             return
+
+        # Enqueue afk module to claim its turn in the execution queue.
+        # This prevents other modules from stealing execution while AFK is active.
+        self.runtime.mouse.enqueue_module("afk")
+
         self.runtime.ui.log(f"▶ Job #{job.job_id} — key={job.key} {job.min_ms}–{job.max_ms}ms focus={job.use_focus}")
         while not job.stop_evt.is_set():
             self.runtime.pause.wait()
             delay = random.randint(job.min_ms, job.max_ms) / 1000.0
             if not self.runtime.pause.wait_interruptible(delay, job.stop_evt):
                 break
+
+            # Before acquiring the gate, check if other modules are waiting in the queue.
+            # If so, yield control and let them run before continuing with AFK.
+            queued_modules = self.runtime.mouse.has_queued_modules()
+            if queued_modules:
+                next_module = self.runtime.mouse.peek_next_module()
+                self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
+                # Complete our current turn so other modules can run
+                self.runtime.mouse.complete_module("afk")
+                # Wait briefly for queued modules to be processed
+                if not self.runtime.pause.wait_interruptible(0.5, job.stop_evt):
+                    break
+
             prev_hwnd = None
             if job.min_mana > 0:
                 # Use pointer-based MP first, fall back to OCR
@@ -2322,7 +2428,7 @@ class HotkeyJobService:
                         inter_click = max(0.02, job.burst_int_ms / 1000.0 + random.uniform(-0.05, 0.08))
                         time.sleep(inter_click)
                 finally:
-                    self.runtime.execution.release()
+                    self.runtime.execution.release(module_id=f"job:{job.job_id}")
                 with self.runtime.record_lock:
                     self.runtime.state.stats["hotkeys"] += sent
                     if sent:
@@ -2333,7 +2439,7 @@ class HotkeyJobService:
                 try:
                     self._press_key(keyboard, pressed_key)
                 finally:
-                    self.runtime.execution.release()
+                    self.runtime.execution.release(module_id=f"job:{job.job_id}")
                 with self.runtime.record_lock:
                     self.runtime.state.stats["hotkeys"] += 1
                 self.runtime.ui.log(f"🎮 Job #{job.job_id} pressed {job.key}")
