@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import os
 import subprocess
@@ -291,7 +291,8 @@ class SystemMonitorApp:
         self._build_config_tab(config_tab)
 
     def _build_automation_tab(self, parent: tk.Frame) -> None:
-        left, right = self._create_responsive_columns(parent, threshold=1180)
+        content_frame = self._create_scrollable_content(parent)
+        left, right = self._create_responsive_columns(content_frame, threshold=1180)
 
         jobs_frame = tk.LabelFrame(left, text=" 🎮  Hotkey Tasks — independent threads ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=6, padx=8)
         jobs_frame.pack(fill="both", expand=True)
@@ -410,15 +411,7 @@ class SystemMonitorApp:
         self._btn(buttons, "⏹ Stop", self.rclick_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
 
     def _build_rune_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-        content_frame = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
+        content_frame = self._create_scrollable_content(parent)
         left, right = self._create_responsive_columns(content_frame)
 
         spell_panel = tk.LabelFrame(left, text=" ✨  Rune Session Timing ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -517,10 +510,9 @@ class SystemMonitorApp:
         self._btn(buttons, "⏹ Stop Rune Session", self.rune_service.stop, RED).pack(fill="x", pady=2)
 
     def _build_alarm_tab(self, parent: tk.Frame) -> None:
-        wrapper = tk.Frame(parent, bg=BG)
-        wrapper.pack(fill="both", expand=True, padx=16, pady=10)
+        wrapper = self._create_scrollable_content(parent, padx=16, pady=10)
         panel = tk.LabelFrame(wrapper, text=" 👁️  Screen Change Watch ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
-        panel.pack(fill="x")
+        panel.grid(row=0, column=0, sticky="ew")
         self._register_module_indicator(panel, "alarm", self.runtime.state.alarm_active)
         area_row = tk.Frame(panel, bg=PANEL)
         area_row.pack(fill="x", pady=4)
@@ -562,15 +554,7 @@ class SystemMonitorApp:
         self._btn(action_row, "⏹ Stop", self.alarm_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
 
     def _build_healer_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-        content_frame = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
+        content_frame = self._create_scrollable_content(parent)
         left, right = self._create_responsive_columns(content_frame)
 
         mode_panel = tk.LabelFrame(left, text=" ❤️  Healing Mode ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -638,19 +622,12 @@ class SystemMonitorApp:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
 
     def _build_light_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-        content_frame = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
+        content_frame = self._create_scrollable_content(parent)
         wrapper = tk.Frame(content_frame, bg=BG)
-        wrapper.pack(fill="both", expand=True, padx=16, pady=10)
+        wrapper.columnconfigure(0, weight=1)
+        wrapper.grid(row=0, column=0, sticky="nsew", padx=16, pady=10)
         panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control - Alpha test ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
-        panel.pack(fill="x")
+        panel.grid(row=0, column=0, sticky="ew")
         self._register_module_indicator(panel, "light", self.runtime.state.light_freeze_enabled)
         light_process = tk.StringVar(value=self.runtime.state.light_process_name)
         light_direct_address = tk.StringVar(value=self.runtime.state.light_direct_address_hex)
@@ -688,15 +665,7 @@ class SystemMonitorApp:
         self.light_status_label.pack(fill="x")
 
     def _build_fish_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-        content_frame = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
+        content_frame = self._create_scrollable_content(parent)
         left, right = self._create_responsive_columns(content_frame)
 
         rod_panel = tk.LabelFrame(left, text=" 🎣  Rod Position ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -840,15 +809,7 @@ class SystemMonitorApp:
 
 
     def _build_character_status_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-        content_frame = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
+        content_frame = self._create_scrollable_content(parent)
         left, right = self._create_responsive_columns(content_frame)
 
         watch_panel = tk.LabelFrame(left, text=" 📊  Status Window Watch ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -937,15 +898,7 @@ class SystemMonitorApp:
         tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if dep_ready else ORANGE, bg=PANEL, justify="left", wraplength=300).pack(anchor="w", pady=(10, 0))
 
     def _build_variables_tab(self, parent: tk.Frame) -> None:
-        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
-        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-        content_frame = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
+        content_frame = self._create_scrollable_content(parent)
         left, right = self._create_responsive_columns(content_frame)
 
         vars_panel = tk.LabelFrame(left, text=" 📡  Live Variables ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
@@ -992,11 +945,10 @@ class SystemMonitorApp:
         self.var_last_update_label.pack(fill="x", pady=(10, 2))
 
     def _build_hotkeys_tab(self, parent: tk.Frame) -> None:
-        wrapper = tk.Frame(parent, bg=BG)
-        wrapper.pack(fill="both", expand=True, padx=20, pady=16)
-        tk.Label(wrapper, text="Click Rebind then press any key to reassign a hotkey.\nConflicts are detected automatically.", font=BOLD, fg=FG, bg=BG, justify="center").pack(pady=(0, 16))
+        wrapper = self._create_scrollable_content(parent, padx=20, pady=16)
+        tk.Label(wrapper, text="Click Rebind then press any key to reassign a hotkey.\nConflicts are detected automatically.", font=BOLD, fg=FG, bg=BG, justify="center").grid(row=0, column=0, pady=(0, 16), sticky="ew")
         inner = tk.LabelFrame(wrapper, text=" ⌨️  Current Bindings ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
-        inner.pack(fill="x")
+        inner.grid(row=1, column=0, sticky="ew")
         for action, label in self.runtime.state.hotkey_labels.items():
             row = tk.Frame(inner, bg=PANEL)
             row.pack(fill="x", pady=3)
@@ -1007,11 +959,10 @@ class SystemMonitorApp:
             self._btn(row, "Rebind", lambda a=action: self.begin_rebind(a), BLUE).pack(side="left", padx=4)
 
     def _build_config_tab(self, parent: tk.Frame) -> None:
-        wrapper = tk.Frame(parent, bg=BG)
-        wrapper.pack(fill="both", expand=True, padx=30, pady=30)
-        tk.Label(wrapper, text="Save / Load complete configuration\n(all jobs · hotkey bindings · rune maker · alarm · fishing · timers…)", font=BOLD, fg=FG, bg=BG, justify="center").pack(pady=(0, 20))
+        wrapper = self._create_scrollable_content(parent, padx=30, pady=30)
+        tk.Label(wrapper, text="Save / Load complete configuration\n(all jobs · hotkey bindings · rune maker · alarm · fishing · timers…)", font=BOLD, fg=FG, bg=BG, justify="center").grid(row=0, column=0, pady=(0, 20), sticky="ew")
         buttons = tk.Frame(wrapper, bg=BG)
-        buttons.pack()
+        buttons.grid(row=1, column=0)
         self._btn(buttons, "💾 Save JSON", self.save_config_json, BLUE).pack(side="left", padx=8, ipadx=12)
         self._btn(buttons, "📂 Load", self.load_config, ORANGE).pack(side="left", padx=8, ipadx=12)
         tk.Label(
@@ -1022,7 +973,7 @@ class SystemMonitorApp:
             bg=BG,
             justify="center",
             wraplength=680,
-        ).pack(pady=(20, 0))
+        ).grid(row=2, column=0, pady=(20, 0), sticky="ew")
 
     def _root_poll_settings_now(self) -> None:
         self._poll_settings(schedule_next=False)
@@ -1374,28 +1325,72 @@ class SystemMonitorApp:
         self.module_indicators[module_id] = indicator
         return indicator
 
+    def _create_scrollable_content(self, parent: tk.Frame, padx: int = 6, pady: int = 6) -> tk.Frame:
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        outer = tk.Frame(canvas, bg=BG)
+        outer.columnconfigure(0, weight=1)
+        window_id = canvas.create_window((0, 0), window=outer, anchor="nw")
+
+        content_frame = tk.Frame(outer, bg=BG)
+        content_frame.grid(row=0, column=0, sticky="nsew", padx=padx, pady=pady)
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.columnconfigure(1, weight=1)
+
+        outer.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=event.width))
+        canvas.bind("<MouseWheel>", lambda event: canvas.yview_scroll(int(-1 * (event.delta / 120)), "units"))
+        return content_frame
+
+    def _apply_responsive_layout(self, container, widgets) -> None:
+        width = container.winfo_width()
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=1)
+        for i, widget in enumerate(widgets):
+            widget.grid_forget()
+            if width < 800:
+                widget.grid(row=i, column=0, sticky="ew", padx=6, pady=6)
+            else:
+                widget.grid(row=i // 2, column=i % 2, sticky="nsew", padx=6, pady=6)
+
     def _create_responsive_columns(self, parent: tk.Frame, threshold: int = 1080) -> tuple[tk.Frame, tk.Frame]:
         left = tk.Frame(parent, bg=BG)
         right = tk.Frame(parent, bg=BG)
-        parent.grid_columnconfigure(0, weight=1, uniform="columns")
-        parent.grid_columnconfigure(1, weight=1, uniform="columns")
+        parent.columnconfigure(0, weight=1)
+        parent.columnconfigure(1, weight=1)
 
         def relayout(_event=None) -> None:
             width = parent.winfo_width()
-            left.grid_forget()
-            right.grid_forget()
             if width and width < threshold:
+                left.grid_forget()
+                right.grid_forget()
                 left.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 3))
                 right.grid(row=1, column=0, sticky="nsew", padx=6, pady=(3, 6))
-                parent.grid_columnconfigure(1, weight=0, uniform="")
             else:
-                left.grid(row=0, column=0, sticky="nsew", padx=(6, 3), pady=6)
-                right.grid(row=0, column=1, sticky="nsew", padx=(3, 6), pady=6)
-                parent.grid_columnconfigure(1, weight=1, uniform="columns")
+                self._apply_responsive_layout(parent, [left, right])
 
-        parent.bind("<Configure>", relayout)
+        parent.bind("<Configure>", lambda event: relayout(event))
         relayout()
         return left, right
+
+    def _set_stat_label(self, label, value, source) -> None:
+        if not label:
+            return
+        title = getattr(label, "_stat_title", label.cget("text").split(":", 1)[0])
+        suffix = f" [{source}]" if source == "pointer" and value is not None else ""
+        label.config(text=f"{title}: {value if value is not None else '—'}{suffix}")
+
+    def _toggle_service(self, service_attr: str, state_flag: str) -> None:
+        service = getattr(self, service_attr, None)
+        if service is None:
+            return
+        if getattr(self.runtime.state, state_flag, False):
+            service.stop()
+        else:
+            service.start()
 
     def _build_position_row(self, parent: tk.Frame, title: str, label_text: str, command) -> None:
         frame = tk.Frame(parent, bg=PANEL)
@@ -1748,15 +1743,15 @@ class SystemMonitorApp:
                 elif HotkeyService.matches(key, bindings.get("pause", "f5")):
                     self.root.after(0, self.runtime.pause.toggle)
                 elif HotkeyService.matches(key, bindings.get("afk", "f8")):
-                    self.root.after(0, lambda: self.afk_service.stop() if state.afk_active else self.afk_service.start())
+                    self.root.after(0, lambda: self._toggle_service("afk_service", "afk_active"))
                 elif HotkeyService.matches(key, bindings.get("rclick", "f7")):
-                    self.root.after(0, lambda: self.rclick_service.stop() if state.rclick_active else self.rclick_service.start())
+                    self.root.after(0, lambda: self._toggle_service("rclick_service", "rclick_active"))
                 elif HotkeyService.matches(key, bindings.get("alarm", "f6")):
-                    self.root.after(0, lambda: self.alarm_service.stop() if state.alarm_active else self.alarm_service.start())
+                    self.root.after(0, lambda: self._toggle_service("alarm_service", "alarm_active"))
                 elif HotkeyService.matches(key, bindings.get("fish_stop", "f9")):
-                    self.root.after(0, lambda: self.fishing_service.stop() if state.fish_active else self.fishing_service.start())
+                    self.root.after(0, lambda: self._toggle_service("fishing_service", "fish_active"))
                 elif HotkeyService.matches(key, bindings.get("rune_stop", "f10")):
-                    self.root.after(0, lambda: self.rune_service.stop() if state.rune_active else self.rune_service.start())
+                    self.root.after(0, lambda: self._toggle_service("rune_service", "rune_active"))
             except Exception:
                 pass
 
@@ -1910,57 +1905,43 @@ class SystemMonitorApp:
         self.runtime.ui.log(("✅ " if success else "❌ ") + message)
 
     def select_alarm_area(self) -> None:
-        self._select_screen_region(
-            title="Click & drag to select alarm area  |  Esc = cancel",
-            on_done=self._apply_alarm_region,
-        )
+        self._select_region("alarm_region", self.alarm_region_label, "Click & drag to select alarm area")
 
     def select_character_status_region(self) -> None:
-        self._select_screen_region(
-            title="Select the full character status window  |  Esc = cancel",
-            on_done=self._apply_character_status_region,
-        )
+        self._select_region("char_status_region", self.char_status_region_label, "Select the full character status window")
 
     def select_character_status_hp_region(self) -> None:
-        self._select_screen_region(
-            title="Select HP number area  |  Esc = cancel",
-            on_done=lambda region: self._apply_character_status_field_region("hp", region),
-        )
+        self._select_region("char_status_hp_region", self.char_status_hp_region_label, "Select HP number area")
 
     def select_character_status_mana_region(self) -> None:
-        self._select_screen_region(
-            title="Select Mana number area  |  Esc = cancel",
-            on_done=lambda region: self._apply_character_status_field_region("mana", region),
-        )
+        self._select_region("char_status_mana_region", self.char_status_mana_region_label, "Select Mana number area")
 
     def select_character_status_cap_region(self) -> None:
-        self._select_screen_region(
-            title="Select Cap text/number area  |  Esc = cancel",
-            on_done=lambda region: self._apply_character_status_field_region("cap", region),
-        )
+        self._select_region("char_status_cap_region", self.char_status_cap_region_label, "Select Cap text/number area")
 
-    def _apply_alarm_region(self, region: tuple[int, int, int, int]) -> None:
-        x_val, y_val, width, height = region
-        self.runtime.state.alarm_region = region
-        text = f"Area: ({x_val},{y_val})  {width}×{height} px"
-        self.runtime.ui.log(f"✅ Screen watch area: {text}")
-        self.runtime.ui.set_status(f"Screen watch area: {text}", TEAL)
-        if self.alarm_region_label:
-            self.alarm_region_label.config(text=text)
+    def _select_region(self, state_attr: str, label, title: str) -> None:
+        def on_done(region: tuple[int, int, int, int]) -> None:
+            setattr(self.runtime.state, state_attr, region)
+            if state_attr == "alarm_region":
+                x_val, y_val, width, height = region
+                text = f"Area: ({x_val},{y_val})  {width}×{height} px"
+                if label:
+                    label.config(text=text)
+                self.runtime.ui.log(f"✅ Screen watch area: {text}")
+                self.runtime.ui.set_status(f"Screen watch area: {text}", TEAL)
+                return
 
-    def _apply_character_status_region(self, region: tuple[int, int, int, int]) -> None:
-        self.runtime.state.char_status_region = region
-        self._refresh_character_status_display()
-        self.runtime.ui.log(f"✅ Character status window selected: {region}")
-        self.runtime.ui.set_status("Character status window selected", TEAL)
-        self.char_status_service.restart_if_needed()
+            self._refresh_character_status_display()
+            if state_attr == "char_status_region":
+                self.runtime.ui.log(f"✅ Character status window selected: {region}")
+                self.runtime.ui.set_status("Character status window selected", TEAL)
+            else:
+                field_name = state_attr.removeprefix("char_status_").removesuffix("_region").upper()
+                self.runtime.ui.log(f"✅ Character status {field_name} area selected: {region}")
+                self.runtime.ui.set_status(f"Character status {field_name} area selected", TEAL)
+            self.char_status_service.restart_if_needed()
 
-    def _apply_character_status_field_region(self, key: str, region: tuple[int, int, int, int]) -> None:
-        setattr(self.runtime.state, f"char_status_{key}_region", region)
-        self._refresh_character_status_display()
-        self.runtime.ui.log(f"✅ Character status {key.upper()} area selected: {region}")
-        self.runtime.ui.set_status(f"Character status {key.upper()} area selected", TEAL)
-        self.char_status_service.restart_if_needed()
+        self._select_screen_region(title=f"{title}  |  Esc = cancel", on_done=on_done)
 
     def _select_screen_region(self, title: str, on_done) -> None:
         overlay = tk.Toplevel(self.root)
@@ -2150,108 +2131,125 @@ class SystemMonitorApp:
     def _poll_settings(self, schedule_next: bool = True) -> None:
         state = self.runtime.state
 
-        def get_int(name: str, default: int) -> int:
-            try:
-                return int(self.ui_vars[name].get()) if name in self.ui_vars else default
-            except ValueError:
-                return default
-
-        def get_ms(name: str, default: int) -> int:
-            try:
-                return self._display_to_ms(float(self.ui_vars[name].get())) if name in self.ui_vars else default
-            except (ValueError, KeyError):
-                return default
-
         with self.runtime.settings_lock:
-            state.afk_min_ms = get_ms("afk_min_var", state.afk_min_ms)
-            state.afk_max_ms = get_ms("afk_max_var", state.afk_max_ms)
-            state.rclick_min_ms = get_ms("rclick_min_var", state.rclick_min_ms)
-            state.rclick_max_ms = get_ms("rclick_max_var", state.rclick_max_ms)
-            if "rclick_mode_var" in self.ui_vars:
-                state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
-            raw_food_minutes = self.ui_vars["rclick_food_min_var"].get() if "rclick_food_min_var" in self.ui_vars else state.rclick_food_min_minutes
-            state.rclick_food_min_minutes = self._normalize_food_threshold_minutes(raw_food_minutes, state.rclick_food_min_minutes)
-            if "rclick_food_min_var" in self.ui_vars:
-                self.ui_vars["rclick_food_min_var"].set(str(state.rclick_food_min_minutes))
-            state.rclick_food_burst_count_min = max(1, get_int("rclick_food_burst_count_min_var", state.rclick_food_burst_count_min))
-            state.rclick_food_burst_count_max = max(state.rclick_food_burst_count_min, get_int("rclick_food_burst_count_max_var", state.rclick_food_burst_count_max))
-            state.rclick_food_burst_interval_ms = max(50, get_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
-            state.rclick_click_delay_min_ms = max(100, get_ms("rclick_click_delay_min_var", state.rclick_click_delay_min_ms))
-            state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, get_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))
-            state.rclick_post_click_settle_ms = max(100, get_ms("rclick_post_settle_ms_var", state.rclick_post_click_settle_ms))
-            state.alarm_threshold = get_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
-            state.alarm_hp_value = max(0, get_int("alarm_hp_value_var", state.alarm_hp_value))
-            state.alarm_mp_value = max(0, get_int("alarm_mp_value_var", state.alarm_mp_value))
-            state.alarm_cap_value = max(0, get_int("alarm_cap_value_var", state.alarm_cap_value))
-            state.char_status_poll_ms = max(250, get_ms("char_status_poll_var", state.char_status_poll_ms))
-            state.char_status_samples = max(1, get_int("char_status_samples_var", state.char_status_samples))
-            state.char_status_sample_delay_ms = max(0, get_ms("char_status_sample_delay_var", state.char_status_sample_delay_ms))
-            # Scale samples according to frequency: more frequent scans get fewer samples
-            if "char_status_samples_var" not in self.ui_vars:  # If not manually set, scale
-                state.char_status_samples = max(1, 2000 // state.char_status_poll_ms)
-            if "alarm_auto_pause_var" in self.ui_vars:
-                state.alarm_auto_pause = bool(self.ui_vars["alarm_auto_pause_var"].get())
-            if "alarm_mp3_var" in self.ui_vars:
-                state.alarm_mp3 = str(self.ui_vars["alarm_mp3_var"].get())
-            if "char_status_tesseract_var" in self.ui_vars:
-                state.char_status_tesseract_path = str(self.ui_vars["char_status_tesseract_var"].get()).strip()
-            state.fish_cast_min_ms = get_ms("fish_cast_min_var", state.fish_cast_min_ms)
-            state.fish_cast_max_ms = get_ms("fish_cast_max_var", state.fish_cast_max_ms)
-            state.fish_wait_min_ms = get_ms("fish_wait_min_var", state.fish_wait_min_ms)
-            state.fish_wait_max_ms = get_ms("fish_wait_max_var", state.fish_wait_max_ms)
-            state.fish_min_cap = max(0, get_int("fish_min_cap_var", state.fish_min_cap))
-            state.fish_rod_jitter = get_int("fish_rod_jit_var", state.fish_rod_jitter)
-            state.fish_spot_jitter = get_int("fish_spot_jit_var", state.fish_spot_jitter)
-            state.fish_session_minutes = max(1, min(60, get_int("fish_session_var", state.fish_session_minutes)))
-            if "fish_auto_restart_enabled_var" in self.ui_vars:
-                state.fish_auto_restart_enabled = bool(self.ui_vars["fish_auto_restart_enabled_var"].get())
-            if "fish_auto_restart_food_secs_var" in self.ui_vars:
-                val = get_int("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
-                state.fish_auto_restart_food_min_secs = max(30, min(600, val))
-            if "rune_spell_key_var" in self.ui_vars:
-                state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
-            state.rune_cycle_delay_ms = get_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)
-            state.rune_cycle_delay_variation_ms = max(0, get_ms("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
-            state.rune_jitter = get_int("rune_jitter_var", state.rune_jitter)
-            state.rune_cast_delay_ms = get_ms("rune_cast_delay_var", state.rune_cast_delay_ms)
-            state.rune_post_cast_settle_ms = max(100, get_ms("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
-            state.rune_min_mana = max(0, get_int("rune_min_mana_var", state.rune_min_mana))
-            state.rune_max_mana = max(state.rune_min_mana, get_int("rune_max_mana_var", state.rune_max_mana))
-            state.rune_available_blank_runes = max(0, get_int("rune_blank_cycles_var", state.rune_available_blank_runes))
-            state.rune_mouse_move_min_ms = max(20, get_ms("rune_move_min_var", state.rune_mouse_move_min_ms))
-            state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, get_ms("rune_move_max_var", state.rune_mouse_move_max_ms))
-            state.rune_mouse_press_min_ms = max(10, get_ms("rune_press_min_var", state.rune_mouse_press_min_ms))
-            state.rune_mouse_press_max_ms = max(state.rune_mouse_press_min_ms, get_ms("rune_press_max_var", state.rune_mouse_press_max_ms))
-            state.rune_mouse_settle_min_ms = max(10, get_ms("rune_settle_min_var", state.rune_mouse_settle_min_ms))
-            state.rune_mouse_settle_max_ms = max(state.rune_mouse_settle_min_ms, get_ms("rune_settle_max_var", state.rune_mouse_settle_max_ms))
-            if "healer_mode_var" in self.ui_vars:
-                state.healer_mode = str(self.ui_vars["healer_mode_var"].get()).strip().lower() or "spell"
-            if "healer_spell_key_var" in self.ui_vars:
-                state.healer_spell_key = str(self.ui_vars["healer_spell_key_var"].get()).lower().strip()
-            if "healer_use_percent_var" in self.ui_vars:
-                state.healer_use_percent = bool(self.ui_vars["healer_use_percent_var"].get())
-            state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent_var", state.healer_hp_percent)))
-            state.healer_hp_value = max(1, get_int("healer_hp_value_var", state.healer_hp_value))
-            state.healer_min_mana = max(0, get_int("healer_min_mana_var", state.healer_min_mana))
-            state.healer_max_mana = max(state.healer_min_mana, get_int("healer_max_mana_var", state.healer_max_mana))
-            try:
-                state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
-            except (KeyError, ValueError):
-                pass
-            state.healer_rune_delay_ms = max(50, get_ms("healer_rune_delay_var", state.healer_rune_delay_ms))
-            if "light_process_name_var" in self.ui_vars:
-                state.light_process_name = str(self.ui_vars["light_process_name_var"].get()).strip()
-            if "light_direct_address_hex_var" in self.ui_vars:
-                state.light_direct_address_hex = str(self.ui_vars["light_direct_address_hex_var"].get()).strip()
-            if "light_freeze_enabled_var" in self.ui_vars:
-                state.light_freeze_enabled = bool(self.ui_vars["light_freeze_enabled_var"].get())
-            if "light_freeze_interval_ms_var" in self.ui_vars:
-                state.light_freeze_interval_ms = max(30, get_ms("light_freeze_interval_ms_var", state.light_freeze_interval_ms))
+            self._poll_activity_settings(state)
+            self._poll_alarm_and_status_settings(state)
+            self._poll_fishing_settings(state)
+            self._poll_rune_settings(state)
+            self._poll_healer_settings(state)
+            self._poll_light_settings(state)
         self._refresh_all_module_indicators_from_state()
         self._refresh_character_status_display()
         self._refresh_fish_session_display()
         if schedule_next:
             self.root.after(500, self._poll_settings)
+
+    def _get_ui_int(self, name: str, default: int) -> int:
+        try:
+            return int(self.ui_vars[name].get()) if name in self.ui_vars else default
+        except ValueError:
+            return default
+
+    def _get_ui_ms(self, name: str, default: int) -> int:
+        try:
+            return self._display_to_ms(float(self.ui_vars[name].get())) if name in self.ui_vars else default
+        except (ValueError, KeyError):
+            return default
+
+    def _poll_activity_settings(self, state) -> None:
+        state.afk_min_ms = self._get_ui_ms("afk_min_var", state.afk_min_ms)
+        state.afk_max_ms = self._get_ui_ms("afk_max_var", state.afk_max_ms)
+        state.rclick_min_ms = self._get_ui_ms("rclick_min_var", state.rclick_min_ms)
+        state.rclick_max_ms = self._get_ui_ms("rclick_max_var", state.rclick_max_ms)
+        if "rclick_mode_var" in self.ui_vars:
+            state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
+        raw_food_minutes = self.ui_vars["rclick_food_min_var"].get() if "rclick_food_min_var" in self.ui_vars else state.rclick_food_min_minutes
+        state.rclick_food_min_minutes = self._normalize_food_threshold_minutes(raw_food_minutes, state.rclick_food_min_minutes)
+        if "rclick_food_min_var" in self.ui_vars:
+            self.ui_vars["rclick_food_min_var"].set(str(state.rclick_food_min_minutes))
+        state.rclick_food_burst_count_min = max(1, self._get_ui_int("rclick_food_burst_count_min_var", state.rclick_food_burst_count_min))
+        state.rclick_food_burst_count_max = max(state.rclick_food_burst_count_min, self._get_ui_int("rclick_food_burst_count_max_var", state.rclick_food_burst_count_max))
+        state.rclick_food_burst_interval_ms = max(50, self._get_ui_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
+        state.rclick_click_delay_min_ms = max(100, self._get_ui_ms("rclick_click_delay_min_var", state.rclick_click_delay_min_ms))
+        state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, self._get_ui_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))
+        state.rclick_post_click_settle_ms = max(100, self._get_ui_ms("rclick_post_settle_ms_var", state.rclick_post_click_settle_ms))
+
+    def _poll_alarm_and_status_settings(self, state) -> None:
+        state.alarm_threshold = self._get_ui_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
+        state.alarm_hp_value = max(0, self._get_ui_int("alarm_hp_value_var", state.alarm_hp_value))
+        state.alarm_mp_value = max(0, self._get_ui_int("alarm_mp_value_var", state.alarm_mp_value))
+        state.alarm_cap_value = max(0, self._get_ui_int("alarm_cap_value_var", state.alarm_cap_value))
+        state.char_status_poll_ms = max(250, self._get_ui_ms("char_status_poll_var", state.char_status_poll_ms))
+        state.char_status_samples = max(1, self._get_ui_int("char_status_samples_var", state.char_status_samples))
+        state.char_status_sample_delay_ms = max(0, self._get_ui_ms("char_status_sample_delay_var", state.char_status_sample_delay_ms))
+        if "char_status_samples_var" not in self.ui_vars:
+            state.char_status_samples = max(1, 2000 // state.char_status_poll_ms)
+        if "alarm_auto_pause_var" in self.ui_vars:
+            state.alarm_auto_pause = bool(self.ui_vars["alarm_auto_pause_var"].get())
+        if "alarm_mp3_var" in self.ui_vars:
+            state.alarm_mp3 = str(self.ui_vars["alarm_mp3_var"].get())
+        if "char_status_tesseract_var" in self.ui_vars:
+            state.char_status_tesseract_path = str(self.ui_vars["char_status_tesseract_var"].get()).strip()
+
+    def _poll_fishing_settings(self, state) -> None:
+        state.fish_cast_min_ms = self._get_ui_ms("fish_cast_min_var", state.fish_cast_min_ms)
+        state.fish_cast_max_ms = self._get_ui_ms("fish_cast_max_var", state.fish_cast_max_ms)
+        state.fish_wait_min_ms = self._get_ui_ms("fish_wait_min_var", state.fish_wait_min_ms)
+        state.fish_wait_max_ms = self._get_ui_ms("fish_wait_max_var", state.fish_wait_max_ms)
+        state.fish_min_cap = max(0, self._get_ui_int("fish_min_cap_var", state.fish_min_cap))
+        state.fish_rod_jitter = self._get_ui_int("fish_rod_jit_var", state.fish_rod_jitter)
+        state.fish_spot_jitter = self._get_ui_int("fish_spot_jit_var", state.fish_spot_jitter)
+        state.fish_session_minutes = max(1, min(60, self._get_ui_int("fish_session_var", state.fish_session_minutes)))
+        if "fish_auto_restart_enabled_var" in self.ui_vars:
+            state.fish_auto_restart_enabled = bool(self.ui_vars["fish_auto_restart_enabled_var"].get())
+        if "fish_auto_restart_food_secs_var" in self.ui_vars:
+            value = self._get_ui_int("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
+            state.fish_auto_restart_food_min_secs = max(30, min(600, value))
+
+    def _poll_rune_settings(self, state) -> None:
+        if "rune_spell_key_var" in self.ui_vars:
+            state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
+        state.rune_cycle_delay_ms = self._get_ui_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)
+        state.rune_cycle_delay_variation_ms = max(0, self._get_ui_ms("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
+        state.rune_jitter = self._get_ui_int("rune_jitter_var", state.rune_jitter)
+        state.rune_cast_delay_ms = self._get_ui_ms("rune_cast_delay_var", state.rune_cast_delay_ms)
+        state.rune_post_cast_settle_ms = max(100, self._get_ui_ms("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
+        state.rune_min_mana = max(0, self._get_ui_int("rune_min_mana_var", state.rune_min_mana))
+        state.rune_max_mana = max(state.rune_min_mana, self._get_ui_int("rune_max_mana_var", state.rune_max_mana))
+        state.rune_available_blank_runes = max(0, self._get_ui_int("rune_blank_cycles_var", state.rune_available_blank_runes))
+        state.rune_mouse_move_min_ms = max(20, self._get_ui_ms("rune_move_min_var", state.rune_mouse_move_min_ms))
+        state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, self._get_ui_ms("rune_move_max_var", state.rune_mouse_move_max_ms))
+        state.rune_mouse_press_min_ms = max(10, self._get_ui_ms("rune_press_min_var", state.rune_mouse_press_min_ms))
+        state.rune_mouse_press_max_ms = max(state.rune_mouse_press_min_ms, self._get_ui_ms("rune_press_max_var", state.rune_mouse_press_max_ms))
+        state.rune_mouse_settle_min_ms = max(10, self._get_ui_ms("rune_settle_min_var", state.rune_mouse_settle_min_ms))
+        state.rune_mouse_settle_max_ms = max(state.rune_mouse_settle_min_ms, self._get_ui_ms("rune_settle_max_var", state.rune_mouse_settle_max_ms))
+
+    def _poll_healer_settings(self, state) -> None:
+        if "healer_mode_var" in self.ui_vars:
+            state.healer_mode = str(self.ui_vars["healer_mode_var"].get()).strip().lower() or "spell"
+        if "healer_spell_key_var" in self.ui_vars:
+            state.healer_spell_key = str(self.ui_vars["healer_spell_key_var"].get()).lower().strip()
+        if "healer_use_percent_var" in self.ui_vars:
+            state.healer_use_percent = bool(self.ui_vars["healer_use_percent_var"].get())
+        state.healer_hp_percent = max(1, min(100, self._get_ui_int("healer_hp_percent_var", state.healer_hp_percent)))
+        state.healer_hp_value = max(1, self._get_ui_int("healer_hp_value_var", state.healer_hp_value))
+        state.healer_min_mana = max(0, self._get_ui_int("healer_min_mana_var", state.healer_min_mana))
+        state.healer_max_mana = max(state.healer_min_mana, self._get_ui_int("healer_max_mana_var", state.healer_max_mana))
+        try:
+            state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
+        except (KeyError, ValueError):
+            pass
+        state.healer_rune_delay_ms = max(50, self._get_ui_ms("healer_rune_delay_var", state.healer_rune_delay_ms))
+
+    def _poll_light_settings(self, state) -> None:
+        if "light_process_name_var" in self.ui_vars:
+            state.light_process_name = str(self.ui_vars["light_process_name_var"].get()).strip()
+        if "light_direct_address_hex_var" in self.ui_vars:
+            state.light_direct_address_hex = str(self.ui_vars["light_direct_address_hex_var"].get()).strip()
+        if "light_freeze_enabled_var" in self.ui_vars:
+            state.light_freeze_enabled = bool(self.ui_vars["light_freeze_enabled_var"].get())
+        if "light_freeze_interval_ms_var" in self.ui_vars:
+            state.light_freeze_interval_ms = max(30, self._get_ui_ms("light_freeze_interval_ms_var", state.light_freeze_interval_ms))
 
     def _refresh_fish_session_display(self) -> None:
         if self.fish_session_value_label:
@@ -2302,26 +2300,14 @@ class SystemMonitorApp:
         if self.char_status_level_label:
             self.char_status_level_label.config(text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}")
         if self.char_status_hp_label:
-            # Show pointer-derived HP when available, fall back to OCR
             hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
-            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
-            self.char_status_hp_label.config(
-                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
-            )
+            self._set_stat_label(self.char_status_hp_label, hp_display, state.hp_source if state.hp_value is not None else None)
         if self.char_status_mana_label:
-            # Show pointer-derived MP when available, fall back to OCR
             mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
-            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
-            self.char_status_mana_label.config(
-                text=f"Mana: {mp_display if mp_display is not None else '—'}{source_tag}"
-            )
+            self._set_stat_label(self.char_status_mana_label, mp_display, state.mp_source if state.mp_value is not None else None)
         if self.char_status_cap_label:
-            # Show pointer-derived Cap when available, fall back to OCR
             cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
-            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
-            self.char_status_cap_label.config(
-                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
-            )
+            self._set_stat_label(self.char_status_cap_label, cap_display, state.cap_source if state.cap_value is not None else None)
         if self.char_status_food_label:
             self.char_status_food_label.config(
                 text=f"Food: {self._format_food_timer(state.char_status_food_seconds, state.char_status_food_text)}"
@@ -2378,22 +2364,13 @@ class SystemMonitorApp:
             )
         if self.var_hp_label:
             hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
-            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
-            self.var_hp_label.config(
-                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
-            )
+            self._set_stat_label(self.var_hp_label, hp_display, state.hp_source if state.hp_value is not None else None)
         if self.var_cap_label:
             cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
-            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
-            self.var_cap_label.config(
-                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
-            )
+            self._set_stat_label(self.var_cap_label, cap_display, state.cap_source if state.cap_value is not None else None)
         if self.var_mp_label:
             mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
-            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
-            self.var_mp_label.config(
-                text=f"MP: {mp_display if mp_display is not None else '—'}{source_tag}"
-            )
+            self._set_stat_label(self.var_mp_label, mp_display, state.mp_source if state.mp_value is not None else None)
         if self.var_food_label:
             self.var_food_label.config(
                 text=f"Food: {self._format_food_timer(state.char_status_food_seconds, state.char_status_food_text)}"

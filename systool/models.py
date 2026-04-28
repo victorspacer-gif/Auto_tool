@@ -7,6 +7,16 @@ import threading
 from typing import Any
 
 
+def _group_property(group_name: str, attr_name: str):
+    def getter(self):
+        return getattr(getattr(self, group_name), attr_name)
+
+    def setter(self, value):
+        setattr(getattr(self, group_name), attr_name, value)
+
+    return property(getter, setter)
+
+
 @dataclasses.dataclass
 class HotkeyJob:
     job_id: int
@@ -26,6 +36,104 @@ class HotkeyJob:
     running: bool = False
     stop_evt: threading.Event = dataclasses.field(default_factory=threading.Event)
     row_frame: Any = dataclasses.field(default=None, repr=False)
+
+
+@dataclasses.dataclass
+class AlarmState:
+    active: bool = False
+    mp3: str = ""
+    threshold: float = 0.80
+    cooldown: int = 10
+    region: tuple[int, int, int, int] | None = None
+    auto_pause: bool = False
+    hp_percent: int = 0
+    hp_value: int = 0
+    mp_value: int = 0
+    cap_value: int = 0
+
+
+@dataclasses.dataclass
+class CharStatusState:
+    active: bool = False
+    region: tuple[int, int, int, int] | None = None
+    hp_region: tuple[int, int, int, int] | None = None
+    mana_region: tuple[int, int, int, int] | None = None
+    cap_region: tuple[int, int, int, int] | None = None
+    poll_ms: int = 800
+    samples: int = 3
+    sample_delay_ms: int = 100
+    tesseract_path: str = ""
+    level: int | None = None
+    hp: int | None = None
+    mana: int | None = None
+    cap: int | None = None
+    food_seconds: int | None = None
+    food_text: str = ""
+    hp_peak: int = 0
+    hp_regen_per_min: float = 0.0
+    mana_regen_per_min: float = 0.0
+    reads: int = 0
+    failures: int = 0
+    last_seen: float | None = None
+    last_error: str = ""
+
+
+@dataclasses.dataclass
+class FishingState:
+    active: bool = False
+    rod_pos: tuple[int, int] = (0, 0)
+    spots: list[tuple[int, int]] = dataclasses.field(default_factory=list)
+    cast_min_ms: int = 1_000
+    cast_max_ms: int = 2_000
+    wait_min_ms: int = 1_000
+    wait_max_ms: int = 2_000
+    rod_jitter: int = 5
+    spot_jitter: int = 15
+    session_minutes: int = 10
+    session_remaining_secs: int = 0
+    session_deadline: float | None = None
+    min_cap: int = 0
+    auto_restart_enabled: bool = False
+    auto_restart_food_min_secs: int = 300
+
+
+@dataclasses.dataclass
+class RuneState:
+    active: bool = False
+    spell_key: str = "f1"
+    cycle_delay_ms: int = 5_000
+    cycle_delay_variation_ms: int = 0
+    hand_pos: tuple[int, int] = (0, 0)
+    storage_pos: tuple[int, int] = (0, 0)
+    blank_pos: tuple[int, int] = (0, 0)
+    jitter: int = 6
+    cast_delay_ms: int = 900
+    post_cast_settle_ms: int = 600
+    min_mana: int = 0
+    max_mana: int = 0
+    available_blank_runes: int = 0
+    mouse_move_min_ms: int = 180
+    mouse_move_max_ms: int = 350
+    mouse_press_min_ms: int = 60
+    mouse_press_max_ms: int = 120
+    mouse_settle_min_ms: int = 100
+    mouse_settle_max_ms: int = 220
+
+
+@dataclasses.dataclass
+class HealerState:
+    active: bool = False
+    mode: str = "spell"
+    spell_key: str = "f1"
+    use_percent: bool = True
+    hp_percent: int = 60
+    hp_value: int = 120
+    min_mana: int = 0
+    max_mana: int = 0
+    character_pos: tuple[int, int] = (0, 0)
+    rune_pos: tuple[int, int] = (0, 0)
+    mouse_speed: float = 1.0
+    rune_delay_ms: int = 250
 
 
 @dataclasses.dataclass
@@ -76,94 +184,18 @@ class AppState:
     rclick_click_delay_max_ms: int = 250
     rclick_post_click_settle_ms: int = 300
 
-    alarm_active: bool = False
-    alarm_mp3: str = ""
-    alarm_threshold: float = 0.80
-    alarm_cooldown: int = 10
-    alarm_region: tuple[int, int, int, int] | None = None
-    alarm_auto_pause: bool = False
-    alarm_hp_percent: int = 0
-    alarm_hp_value: int = 0
-    alarm_mp_value: int = 0
-    alarm_cap_value: int = 0
-    char_status_active: bool = False
-    char_status_region: tuple[int, int, int, int] | None = None
-    char_status_hp_region: tuple[int, int, int, int] | None = None
-    char_status_mana_region: tuple[int, int, int, int] | None = None
-    char_status_cap_region: tuple[int, int, int, int] | None = None
-    char_status_poll_ms: int = 800
-    char_status_samples: int = 3
-    char_status_sample_delay_ms: int = 100
-    char_status_tesseract_path: str = ""
-    char_status_level: int | None = None
-    char_status_hp: int | None = None
+    alarm: AlarmState = dataclasses.field(default_factory=AlarmState)
+    char_status: CharStatusState = dataclasses.field(default_factory=CharStatusState)
+    fishing: FishingState = dataclasses.field(default_factory=FishingState)
+    rune: RuneState = dataclasses.field(default_factory=RuneState)
+    healer: HealerState = dataclasses.field(default_factory=HealerState)
+
     sandbox_backend: str = "jobobj"
     sandbox_box_name: str = "LauncherBox"
     sandbox_exe_path: str = ""
     sandbox_args: str = ""
     sandbox_drop_admin: bool = False
     sandbox_spoof_env: bool = True
-
-    char_status_mana: int | None = None
-    char_status_cap: int | None = None
-    char_status_food_seconds: int | None = None
-    char_status_food_text: str = ""
-    char_status_hp_peak: int = 0
-    char_status_hp_regen_per_min: float = 0.0
-    char_status_mana_regen_per_min: float = 0.0
-    char_status_reads: int = 0
-    char_status_failures: int = 0
-    char_status_last_seen: float | None = None
-    char_status_last_error: str = ""
-
-    fish_active: bool = False
-    fish_rod_pos: tuple[int, int] = (0, 0)
-    fish_spots: list[tuple[int, int]] = dataclasses.field(default_factory=list)
-    fish_cast_min_ms: int = 1_000
-    fish_cast_max_ms: int = 2_000
-    fish_wait_min_ms: int = 1_000
-    fish_wait_max_ms: int = 2_000
-    fish_rod_jitter: int = 5
-    fish_spot_jitter: int = 15
-    fish_session_minutes: int = 10
-    fish_session_remaining_secs: int = 0
-    fish_session_deadline: float | None = None
-    fish_min_cap: int = 0
-    fish_auto_restart_enabled: bool = False
-    fish_auto_restart_food_min_secs: int = 300
-
-    rune_active: bool = False
-    rune_spell_key: str = "f1"
-    rune_cycle_delay_ms: int = 5_000
-    rune_cycle_delay_variation_ms: int = 0
-    rune_hand_pos: tuple[int, int] = (0, 0)
-    rune_storage_pos: tuple[int, int] = (0, 0)
-    rune_blank_pos: tuple[int, int] = (0, 0)
-    rune_jitter: int = 6
-    rune_cast_delay_ms: int = 900
-    rune_post_cast_settle_ms: int = 600
-    rune_min_mana: int = 0
-    rune_max_mana: int = 0
-    rune_available_blank_runes: int = 0
-    rune_mouse_move_min_ms: int = 180
-    rune_mouse_move_max_ms: int = 350
-    rune_mouse_press_min_ms: int = 60
-    rune_mouse_press_max_ms: int = 120
-    rune_mouse_settle_min_ms: int = 100
-    rune_mouse_settle_max_ms: int = 220
-
-    healer_active: bool = False
-    healer_mode: str = "spell"
-    healer_spell_key: str = "f1"
-    healer_use_percent: bool = True
-    healer_hp_percent: int = 60
-    healer_hp_value: int = 120
-    healer_min_mana: int = 0
-    healer_max_mana: int = 0
-    healer_character_pos: tuple[int, int] = (0, 0)
-    healer_rune_pos: tuple[int, int] = (0, 0)
-    healer_mouse_speed: float = 1.0
-    healer_rune_delay_ms: int = 250
 
     light_process_name: str = "miracle_gl.exe"
     light_direct_address_hex: str = ""
@@ -177,29 +209,23 @@ class AppState:
     light_original_color_value: int | None = None
     light_original_intensity_value: int | None = None
 
-    # HP pointer (primary source, falls back to OCR)
     hp_pointer_address_hex: str = ""
-    hp_source: str = "ocr"  # 'pointer' or 'ocr'
-    hp_value: int | None = None  # Current HP from pointer resolution (primary source)
+    hp_source: str = "ocr"
+    hp_value: int | None = None
 
-    # MP pointer (primary source, falls back to OCR)
     mp_pointer_address_hex: str = ""
-    mp_source: str = "none"  # 'pointer', 'ocr', or 'none'
-    mp_value: float | None = None  # Current MP from pointer resolution
+    mp_source: str = "none"
+    mp_value: float | None = None
 
-    # Cap (Max HP) pointer (primary source, falls back to OCR)
     cap_pointer_address_hex: str = ""
-    cap_source: str = "none"  # 'pointer', 'ocr', or 'none'
-    cap_value: float | None = None  # Current Cap from pointer resolution
+    cap_source: str = "none"
+    cap_value: float | None = None
 
-    # Previous OCR values for change detection in background poller (internal)
     _prev_ocr_hp: int | None = None
     _prev_ocr_mp: int | None = None
     _prev_ocr_cap: int | None = None
-
-    # Resolved addresses for batch memory reads (shared across HP/MP/Cap services)
-    _mp_resolved_addr: int | None = None  # MP address resolved by MpService.attach()
-    _cap_resolved_addr: int | None = None  # Cap address resolved by CapService.attach()
+    _mp_resolved_addr: int | None = None
+    _cap_resolved_addr: int | None = None
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
@@ -215,3 +241,86 @@ class AppState:
     )
     jobs: list[HotkeyJob] = dataclasses.field(default_factory=list)
     job_counter: int = 0
+
+    alarm_active = _group_property("alarm", "active")
+    alarm_mp3 = _group_property("alarm", "mp3")
+    alarm_threshold = _group_property("alarm", "threshold")
+    alarm_cooldown = _group_property("alarm", "cooldown")
+    alarm_region = _group_property("alarm", "region")
+    alarm_auto_pause = _group_property("alarm", "auto_pause")
+    alarm_hp_percent = _group_property("alarm", "hp_percent")
+    alarm_hp_value = _group_property("alarm", "hp_value")
+    alarm_mp_value = _group_property("alarm", "mp_value")
+    alarm_cap_value = _group_property("alarm", "cap_value")
+
+    char_status_active = _group_property("char_status", "active")
+    char_status_region = _group_property("char_status", "region")
+    char_status_hp_region = _group_property("char_status", "hp_region")
+    char_status_mana_region = _group_property("char_status", "mana_region")
+    char_status_cap_region = _group_property("char_status", "cap_region")
+    char_status_poll_ms = _group_property("char_status", "poll_ms")
+    char_status_samples = _group_property("char_status", "samples")
+    char_status_sample_delay_ms = _group_property("char_status", "sample_delay_ms")
+    char_status_tesseract_path = _group_property("char_status", "tesseract_path")
+    char_status_level = _group_property("char_status", "level")
+    char_status_hp = _group_property("char_status", "hp")
+    char_status_mana = _group_property("char_status", "mana")
+    char_status_cap = _group_property("char_status", "cap")
+    char_status_food_seconds = _group_property("char_status", "food_seconds")
+    char_status_food_text = _group_property("char_status", "food_text")
+    char_status_hp_peak = _group_property("char_status", "hp_peak")
+    char_status_hp_regen_per_min = _group_property("char_status", "hp_regen_per_min")
+    char_status_mana_regen_per_min = _group_property("char_status", "mana_regen_per_min")
+    char_status_reads = _group_property("char_status", "reads")
+    char_status_failures = _group_property("char_status", "failures")
+    char_status_last_seen = _group_property("char_status", "last_seen")
+    char_status_last_error = _group_property("char_status", "last_error")
+
+    fish_active = _group_property("fishing", "active")
+    fish_rod_pos = _group_property("fishing", "rod_pos")
+    fish_spots = _group_property("fishing", "spots")
+    fish_cast_min_ms = _group_property("fishing", "cast_min_ms")
+    fish_cast_max_ms = _group_property("fishing", "cast_max_ms")
+    fish_wait_min_ms = _group_property("fishing", "wait_min_ms")
+    fish_wait_max_ms = _group_property("fishing", "wait_max_ms")
+    fish_rod_jitter = _group_property("fishing", "rod_jitter")
+    fish_spot_jitter = _group_property("fishing", "spot_jitter")
+    fish_session_minutes = _group_property("fishing", "session_minutes")
+    fish_session_remaining_secs = _group_property("fishing", "session_remaining_secs")
+    fish_session_deadline = _group_property("fishing", "session_deadline")
+    fish_min_cap = _group_property("fishing", "min_cap")
+    fish_auto_restart_enabled = _group_property("fishing", "auto_restart_enabled")
+    fish_auto_restart_food_min_secs = _group_property("fishing", "auto_restart_food_min_secs")
+
+    rune_active = _group_property("rune", "active")
+    rune_spell_key = _group_property("rune", "spell_key")
+    rune_cycle_delay_ms = _group_property("rune", "cycle_delay_ms")
+    rune_cycle_delay_variation_ms = _group_property("rune", "cycle_delay_variation_ms")
+    rune_hand_pos = _group_property("rune", "hand_pos")
+    rune_storage_pos = _group_property("rune", "storage_pos")
+    rune_blank_pos = _group_property("rune", "blank_pos")
+    rune_jitter = _group_property("rune", "jitter")
+    rune_cast_delay_ms = _group_property("rune", "cast_delay_ms")
+    rune_post_cast_settle_ms = _group_property("rune", "post_cast_settle_ms")
+    rune_min_mana = _group_property("rune", "min_mana")
+    rune_max_mana = _group_property("rune", "max_mana")
+    rune_available_blank_runes = _group_property("rune", "available_blank_runes")
+    rune_mouse_move_min_ms = _group_property("rune", "mouse_move_min_ms")
+    rune_mouse_move_max_ms = _group_property("rune", "mouse_move_max_ms")
+    rune_mouse_press_min_ms = _group_property("rune", "mouse_press_min_ms")
+    rune_mouse_press_max_ms = _group_property("rune", "mouse_press_max_ms")
+    rune_mouse_settle_min_ms = _group_property("rune", "mouse_settle_min_ms")
+    rune_mouse_settle_max_ms = _group_property("rune", "mouse_settle_max_ms")
+
+    healer_active = _group_property("healer", "active")
+    healer_mode = _group_property("healer", "mode")
+    healer_spell_key = _group_property("healer", "spell_key")
+    healer_use_percent = _group_property("healer", "use_percent")
+    healer_hp_percent = _group_property("healer", "hp_percent")
+    healer_hp_value = _group_property("healer", "hp_value")
+    healer_min_mana = _group_property("healer", "min_mana")
+    healer_max_mana = _group_property("healer", "max_mana")
+    healer_character_pos = _group_property("healer", "character_pos")
+    healer_rune_pos = _group_property("healer", "rune_pos")
+    healer_mouse_speed = _group_property("healer", "mouse_speed")
+    healer_rune_delay_ms = _group_property("healer", "rune_delay_ms")
