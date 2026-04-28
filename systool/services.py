@@ -1854,24 +1854,9 @@ class FishingService:
                 stopped_by_food = True
                 break
 
-            # Only yield to queued modules when NOT holding an exclusive session.
-            # While fishing holds set_session_active("fishing"), it has exclusive mouse
-            # access by design — low-priority modules (right_click, healer) are blocked
-            # anyway and cannot run until fishing clears its session. Yielding in that
-            # case just creates a busy-loop of "yield → re-acquire → yield..." with no
-            # actual progress for other modules.
-            # During the main fishing loop (fish_active == True), skip queue checks entirely.
-            queued_modules = False
-            if not state.fish_active:
-                queued_modules = self.runtime.mouse.has_queued_modules()
-                if queued_modules:
-                    next_module = self.runtime.mouse.peek_next_module()
-                    self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
-                    # Complete our current turn so other modules can run
-                    self.runtime.mouse.complete_module("fishing")
-                    # Wait briefly for queued modules to be processed
-                    if not wait_with_session_limit(0.5):
-                        break
+            # Queue yielding is handled per-cycle after each fish completes (in the
+            # try/finally block below). Each cycle clears the exclusive session,
+            # checks for queued modules, and yields before re-acquiring.
 
             cycle_locked = False
             try:
@@ -1915,6 +1900,26 @@ class FishingService:
                     # This allows other queued modules to be dequeued and run next.
                     self.runtime.mouse.complete_module("fishing")
                     self.runtime.mouse.release(module_id="fishing")
+
+                    # Clear exclusive session so other modules can attempt acquisition.
+                    # Each fish cycle is its own session — yield control after completion.
+                    self.runtime.mouse.clear_session()
+
+            # Yield to queued modules outside the try/finally block (break not allowed in finally).
+            if cycle_locked:
+                queued_modules = self.runtime.mouse.has_queued_modules()
+                if queued_modules:
+                    next_module = self.runtime.mouse.peek_next_module()
+                    self.runtime.ui.log(
+                        f"🎣 Cycle complete — other modules waiting ({next_module}) "
+                        f"— yielding control before next cycle"
+                    )
+                    # Brief pause so queued modules can acquire and run
+                    if not wait_with_session_limit(0.5):
+                        break
+
+                    # Re-set exclusive session for the next fish cycle.
+                    self.runtime.mouse.set_session_active("fishing")
 
             if not update_remaining():
                 self.runtime.ui.log("⏲️ Fishing session complete")
