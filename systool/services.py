@@ -1837,11 +1837,9 @@ class FishingService:
                 self.runtime.fish_stop.set()
                 break
             # Check food level for auto-restart (only stop if no other session is running)
-            if not auto_restart_enabled:
-                self.runtime.ui.log("⚠️  Food check skipped — auto-restart disabled")
-            elif food_seconds is None:
+            if auto_restart_enabled and food_seconds is None:
                 self.runtime.ui.log("⚠️  Food check skipped — food value not available (ensure Character Status OCR is running)")
-            else:
+            elif auto_restart_enabled:
                 self.runtime.ui.log(f"🍖 Food check: {food_seconds}s / threshold {auto_restart_food_min_secs}s")
             if (
                 auto_restart_enabled
