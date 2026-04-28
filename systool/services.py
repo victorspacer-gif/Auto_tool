@@ -1136,10 +1136,14 @@ class RightClickService:
 
             # Skip gate acquisition if fishing or rune session is active — these high-priority
             # sessions need exclusive mouse access for their full A->B sequences.
+            # Also dequeue ourselves from the module queue so we don't block other modules.
             with self.runtime.settings_lock:
                 fish_active = state.fish_active
                 rune_active = state.rune_active
             if fish_active or rune_active:
+                # Dequeue ourselves — we can't run while a high-priority session holds
+                # the exclusive mouse access. Re-enqueue when fishing/rune stops.
+                self.runtime.mouse.complete_module("right_click")
                 if not self.runtime.pause.wait_interruptible(0.2, self.runtime.rclick_stop):
                     break
                 continue
@@ -1850,18 +1854,9 @@ class FishingService:
                 stopped_by_food = True
                 break
 
-            # Before each cycle, check if other modules are waiting in the queue.
-            # If so, yield control and let them run before continuing with fishing.
-            # This ensures fair scheduling — no module can monopolize execution.
-            queued_modules = self.runtime.mouse.has_queued_modules()
-            if queued_modules:
-                next_module = self.runtime.mouse.peek_next_module()
-                self.runtime.ui.log(f"⏳ Other modules waiting ({next_module}) — yielding control")
-                # Complete our current turn so other modules can run
-                self.runtime.mouse.complete_module("fishing")
-                # Wait briefly for queued modules to be processed
-                if not wait_with_session_limit(0.5):
-                    break
+            # Queue yielding is handled per-cycle after each fish completes (in the
+            # try/finally block below). Each cycle clears the exclusive session,
+            # checks for queued modules, and yields before re-acquiring.
 
             cycle_locked = False
             try:
@@ -1905,6 +1900,26 @@ class FishingService:
                     # This allows other queued modules to be dequeued and run next.
                     self.runtime.mouse.complete_module("fishing")
                     self.runtime.mouse.release(module_id="fishing")
+
+                    # Clear exclusive session so other modules can attempt acquisition.
+                    # Each fish cycle is its own session — yield control after completion.
+                    self.runtime.mouse.clear_session()
+
+            # Yield to queued modules outside the try/finally block (break not allowed in finally).
+            if cycle_locked:
+                queued_modules = self.runtime.mouse.has_queued_modules()
+                if queued_modules:
+                    next_module = self.runtime.mouse.peek_next_module()
+                    self.runtime.ui.log(
+                        f"🎣 Cycle complete — other modules waiting ({next_module}) "
+                        f"— yielding control before next cycle"
+                    )
+                    # Brief pause so queued modules can acquire and run
+                    if not wait_with_session_limit(0.5):
+                        break
+
+                    # Re-set exclusive session for the next fish cycle.
+                    self.runtime.mouse.set_session_active("fishing")
 
             if not update_remaining():
                 self.runtime.ui.log("⏲️ Fishing session complete")
@@ -2041,10 +2056,14 @@ class AutoHealerService:
                     continue
             # Skip healer actions while fishing or rune sessions are active — these high-priority
             # sessions need exclusive execution/mouse access for their full A->B sequences.
+            # Also dequeue ourselves so we don't clog the queue and block other modules.
             with self.runtime.settings_lock:
                 fish_active = state.fish_active
                 rune_active = state.rune_active
             if fish_active or rune_active:
+                # Dequeue ourselves — can't run while a high-priority session holds
+                # exclusive mouse/execution access. Re-enqueue when fishing/rune stops.
+                self.runtime.mouse.complete_module("healer")
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
                     break
                 continue
@@ -2205,6 +2224,20 @@ class RuneMakerService:
                     if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
                         break
                     continue
+
+            # Skip rune actions while fishing session is active — fishing holds exclusive
+            # mouse access via set_session_active("fishing"). Also dequeue ourselves so we
+            # don't clog the queue and block other modules from running.
+            with self.runtime.settings_lock:
+                fish_active = state.fish_active
+
+            if fish_active:
+                # Dequeue ourselves — can't run while fishing holds exclusive mouse access.
+                # Re-enqueue when fishing stops.
+                self.runtime.mouse.complete_module("rune")
+                if not self.runtime.pause.wait_interruptible(0.15, self.runtime.rune_stop):
+                    break
+                continue
 
             # Before acquiring the gate, check if other modules are waiting in the queue.
             # If so, yield control and let them run before continuing with rune.
