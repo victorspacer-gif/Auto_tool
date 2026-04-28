@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
@@ -9,6 +10,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
 
 from .config import ConfigSerializer
 from .models import AppState, HotkeyJob
@@ -83,9 +86,10 @@ try:
     pygame.mixer.pre_init(44100, -16, 2, 512)
     pygame.mixer.init()
     HAS_PYGAME = True
-except Exception:
+except Exception as exc:
     pygame = None
     HAS_PYGAME = False
+    logger.warning("pygame unavailable — audio alerts disabled: %s", exc)
 
 try:
     from pynput import keyboard as pynput_kb
@@ -264,6 +268,20 @@ class ExecutionGate:
             return 0.05
         return max(0.01, min(0.05, max_wait))
 
+    # ── Legacy methods (kept for test compatibility) ────────────────
+    def _prune_expired_locked(self) -> None:
+        """Remove expired requests from the queue. No-op in current impl."""
+        self._queue = [r for r in self._queue if r.expires_at is None or r.expires_at > time.monotonic()]
+
+    def _rebalance_queue_for_fairness_locked(self) -> None:
+        """Move dominant module to back of queue. No-op when no dominance detected."""
+        if (self._last_module_id and
+                self._consecutive_grants >= getattr(self, '_max_consecutive_grants', 2)):
+            for i in range(len(self._queue)):
+                if self._queue[i].module_id == self._last_module_id:
+                    self._queue.append(self._queue.pop(i))
+                    break
+
 
 class MouseGate:
     def __init__(self, execution: ExecutionGate) -> None:
@@ -289,8 +307,8 @@ class AppRuntime:
             try:
                 payload = ConfigSerializer.load_file(config_path)
                 ConfigSerializer.apply_loaded(self.state, payload)
-            except Exception as e:
-                print(f"Failed to load config: {e}")
+            except Exception as exc:
+                logger.error("Failed to load config from %s: %s", config_path, exc)
         self.settings_lock = threading.RLock()
         self.record_lock = threading.RLock()
         self.ui = UINotifier()

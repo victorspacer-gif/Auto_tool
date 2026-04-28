@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
 import time
+
+logger = logging.getLogger(__name__)
 
 import psutil
 
@@ -45,6 +48,7 @@ from ..runtime import (
     resolve_tesseract_cmd,
 )
 from ..theme import GREEN, ORANGE, RED, TEAL
+from ..constants import LIGHT_FREEZE_MIN_INTERVAL_MS, MIN_POLL_MS
 
 class LightControlService:
     def __init__(self, runtime: AppRuntime) -> None:
@@ -90,7 +94,7 @@ class LightControlService:
             try:
                 self.controller.detach()
             except Exception:
-                pass
+                logger.debug("Light controller detach failed")
             self.controller = None
         return True, "Detached"
 
@@ -163,7 +167,7 @@ class LightControlService:
             "Light freeze enabled: "
             f"color={self.runtime.state.light_freeze_color_value} "
             f"intensity={self.runtime.state.light_freeze_intensity_value} "
-            f"every {max(30, self.runtime.state.light_freeze_interval_ms)}ms"
+            f"every {LIGHT_FREEZE_MIN_INTERVAL_MS}ms"
         )
 
     def stop_freeze(self) -> None:
@@ -180,7 +184,7 @@ class LightControlService:
                 intensity_value=self.runtime.state.light_freeze_intensity_value,
                 remember_original=False,
             )
-            delay = max(30, self.runtime.state.light_freeze_interval_ms) / 1000.0
+            delay = LIGHT_FREEZE_MIN_INTERVAL_MS / 1000.0
             if self._freeze_stop.wait(delay):
                 break
 
@@ -380,7 +384,7 @@ class StatPointerService:
                     setattr(state, self.value_attr, value)
                 return value
             except Exception:
-                pass
+                logger.debug("Pointer read failed")
         return self._get_fallback_value()
 
     @staticmethod
@@ -466,21 +470,21 @@ class HpService(StatPointerService):
             try:
                 hp_val = self.controller.read_double(self._hp_address)
             except Exception:
-                pass
+                logger.debug("HP pointer read failed")
 
         mp_addr = getattr(state, "_mp_resolved_addr", None)
         if mp_addr is not None and self.controller is not None:
             try:
                 mp_val = self.controller.read_double(mp_addr)
             except Exception:
-                pass
+                logger.debug("MP pointer read failed")
 
         cap_addr = getattr(state, "_cap_resolved_addr", None)
         if cap_addr is not None and self.controller is not None:
             try:
                 cap_val = self.controller.read_double(cap_addr)
             except Exception:
-                pass
+                logger.debug("Cap pointer read failed")
 
         with self.runtime.settings_lock:
             if hp_val is not None:
@@ -614,7 +618,7 @@ class AlarmService:
                     try:
                         hp_value = self.runtime.hp_service.get_hp()
                     except Exception:
-                        pass
+                        logger.debug("HP read failed in alarm loop")
                 if hp_value is None:
                     with self.runtime.settings_lock:
                         hp_value = state.char_status_hp
@@ -639,7 +643,7 @@ class AlarmService:
                     try:
                         mp_value = self.runtime.mp_service.get_mp()
                     except Exception:
-                        pass
+                        logger.debug("MP read failed in alarm loop")
                 if mp_value is None:
                     with self.runtime.settings_lock:
                         mp_value = state.char_status_mana
@@ -647,7 +651,7 @@ class AlarmService:
                     try:
                         cap_value = self.runtime.cap_service.get_cap()
                     except Exception:
-                        pass
+                        logger.debug("Cap read failed in alarm loop")
                 if cap_value is None:
                     with self.runtime.settings_lock:
                         cap_value = state.char_status_cap
@@ -793,7 +797,7 @@ class CharacterStatusService:
                         hp_region = state.char_status_hp_region
                         mana_region = state.char_status_mana_region
                         cap_region = state.char_status_cap_region
-                        poll_ms = max(250, state.char_status_poll_ms)
+                        poll_ms = max(MIN_POLL_MS, state.char_status_poll_ms)
                     if not region and not all([hp_region, mana_region, cap_region]):
                         break
                     try:

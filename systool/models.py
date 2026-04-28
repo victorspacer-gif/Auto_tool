@@ -137,6 +137,16 @@ class HealerState:
 
 
 @dataclasses.dataclass
+class SandboxState:
+    backend: str = "jobobj"
+    box_name: str = "LauncherBox"
+    exe_path: str = ""
+    args: str = ""
+    drop_admin: bool = False
+    spoof_env: bool = True
+
+
+@dataclasses.dataclass
 class AppState:
     hotkey_bindings: dict[str, str] = dataclasses.field(
         default_factory=lambda: {
@@ -189,13 +199,7 @@ class AppState:
     fishing: FishingState = dataclasses.field(default_factory=FishingState)
     rune: RuneState = dataclasses.field(default_factory=RuneState)
     healer: HealerState = dataclasses.field(default_factory=HealerState)
-
-    sandbox_backend: str = "jobobj"
-    sandbox_box_name: str = "LauncherBox"
-    sandbox_exe_path: str = ""
-    sandbox_args: str = ""
-    sandbox_drop_admin: bool = False
-    sandbox_spoof_env: bool = True
+    sandbox: SandboxState = dataclasses.field(default_factory=SandboxState)
 
     light_process_name: str = "miracle_gl.exe"
     light_direct_address_hex: str = ""
@@ -324,3 +328,4 @@ class AppState:
     healer_rune_pos = _group_property("healer", "rune_pos")
     healer_mouse_speed = _group_property("healer", "mouse_speed")
     healer_rune_delay_ms = _group_property("healer", "rune_delay_ms")
+

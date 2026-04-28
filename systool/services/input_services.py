@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 import threading
 import time
 
+logger = logging.getLogger(__name__)
+
 from ..runtime import AppRuntime, HAS_PYNPUT, HAS_WIN32, pynput_kb, pynput_mouse, win32con, win32gui
+from ..constants import AFK_EXEC_MAX_WAIT, RCCLICK_INTER_CLICK_MIN, RCCLICK_INTER_CLICK_JITTER, EXEC_WAIT_TIMEOUT_DEFAULT
 from ..theme import GREEN, ORANGE, RED
 
 class HumanMouse:
@@ -94,7 +98,7 @@ class SafeKeyboardSession:
             try:
                 self.keyboard.release(key)
             except Exception:
-                pass
+                logger.debug("Keyboard release failed")
 
 class WindowService:
     @staticmethod
@@ -120,7 +124,7 @@ class WindowService:
                 if name_fragment.lower() in title.lower() and win32gui.IsWindowVisible(hwnd):
                     found[0] = hwnd
             except Exception:
-                pass
+                logger.debug("win32gui GetWindowText failed")
 
         try:
             win32gui.EnumWindows(callback, None)
@@ -140,7 +144,7 @@ class WindowService:
         try:
             win32gui.SetForegroundWindow(hwnd)
         except Exception:
-            pass
+            logger.debug("win32gui SetForegroundWindow failed")
 
 class AntiAfkService:
     def __init__(self, runtime: AppRuntime) -> None:
@@ -189,7 +193,7 @@ class AntiAfkService:
             if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.afk_stop):
                 break
             direction_name, direction_key = random.choice(list(directions.items()))
-            if not self.runtime.execution.acquire(self.runtime.afk_stop, max_wait=0.50, module_id="afk"):
+            if not self.runtime.execution.acquire(self.runtime.afk_stop, max_wait=AFK_EXEC_MAX_WAIT, module_id="afk"):
                 if self.runtime.afk_stop.is_set():
                     break
                 continue
@@ -303,7 +307,7 @@ class RightClickService:
                 HumanMouse.move(mouse, target)
                 for click_index in range(clicks_to_send):
                     # Add slight random variation between clicks for natural rhythm
-                    inter_click = max(0.02, burst_interval_ms / 1000.0 + random.uniform(-0.05, 0.08))
+                    inter_click = max(RCCLICK_INTER_CLICK_MIN, burst_interval_ms / 1000.0 + random.uniform(*RCCLICK_INTER_CLICK_JITTER))
                     time.sleep(inter_click)
                     mouse.click(pynput_mouse.Button.right, 1)
                 # Settle after all clicks — lets the game register and adds human-like pause

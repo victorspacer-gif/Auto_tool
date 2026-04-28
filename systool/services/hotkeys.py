@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import threading
 import time
 
+logger = logging.getLogger(__name__)
+
 from ..models import HotkeyJob
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb
+from ..constants import HOTKEY_EXEC_MAX_WAIT, RCCLICK_INTER_CLICK_MIN, RCCLICK_INTER_CLICK_JITTER
 from ..theme import GREEN, RED
 from .input_services import SafeKeyboardSession, WindowService
 
@@ -99,7 +103,7 @@ class HotkeyJobService:
                     try:
                         current_mana = self.runtime.mp_service.get_mp()
                     except Exception:
-                        pass
+                        logger.debug("MP read failed in hotkey job")
                 if current_mana is None:
                     with self.runtime.settings_lock:
                         current_mana = self.runtime.state.char_status_mana
@@ -112,7 +116,7 @@ class HotkeyJobService:
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):
                     self.runtime.ui.log(f"⚠️  Job #{job.job_id}: window '{job.window_name}' not found")
-            if not self.runtime.execution.acquire(job.stop_evt, max_wait=0.45, module_id=f"job:{job.job_id}"):
+            if not self.runtime.execution.acquire(job.stop_evt, max_wait=HOTKEY_EXEC_MAX_WAIT, module_id=f"job:{job.job_id}"):
                 if job.stop_evt.is_set():
                     break
                 continue
@@ -126,7 +130,7 @@ class HotkeyJobService:
                         self._press_key(keyboard, pressed_key)
                         sent += 1
                         # Add slight random variation between burst clicks for natural rhythm
-                        inter_click = max(0.02, job.burst_int_ms / 1000.0 + random.uniform(-0.05, 0.08))
+                        inter_click = max(RCCLICK_INTER_CLICK_MIN, job.burst_int_ms / 1000.0 + random.uniform(*RCCLICK_INTER_CLICK_JITTER))
                         time.sleep(inter_click)
                 finally:
                     self.runtime.execution.release()

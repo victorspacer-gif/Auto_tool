@@ -162,8 +162,8 @@ class TestFishingCycle:
 
         service = FishingService(runtime)
 
-        with patch("systool.services.HAS_PYNPUT", True), patch(
-            "systool.services.pynput_mouse", fake_pynput_mouse
+        with patch("systool.services.fishing.HAS_PYNPUT", True), patch(
+            "systool.services.fishing.pynput_mouse", fake_pynput_mouse
         ), patch("systool.services.HumanMouse.jitter", side_effect=lambda pos, _amount: pos), patch(
             "systool.services.HumanMouse.move",
             side_effect=fake_move,

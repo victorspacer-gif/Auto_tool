@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import threading
 import time
 
+logger = logging.getLogger(__name__)
+
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb, pynput_mouse
+from ..constants import (
+    HEALER_WAIT_INTERRUPTIBLE_1,
+    HEALER_WAIT_INTERRUPTIBLE_2,
+    HEALER_WAIT_INTERRUPTIBLE_3,
+    HEALER_EXEC_MAX_WAIT,
+    HEALER_COOLDOWN_SHORT,
+    HEALER_COOLDOWN_LONG,
+    HEALER_MOUSE_MAX_WAIT,
+)
 from ..theme import GREEN, ORANGE, RED
 from .hotkeys import HotkeyService
 from .input_services import HumanMouse, SafeKeyboardSession
@@ -68,7 +80,7 @@ class AutoHealerService:
                     try:
                         mana_value = self.runtime.mp_service.get_mp()
                     except Exception:
-                        pass
+                        logger.debug("MP read failed in healer loop")
                 mode = state.healer_mode
                 spell_key_name = state.healer_spell_key
                 use_percent = state.healer_use_percent
@@ -86,9 +98,9 @@ class AutoHealerService:
                 try:
                     hp_value = self.runtime.hp_service.get_hp()
                 except Exception:
-                    pass
+                    logger.debug("HP read failed in healer loop")
             if hp_value is None:
-                if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
+                if not self.runtime.pause.wait_interruptible(HEALER_WAIT_INTERRUPTIBLE_1, self.runtime.healer_stop):
                     break
                 continue
             should_heal = False
@@ -98,14 +110,14 @@ class AutoHealerService:
             elif hp_value <= hp_fixed:
                 should_heal = True
             if not should_heal:
-                if not self.runtime.pause.wait_interruptible(0.12, self.runtime.healer_stop):
+                if not self.runtime.pause.wait_interruptible(HEALER_WAIT_INTERRUPTIBLE_2, self.runtime.healer_stop):
                     break
                 continue
             if min_mana > 0 and mana_value is not None:
                 # Pick a random threshold between min and max (if max set), otherwise use min
                 threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
                 if mana_value < threshold:
-                    if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
+                    if not self.runtime.pause.wait_interruptible(HEALER_WAIT_INTERRUPTIBLE_3, self.runtime.healer_stop):
                         break
                     continue
             try:
@@ -114,7 +126,7 @@ class AutoHealerService:
                     if not spell_key:
                         self.runtime.ui.log(f"❌ Unknown healer spell key: {spell_key_name}")
                         break
-                    if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=0.25, module_id="healer"):
+                    if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=HEALER_EXEC_MAX_WAIT, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
                             break
                         cooldown_until = time.monotonic() + 0.05
@@ -128,7 +140,7 @@ class AutoHealerService:
                     cooldown_until = time.monotonic() + 0.35
                     self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
                 else:
-                    if not self.runtime.mouse.acquire(self.runtime.healer_stop, max_wait=0.35, module_id="healer"):
+                    if not self.runtime.mouse.acquire(self.runtime.healer_stop, max_wait=HEALER_MOUSE_MAX_WAIT, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
                             break
                         cooldown_until = time.monotonic() + 0.08

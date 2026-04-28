@@ -9,8 +9,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 # Mock pynput only for tests that need mocked mouse/keyboard objects.
-with patch("systool.services.pynput_kb"), \
-     patch("systool.services.pynput_mouse"):
+with patch("systool.runtime.pynput_kb"), \
+     patch("systool.runtime.pynput_mouse"):
     from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).

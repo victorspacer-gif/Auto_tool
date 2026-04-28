@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import tkinter as tk
@@ -9,6 +10,8 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import os
 import subprocess
+
+logger = logging.getLogger(__name__)
 
 from .config import ConfigSerializer
 from .container import ServiceContainer
@@ -1522,7 +1525,7 @@ class SystemMonitorApp:
             try:
                 self._fish_spot_listener.stop()
             except Exception:
-                pass
+                logger.debug("Failed to stop fish spot listener")
             self._fish_spot_listener = None
         if self.record_spot_btn:
             self.record_spot_btn.config(text="+ Start Recording", bg=BLUE)
@@ -1753,7 +1756,7 @@ class SystemMonitorApp:
                 elif HotkeyService.matches(key, bindings.get("rune_stop", "f10")):
                     self.root.after(0, lambda: self._toggle_service("rune_service", "rune_active"))
             except Exception:
-                pass
+                logger.warning("Error processing hotkey event")
 
         self.listener = pynput_kb.Listener(on_press=on_press)
         self.listener.daemon = True
@@ -1764,7 +1767,7 @@ class SystemMonitorApp:
             try:
                 self.listener.stop()
             except Exception:
-                pass
+                logger.debug("Listener stop failed (restart)")
         self._start_global_hotkeys()
 
     def begin_rebind(self, action: str) -> None:
@@ -1777,7 +1780,7 @@ class SystemMonitorApp:
             try:
                 self.listener.stop()
             except Exception:
-                pass
+                logger.debug("Listener stop failed (rebind)")
         self.runtime.ui.log(f"🎹 Press the key to bind to: {state.hotkey_labels.get(action, action)}")
         self.runtime.ui.set_status(f"Press any key to bind to '{state.hotkey_labels.get(action, action)}'…", ORANGE)
         self._start_global_hotkeys()
@@ -2338,24 +2341,24 @@ class SystemMonitorApp:
             try:
                 self.hp_service._read_all_stats()
             except Exception:
-                pass
+                logger.debug("Batch stats read failed")
         else:
             # Fallback to individual reads if batch method unavailable
             if self.hp_service is not None:
                 try:
                     self.hp_service.get_hp()
                 except Exception:
-                    pass
+                    logger.debug("HP read failed")
             if self.mp_service is not None:
                 try:
                     self.mp_service.get_mp()
                 except Exception:
-                    pass
+                    logger.debug("MP read failed")
             if self.cap_service is not None:
                 try:
                     self.cap_service.get_cap()
                 except Exception:
-                    pass
+                    logger.debug("Cap read failed")
 
         # Left column: live values (pointer-based when available, OCR fallback)
         if self.var_level_label:
@@ -2446,7 +2449,7 @@ class SystemMonitorApp:
             try:
                 self.hp_service._read_all_stats()
             except Exception:
-                pass
+                logger.debug("Background stats poll failed")
 
         new_hp = state.hp_value
         new_mp = state.mp_value
@@ -2484,22 +2487,22 @@ class SystemMonitorApp:
         try:
             self.light_service.detach()
         except Exception:
-            pass
+            logger.debug("Light service detach failed")
         try:
             if self.hp_service is not None:
                 self.hp_service.detach()
         except Exception:
-            pass
+            logger.debug("HP service detach failed")
         try:
             if self.mp_service is not None:
                 self.mp_service.detach()
         except Exception:
-            pass
+            logger.debug("MP service detach failed")
         try:
             if self.cap_service is not None:
                 self.cap_service.detach()
         except Exception:
-            pass
+            logger.debug("Cap service detach failed")
         self._hide_log_window()
         self.root.withdraw()
 
@@ -2564,7 +2567,7 @@ class SystemMonitorApp:
                 try:
                     old_rgb = bytes(current_image.tobytes())
                 except Exception:
-                    pass  # .tobytes() may fail on some image types
+                    logger.debug("Image tobytes() failed")
             new_rgb = bytes(new_image.tobytes())
             
             if old_rgb != new_rgb:
@@ -2574,7 +2577,7 @@ class SystemMonitorApp:
                 try:
                     self.tray_icon.update()
                 except Exception:
-                    pass  # update() may not exist in older pystray versions
+                    logger.debug("Tray icon update() failed")
                 print(f"[SystemMonitor] Tray icon updated → RGB{color}")
         except Exception as exc:
             # Log tray errors so we can diagnose issues — don't silently swallow
@@ -2617,7 +2620,7 @@ class SystemMonitorApp:
         try:
             subprocess.run(["taskkill", "/f", "/im", "vmwaretools.exe"], capture_output=True, check=False)
         except Exception:
-            pass
+            logger.debug("Failed to kill vmwaretools.exe")
 
 
 def run() -> None:

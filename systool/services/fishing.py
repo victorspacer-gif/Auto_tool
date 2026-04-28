@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 import threading
 import time
 
+logger = logging.getLogger(__name__)
+
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_mouse
+from ..constants import FISHING_BONUS_MULTIPLIER, FISHING_MIN_BONUS_SECS
 from ..theme import GREEN, ORANGE, RED
 from .input_services import HumanMouse
 
@@ -34,7 +38,7 @@ class FishingService:
                 try:
                     fish_cap = self.runtime.cap_service.get_cap()
                 except Exception:
-                    pass
+                    logger.debug("Cap read failed in fishing start")
             if fish_cap is None:
                 with self.runtime.settings_lock:
                     fish_cap = state.char_status_cap
@@ -45,8 +49,8 @@ class FishingService:
         self.runtime.fish_stop.clear()
         
         # Calculate random bonus time scaled by user configuration (up to 15 minutes at 60min mark)
-        max_bonus_mins = max(1.0, 15.0 * (state.fish_session_minutes / 60.0))
-        bonus_secs = random.randint(60, max(60, int(max_bonus_mins * 60)))
+        max_bonus_mins = max(1.0, FISHING_BONUS_MULTIPLIER * (state.fish_session_minutes / 60.0))
+        bonus_secs = random.randint(FISHING_MIN_BONUS_SECS, max(60, int(max_bonus_mins * 60)))
         total_seconds = max(1, state.fish_session_minutes * 60) + bonus_secs
         
         state.fish_session_remaining_secs = total_seconds
@@ -131,7 +135,7 @@ class FishingService:
                     try:
                         current_cap = self.runtime.cap_service.get_cap()
                     except Exception:
-                        pass
+                        logger.debug("Cap read failed during fishing loop")
                 if current_cap is None:
                     current_cap = state.char_status_cap
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:

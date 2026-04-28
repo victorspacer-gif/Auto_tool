@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import threading
 import time
 
+logger = logging.getLogger(__name__)
+
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb, pynput_mouse
+from ..constants import RUNE_WAIT_INTERRUPTIBLE, RUNE_POST_CAST_SETTLE
 from ..theme import GREEN, ORANGE, RED
 from .hotkeys import HotkeyService
 from .input_services import HumanMouse, SafeKeyboardSession
@@ -79,7 +83,7 @@ class RuneMakerService:
                     try:
                         current_mana = self.runtime.mp_service.get_mp()
                     except Exception:
-                        pass
+                        logger.debug("MP read failed in rune loop")
                 if current_mana is None:
                     current_mana = state.char_status_mana
                 blank_rune_limit = state.rune_available_blank_runes
@@ -98,7 +102,7 @@ class RuneMakerService:
                 # Pick a random threshold between min and max (if max set), otherwise use min
                 threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
                 if current_mana < threshold:
-                    if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
+                    if not self.runtime.pause.wait_interruptible(RUNE_WAIT_INTERRUPTIBLE, self.runtime.rune_stop):
                         break
                     continue
             queue_window = max(
@@ -111,7 +115,7 @@ class RuneMakerService:
             if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window, module_id="rune"):
                 if self.runtime.rune_stop.is_set():
                     break
-                if not self.runtime.pause.wait_interruptible(0.15, self.runtime.rune_stop):
+                if not self.runtime.pause.wait_interruptible(RUNE_POST_CAST_SETTLE, self.runtime.rune_stop):
                     break
                 continue
             session = SafeKeyboardSession(keyboard)
