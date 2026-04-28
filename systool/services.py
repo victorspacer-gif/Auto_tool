@@ -10,6 +10,8 @@ import threading
 import time
 from collections.abc import Callable
 
+import psutil
+
 try:
     from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as DEFAULT_LIGHT_PROFILE
     from studiomemuer_light_module.memory_backend import (
@@ -31,11 +33,17 @@ from .runtime import (
     AppRuntime,
     HAS_CV2,
     HAS_MSS,
+    HAS_NUMPY,
     HAS_PYGAME,
     HAS_PYNPUT,
     HAS_TESSERACT,
     HAS_WIN32,
+    CV2_IMPORT_ERROR,
+    MSS_IMPORT_ERROR,
+    NUMPY_IMPORT_ERROR,
+    TESSERACT_IMPORT_ERROR,
     cv2,
+    configure_tesseract_runtime,
     mss,
     np,
     pygame,
@@ -199,27 +207,6 @@ class LightControlService:
             raise RuntimeError("Light profile unavailable")
         return DEFAULT_LIGHT_PROFILE
 
-    def _selected_chain(self) -> list[int]:
-        profile = self._profile()
-        chains = list(profile.pointer_chains)
-        if not chains:
-            return []
-        idx = max(0, min(self.runtime.state.light_pointer_chain_index, len(chains) - 1))
-        return list(chains[idx])
-
-    def describe_selected_chain(self) -> str:
-        chain = self._selected_chain()
-        if not chain:
-            return "(no pointer chains configured)"
-        return " -> ".join(f"0x{v:X}" for v in chain)
-
-    def set_chain_index(self, index: int) -> tuple[bool, str]:
-        profile = self._profile()
-        if index < 0 or index >= len(profile.pointer_chains):
-            return False, f"Invalid chain index: {index}"
-        self.runtime.state.light_pointer_chain_index = index
-        return True, f"Selected chain #{index + 1}: {self.describe_selected_chain()}"
-
     def attach(self) -> tuple[bool, str]:
         if not HAS_LIGHT_MODULE:
             return False, "Install psutil and pymem to use light control"
@@ -228,11 +215,18 @@ class LightControlService:
         try:
             self.controller = LightMemoryController(process_name)
             self.controller.attach()
-            if self.runtime.state.light_use_dynamic_pointer:
-                return True, f"Attached to {process_name} | chain #{self.runtime.state.light_pointer_chain_index + 1}"
-            return True, f"Attached to {process_name} | raw address mode"
+            return True, f"Attached to {process_name} | pointer list loaded"
         except ProcessNotFoundError as exc:
-            return False, str(exc)
+            fallback_name = self._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+                return True, f"Attached to {fallback_name} | auto-detected game process"
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
         except Exception as exc:
             return False, f"Attach failed: {exc}"
 
@@ -246,92 +240,48 @@ class LightControlService:
             self.controller = None
         return True, "Detached"
 
-    def read_current(self) -> tuple[bool, str]:
-        try:
-            ctrl = self._require_controller()
-            if self.runtime.state.light_use_dynamic_pointer:
-                profile = self._profile()
-                target = ctrl.resolve_light_address(
-                    module_name=profile.module_name,
-                    pointer_chains=[self._selected_chain()] if self._selected_chain() else [],
-                    structure_value_offset=profile.structure_value_offset,
-                    signature_pattern=profile.signature_pattern,
-                    signature_offset_to_base=profile.signature_offset_to_base,
-                )
-                value = ctrl.read_byte(target)
-                return True, f"Dyn read [chain #{self.runtime.state.light_pointer_chain_index + 1}] 0x{target:X} = 0x{value:02X}"
-
-            address = int(self.runtime.state.light_address_hex.strip(), 16)
-            value = ctrl.read_byte(address)
-            return True, f"Raw read 0x{address:X} = 0x{value:02X}"
-        except Exception as exc:
-            return False, str(exc)
-
     def apply_default(self) -> tuple[bool, str]:
-        value_hex = self.runtime.state.light_default_value_hex.strip()
-        ok, message = self._apply(value_hex)
+        profile = self._profile()
+        ok, message = self._apply(
+            color_value=profile.color_enabled_value,
+            intensity_value=profile.default_intensity_value,
+        )
         if ok:
-            self.runtime.state.light_freeze_value_hex = value_hex
+            self.runtime.state.light_freeze_color_value = profile.color_enabled_value
+            self.runtime.state.light_freeze_intensity_value = profile.default_intensity_value
+            self.runtime.state.light_last_mode = "default"
         return ok, message
 
     def apply_boosted(self) -> tuple[bool, str]:
-        value_hex = self.runtime.state.light_boosted_value_hex.strip()
-        ok, message = self._apply(value_hex)
+        profile = self._profile()
+        ok, message = self._apply(
+            color_value=profile.color_enabled_value,
+            intensity_value=profile.boosted_intensity_value,
+        )
         if ok:
-            self.runtime.state.light_freeze_value_hex = value_hex
+            self.runtime.state.light_freeze_color_value = profile.color_enabled_value
+            self.runtime.state.light_freeze_intensity_value = profile.boosted_intensity_value
+            self.runtime.state.light_last_mode = "boosted"
         return ok, message
 
-    def toggle_mode(self) -> tuple[bool, str]:
-        self.runtime.state.light_use_dynamic_pointer = not self.runtime.state.light_use_dynamic_pointer
-        mode = "dynamic pointer" if self.runtime.state.light_use_dynamic_pointer else "raw address"
-        return True, f"Light mode: {mode}"
+    def reset_original(self) -> tuple[bool, str]:
+        state = self.runtime.state
+        if not state.light_last_color_address_hex or not state.light_last_intensity_address_hex:
+            return False, "No previous light target has been captured yet."
+        if state.light_original_color_value is None or state.light_original_intensity_value is None:
+            return False, "Original light values are not available yet."
 
-    def validate_selected_chain(self) -> tuple[bool, str]:
-        try:
-            ctrl = self._require_controller()
-            profile = self._profile()
-            chain = self._selected_chain()
-            if not chain:
-                return False, "No pointer chains configured in light profile."
-
-            target = ctrl.resolve_light_address(
-                module_name=profile.module_name,
-                pointer_chains=[chain],
-                structure_value_offset=profile.structure_value_offset,
-                signature_pattern=profile.signature_pattern,
-                signature_offset_to_base=profile.signature_offset_to_base,
-            )
-            value = ctrl.read_byte(target)
-            return True, (
-                f"Chain #{self.runtime.state.light_pointer_chain_index + 1} OK | "
-                f"addr=0x{target:X} value=0x{value:02X} chain={self.describe_selected_chain()}"
-            )
-        except Exception as exc:
-            return False, f"Chain validation failed: {exc}"
-
-    def validate_all_chains(self) -> tuple[bool, str]:
-        try:
-            ctrl = self._require_controller()
-            profile = self._profile()
-            lines: list[str] = []
-            all_ok = True
-            for index, chain in enumerate(profile.pointer_chains, start=1):
-                try:
-                    target = ctrl.resolve_light_address(
-                        module_name=profile.module_name,
-                        pointer_chains=[list(chain)],
-                        structure_value_offset=profile.structure_value_offset,
-                        signature_pattern=profile.signature_pattern,
-                        signature_offset_to_base=profile.signature_offset_to_base,
-                    )
-                    value = ctrl.read_byte(target)
-                    lines.append(f"#{index}: OK addr=0x{target:X} value=0x{value:02X}")
-                except Exception as exc:
-                    all_ok = False
-                    lines.append(f"#{index}: FAIL ({exc})")
-            return all_ok, " | ".join(lines)
-        except Exception as exc:
-            return False, f"All-chain validation failed: {exc}"
+        ok, message = self._write_direct_pair(
+            color_address=int(state.light_last_color_address_hex, 16),
+            color_value=state.light_original_color_value,
+            intensity_value=state.light_original_intensity_value,
+            remember_original=False,
+        )
+        if ok:
+            state.light_freeze_color_value = state.light_original_color_value
+            state.light_freeze_intensity_value = state.light_original_intensity_value
+            state.light_last_mode = "reset"
+        return ok, message
 
     def set_freeze_enabled(self, enabled: bool) -> tuple[bool, str]:
         self.runtime.state.light_freeze_enabled = bool(enabled)
@@ -345,11 +295,20 @@ class LightControlService:
             return True, "Light freeze already running."
         if self.controller is None:
             return False, "Attach to the game process first."
+        ok, message = self._apply(
+            color_value=self.runtime.state.light_freeze_color_value,
+            intensity_value=self.runtime.state.light_freeze_intensity_value,
+        )
+        if not ok:
+            self.runtime.state.light_freeze_enabled = False
+            return False, f"Light freeze could not start: {message}"
         self._freeze_stop.clear()
         self._freeze_thread = threading.Thread(target=self._freeze_worker, daemon=True)
         self._freeze_thread.start()
         return True, (
-            f"Light freeze enabled: value=0x{self.runtime.state.light_freeze_value_hex.strip()} "
+            "Light freeze enabled: "
+            f"color={self.runtime.state.light_freeze_color_value} "
+            f"intensity={self.runtime.state.light_freeze_intensity_value} "
             f"every {max(30, self.runtime.state.light_freeze_interval_ms)}ms"
         )
 
@@ -362,40 +321,627 @@ class LightControlService:
                 break
             if self.controller is None:
                 break
-            value_hex = self.runtime.state.light_freeze_value_hex.strip()
-            self._apply(value_hex)
+            self._apply(
+                color_value=self.runtime.state.light_freeze_color_value,
+                intensity_value=self.runtime.state.light_freeze_intensity_value,
+                remember_original=False,
+            )
             delay = max(30, self.runtime.state.light_freeze_interval_ms) / 1000.0
             if self._freeze_stop.wait(delay):
                 break
 
-    def _apply(self, value_hex: str) -> tuple[bool, str]:
+    def _apply(self, color_value: int, intensity_value: int, remember_original: bool = True) -> tuple[bool, str]:
         try:
-            ctrl = self._require_controller()
-            if self.runtime.state.light_use_dynamic_pointer:
-                profile = self._profile()
-                chain = self._selected_chain()
-                result = ctrl.apply_light_by_resolver(
-                    module_name=profile.module_name,
-                    pointer_chains=[chain] if chain else [],
-                    structure_value_offset=profile.structure_value_offset,
-                    value_hex=value_hex,
-                    signature_pattern=profile.signature_pattern,
-                    signature_offset_to_base=profile.signature_offset_to_base,
-                )
-                return True, (
-                    f"Dyn patch [chain #{self.runtime.state.light_pointer_chain_index + 1}] "
-                    f"0x{result.address:X}: 0x{result.old_value:02X} -> 0x{result.new_value:02X}"
+            state = self.runtime.state
+            direct_address_hex = state.light_direct_address_hex.strip()
+            if direct_address_hex:
+                return self._write_direct_pair(
+                    color_address=int(direct_address_hex, 16),
+                    color_value=color_value,
+                    intensity_value=intensity_value,
+                    remember_original=remember_original,
                 )
 
-            result = ctrl.apply_light_value(self.runtime.state.light_address_hex.strip(), value_hex)
-            return True, f"Raw patch 0x{result.address:X}: 0x{result.old_value:02X} -> 0x{result.new_value:02X}"
+            ctrl = self._require_controller()
+            profile = self._profile()
+            color_address, intensity_address = ctrl.resolve_light_pair_addresses(
+                module_name=profile.module_name,
+                pointer_chains=[list(chain) for chain in profile.pointer_chains],
+                structure_value_offset=profile.structure_value_offset,
+                signature_pattern=profile.signature_pattern,
+                signature_offset_to_base=profile.signature_offset_to_base,
+            )
+            return self._write_direct_pair(
+                color_address=color_address,
+                color_value=color_value,
+                intensity_value=intensity_value,
+                remember_original=remember_original,
+                intensity_address=intensity_address,
+            )
         except Exception as exc:
             return False, str(exc)
+
+    def _write_direct_pair(
+        self,
+        color_address: int,
+        color_value: int,
+        intensity_value: int,
+        remember_original: bool,
+        intensity_address: int | None = None,
+    ) -> tuple[bool, str]:
+        ctrl = self._require_controller()
+        intensity_address = color_address + 1 if intensity_address is None else intensity_address
+        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
+        state = self.runtime.state
+        state.light_last_color_address_hex = f"{color_address:X}"
+        state.light_last_intensity_address_hex = f"{intensity_address:X}"
+        if remember_original:
+            state.light_original_color_value = result.color.old_value
+            state.light_original_intensity_value = result.intensity.old_value
+        mode_label = "direct" if state.light_direct_address_hex.strip() else "pointer"
+        return True, (
+            f"Light applied ({mode_label}) | color 0x{result.color.address:X}: "
+            f"{result.color.old_value} -> {result.color.new_value} | "
+            f"intensity 0x{result.intensity.address:X}: "
+            f"{result.intensity.old_value} -> {result.intensity.new_value}"
+        )
+
+    @staticmethod
+    def _find_game_process_name() -> str | None:
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        for proc in psutil.process_iter(attrs=["name"]):
+            name = (proc.info.get("name") or "").strip()
+            if pattern.fullmatch(name):
+                return name
+        return None
 
     def _require_controller(self):
         if self.controller is None:
             raise ProcessNotFoundError("Attach to the game process first.")
         return self.controller
+
+
+class HpService:
+    """HP value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves all known pointer chains (HP, light) against the
+    target process using a Double-precision read.  If a pointer resolves
+    successfully its address is cached and used as the primary HP source.
+    When the pointer fails to resolve the service falls back to OCR-derived
+    HP from the character status window.
+
+    Public API::
+
+        hp_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        hp_service.get_hp()          -> float | None  # current HP value (pointer or OCR)
+        hp_service.get_hp_peak()     -> int           # peak HP from OCR (0 if unavailable)
+        hp_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller = None  # LightMemoryController instance
+        self._hp_address: int | None = None  # resolved HP pointer address
+        self._light_address: int | None = None  # resolved light pointer address (for logging)
+        self._hp_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._HP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._HP_CACHE_TTL:
+            return True
+        # Cache expired — force re-resolution on next get_hp() call
+        return False
+
+    def _ensure_address_resolved(self) -> bool:
+        """Re-resolve HP pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_hp_pointer()
+        if new_addr is not None:
+            self._hp_address = new_addr
+            self._hp_cache_time = time.time()
+            state.hp_pointer_address_hex = f"{new_addr:X}"
+            state.hp_source = "pointer"
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return HAS_LIGHT_MODULE
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve all known pointers.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        if not HAS_LIGHT_MODULE:
+            return False, "Install psutil and pymem to use HP pointer"
+
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = self._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve HP pointer chain
+        hp_address = self._resolve_hp_pointer()
+
+        # Resolve light pointer (for logging / future use)
+        light_address = None
+        try:
+            from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as LIGHT_PROFILE
+            light_address = self.controller.resolve_light_address(
+                module_name=LIGHT_PROFILE.module_name,
+                pointer_chains=LIGHT_PROFILE.pointer_chains,
+                structure_value_offset=LIGHT_PROFILE.structure_value_offset,
+                signature_pattern=LIGHT_PROFILE.signature_pattern,
+                signature_offset_to_base=LIGHT_PROFILE.signature_offset_to_base,
+            )
+        except Exception:
+            pass
+
+        # Build status message
+        parts = []
+        if hp_address is not None:
+            self._hp_address = hp_address
+            self._hp_cache_time = time.time()  # start TTL clock on first resolution
+            state = self.runtime.state
+            state.hp_pointer_address_hex = f"{hp_address:X}"
+            state.hp_source = "pointer"
+            parts.append(f"HP pointer resolved at 0x{hp_address:X}")
+
+            # Read current HP value from pointer (Double, same as MP/Cap)
+            try:
+                hp_val = self.controller.read_double(hp_address)
+                with self.runtime.settings_lock:
+                    state.hp_value = hp_val
+                parts.append(f"HP={hp_val:.1f}")
+            except Exception as exc:
+                parts.append(f"HP read failed: {exc}")
+
+        if light_address is not None:
+            self._light_address = light_address
+            parts.append(f"Light pointer resolved at 0x{light_address:X}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._hp_address = None
+        self._light_address = None
+        return True, "Detached"
+
+    def get_hp(self) -> float | None:
+        """Return current HP value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source) — Double precision like MP/Cap
+        if not self._is_address_valid(self._hp_address, self._hp_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_address_resolved()
+
+        if self._hp_address is not None and self.controller is not None:
+            try:
+                hp_val = self.controller.read_double(self._hp_address)
+                with self.runtime.settings_lock:
+                    state.hp_value = hp_val
+                return hp_val
+            except Exception:
+                pass
+
+        # Fallback to OCR-derived HP from character status service
+        with self.runtime.settings_lock:
+            ocr_hp = state.char_status_hp
+        if ocr_hp is not None and ocr_hp > 0:
+            return float(ocr_hp)
+        return None
+
+    def get_hp_peak(self) -> int:
+        """Return peak HP value (from OCR)."""
+        with self.runtime.settings_lock:
+            return self.runtime.state.char_status_hp_peak
+
+    def _read_all_stats(self) -> tuple[float | None, float | None, float | None]:
+        """Batch read HP, MP, Cap from memory in a single controller call.
+
+        Since all three stats share the same base address (0x00A783E0), batching
+        reduces redundant module lookups and pointer chain resolution overhead.
+        Returns ``(hp_val, mp_val, cap_val)`` — any value can be None if its
+        specific address wasn't resolved yet.
+        """
+        state = self.runtime.state
+
+        # Try batch read from HP service's controller (primary source)
+        hp_val = None
+        mp_val = None
+        cap_val = None
+
+        if self._hp_address is not None and self.controller is not None:
+            try:
+                hp_val = self.controller.read_double(self._hp_address)
+            except Exception:
+                pass
+
+        # Read MP if address resolved (from MpService)
+        mp_addr = getattr(state, "_mp_resolved_addr", None)
+        if mp_addr is not None and self.controller is not None:
+            try:
+                mp_val = self.controller.read_double(mp_addr)
+            except Exception:
+                pass
+
+        # Read Cap if address resolved (from CapService)
+        cap_addr = getattr(state, "_cap_resolved_addr", None)
+        if cap_addr is not None and self.controller is not None:
+            try:
+                cap_val = self.controller.read_double(cap_addr)
+            except Exception:
+                pass
+
+        # Update state with batch results under lock once
+        with self.runtime.settings_lock:
+            if hp_val is not None:
+                state.hp_value = hp_val
+            if mp_val is not None:
+                state.mp_value = mp_val
+            if cap_val is not None:
+                state.cap_value = cap_val
+
+        return (hp_val, mp_val, cap_val)
+
+    @staticmethod
+    def _find_game_process_name() -> str | None:
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        for proc in psutil.process_iter(attrs=["name"]):
+            name = (proc.info.get("name") or "").strip()
+            if pattern.fullmatch(name):
+                return name
+        return None
+
+    def _resolve_hp_pointer(self) -> int | None:
+        """Resolve the HP pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_hp_module.hp_profile import DEFAULT_HP_PROFILE as HP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(HP_PROFILE.module_name)
+
+        for chain_idx, chain in enumerate(HP_PROFILE.pointer_chains):
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + HP_PROFILE.structure_value_offset
+                # Verify we can read the double at this address (same type as MP/Cap)
+                hp_verify = ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
+class MpService:
+    """MP (Mana) value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves the MP pointer chain against the target process using
+    a Double-precision read.  If the pointer resolves successfully its address
+    is cached and used as the primary MP source.  When the pointer fails to
+    resolve the service falls back to OCR-derived MP from the character status
+    window.
+
+    Public API::
+
+        mp_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        mp_service.get_mp()          -> float | None  # current MP value (pointer or OCR)
+        mp_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller: LightMemoryController | None = None
+        self._mp_address: int | None = None  # resolved MP pointer address
+        self._mp_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._MP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_mp_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached MP pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._MP_CACHE_TTL:
+            return True
+        return False
+
+    def _ensure_mp_address_resolved(self) -> bool:
+        """Re-resolve MP pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_mp_pointer()
+        if new_addr is not None:
+            self._mp_address = new_addr
+            self._mp_cache_time = time.time()
+            state.mp_pointer_address_hex = f"{new_addr:X}"
+            state.mp_source = "pointer"
+            state._mp_resolved_addr = new_addr  # also update batch-read address
+            return True
+        return False
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve the MP pointer.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = HpService._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve MP pointer chain (same base as HP, different offset)
+        mp_address = self._resolve_mp_pointer()
+
+        parts = []
+        if mp_address is not None:
+            self._mp_address = mp_address
+            self._mp_cache_time = time.time()  # start TTL clock on first resolution
+            state = self.runtime.state
+            state.mp_pointer_address_hex = f"{mp_address:X}"
+            state.mp_source = "pointer"
+            # Store resolved address for batch reads
+            state._mp_resolved_addr = mp_address
+            parts.append(f"MP pointer resolved at 0x{mp_address:X}")
+
+            # Read current MP value from pointer (Double)
+            try:
+                mp_val = self.controller.read_double(mp_address)
+                with self.runtime.settings_lock:
+                    state.mp_value = mp_val
+                parts.append(f"MP={mp_val:.1f}")
+            except Exception as exc:
+                parts.append(f"MP read failed: {exc}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._mp_address = None
+        return True, "Detached"
+
+    def get_mp(self) -> float | None:
+        """Return current MP value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if not self._is_mp_address_valid(self._mp_address, self._mp_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_mp_address_resolved()
+
+        if self._mp_address is not None and self.controller is not None:
+            try:
+                mp_val = self.controller.read_double(self._mp_address)
+                with self.runtime.settings_lock:
+                    state.mp_value = mp_val
+                return mp_val
+            except Exception:
+                pass
+
+        # Fallback to OCR-derived MP from character status service
+        with self.runtime.settings_lock:
+            ocr_mana = state.char_status_mana
+        if ocr_mana is not None and ocr_mana > 0:
+            return float(ocr_mana)
+        return None
+
+    def _resolve_mp_pointer(self) -> int | None:
+        """Resolve the MP pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_mp_module.mp_profile import DEFAULT_MP_PROFILE as MP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(MP_PROFILE.module_name)
+
+        for chain_idx, chain in enumerate(MP_PROFILE.pointer_chains):
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + MP_PROFILE.structure_value_offset
+                # Verify we can read the double at this address
+                mp_verify = ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
+
+
+class CapService:
+    """Cap (Max HP) value reader with pointer-first resolution and OCR fallback.
+
+    On attach, resolves the Cap pointer chain against the target process using
+    a Double-precision read.  If the pointer resolves successfully its address
+    is cached and used as the primary Cap source.  When the pointer fails to
+    resolve the service falls back to OCR-derived Cap from the character status
+    window.
+
+    Public API::
+
+        cap_service.attach()          -> (bool, str)   # hook into process + resolve pointers
+        cap_service.get_cap()         -> float | None  # current Cap value (pointer or OCR)
+        cap_service.detach()          -> (bool, str)   # release process handle
+    """
+
+    def __init__(self, runtime: AppRuntime) -> None:
+        self.runtime = runtime
+        self.controller: LightMemoryController | None = None
+        self._cap_address: int | None = None  # resolved Cap pointer address
+        self._cap_cache_time: float = 0.0  # timestamp of last successful resolution
+        self._CAP_CACHE_TTL: float = 60.0  # seconds — re-resolve after this interval
+
+    def _is_cap_address_valid(self, cached_addr: int | None, cache_time: float) -> bool:
+        """Check if a cached Cap pointer address is still within its TTL window."""
+        if cached_addr is None or self.controller is None:
+            return False
+        if time.time() - cache_time < self._CAP_CACHE_TTL:
+            return True
+        return False
+
+    def _ensure_cap_address_resolved(self) -> bool:
+        """Re-resolve Cap pointer chain if address is stale or missing. Returns True on success."""
+        state = self.runtime.state
+        if self.controller is None:
+            return False
+        new_addr = self._resolve_cap_pointer()
+        if new_addr is not None:
+            self._cap_address = new_addr
+            self._cap_cache_time = time.time()
+            state.cap_pointer_address_hex = f"{new_addr:X}"
+            state.cap_source = "pointer"
+            state._cap_resolved_addr = new_addr  # also update batch-read address
+            return True
+        return False
+
+    def attach(self) -> tuple[bool, str]:
+        """Hook into the target process and resolve the Cap pointer.
+
+        Returns ``(success, message)`` describing what was found.
+        """
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        try:
+            self.controller = LightMemoryController(process_name)
+            self.controller.attach()
+        except ProcessNotFoundError as exc:
+            fallback_name = HpService._find_game_process_name()
+            if not fallback_name:
+                return False, str(exc)
+            try:
+                self.controller = LightMemoryController(fallback_name)
+                self.controller.attach()
+                self.runtime.state.light_process_name = fallback_name
+            except Exception as fallback_exc:
+                return False, f"{exc} | fallback attach failed: {fallback_exc}"
+        except Exception as exc:
+            return False, f"Attach failed: {exc}"
+
+        # Resolve Cap pointer chain (same base as HP, different offset)
+        cap_address = self._resolve_cap_pointer()
+
+        parts = []
+        if cap_address is not None:
+            self._cap_address = cap_address
+            self._cap_cache_time = time.time()  # start TTL clock on first resolution
+            state = self.runtime.state
+            state.cap_pointer_address_hex = f"{cap_address:X}"
+            state.cap_source = "pointer"
+            # Store resolved address for batch reads
+            state._cap_resolved_addr = cap_address
+            parts.append(f"Cap pointer resolved at 0x{cap_address:X}")
+
+            # Read current Cap value from pointer (Double)
+            try:
+                cap_val = self.controller.read_double(cap_address)
+                with self.runtime.settings_lock:
+                    state.cap_value = cap_val
+                parts.append(f"Cap={cap_val:.1f}")
+            except Exception as exc:
+                parts.append(f"Cap read failed: {exc}")
+
+        msg = " | ".join(parts) if parts else "No pointers resolved"
+        return True, f"Attached to {process_name} | {msg}"
+
+    def detach(self) -> tuple[bool, str]:
+        self.controller.detach()
+        self.controller = None
+        self._cap_address = None
+        return True, "Detached"
+
+    def get_cap(self) -> float | None:
+        """Return current Cap value.  Uses pointer if available, otherwise OCR."""
+        state = self.runtime.state
+        # Try pointer first (primary source)
+        if not self._is_cap_address_valid(self._cap_address, self._cap_cache_time):
+            # Cache expired or never resolved — re-resolve once
+            self._ensure_cap_address_resolved()
+
+        if self._cap_address is not None and self.controller is not None:
+            try:
+                cap_val = self.controller.read_double(self._cap_address)
+                with self.runtime.settings_lock:
+                    state.cap_value = cap_val
+                return cap_val
+            except Exception:
+                pass
+
+        # Fallback to OCR-derived Cap from character status service
+        with self.runtime.settings_lock:
+            ocr_cap = state.char_status_cap
+        if ocr_cap is not None and ocr_cap > 0:
+            return float(ocr_cap)
+        return None
+
+    def get_cap_peak(self) -> int:
+        """Return peak Cap value (from OCR)."""
+        with self.runtime.settings_lock:
+            return self.runtime.state.char_status_cap_peak
+
+    def _resolve_cap_pointer(self) -> int | None:
+        """Resolve the Cap pointer chain and verify readability.
+
+        Returns the resolved address or None on failure.
+        """
+        from studiomemuer_cap_module.cap_profile import DEFAULT_CAP_PROFILE as CAP_PROFILE
+
+        ctrl = self.controller
+        if ctrl is None:
+            return None
+
+        module_base = ctrl.get_module_base(CAP_PROFILE.module_name)
+
+        for chain_idx, chain in enumerate(CAP_PROFILE.pointer_chains):
+            try:
+                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
+                target_candidate = base_candidate + CAP_PROFILE.structure_value_offset
+                # Verify we can read the double at this address
+                cap_verify = ctrl.read_double(target_candidate)
+                return target_candidate
+            except Exception:
+                continue
+
+        return None
 
 
 class PositionCaptureService:
@@ -552,17 +1098,21 @@ class RightClickService:
                 mode = state.rclick_mode
                 food_seconds = state.char_status_food_seconds
                 food_min_secs = state.rclick_food_min_secs
-                burst_count = state.rclick_food_burst_count
+                burst_count_min = state.rclick_food_burst_count_min
+                burst_count_max = state.rclick_food_burst_count_max
                 burst_interval_ms = state.rclick_food_burst_interval_ms
+                click_delay_min_ms = state.rclick_click_delay_min_ms
+                click_delay_max_ms = state.rclick_click_delay_max_ms
+                post_settle_ms = state.rclick_post_click_settle_ms
             if mode == "food":
                 if food_seconds is not None and food_seconds >= food_min_secs:
                     if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rclick_stop):
                         break
                     continue
-                clicks_to_send = max(1, burst_count)
+                clicks_to_send = random.randint(burst_count_min, burst_count_max)
                 queue_window = max(
                     0.35,
-                    clicks_to_send * 0.14 + max(0, clicks_to_send - 1) * max(0.05, burst_interval_ms / 1000.0),
+                    clicks_to_send * (click_delay_max_ms / 1000.0) + max(0, clicks_to_send - 1) * max(click_delay_min_ms / 1000.0, burst_interval_ms / 1000.0),
                 )
             else:
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
@@ -578,10 +1128,12 @@ class RightClickService:
             try:
                 HumanMouse.move(mouse, target)
                 for click_index in range(clicks_to_send):
-                    time.sleep(random.uniform(0.06, 0.14))
+                    # Add slight random variation between clicks for natural rhythm
+                    inter_click = max(0.02, burst_interval_ms / 1000.0 + random.uniform(-0.05, 0.08))
+                    time.sleep(inter_click)
                     mouse.click(pynput_mouse.Button.right, 1)
-                    if click_index + 1 < clicks_to_send:
-                        time.sleep(max(0.05, burst_interval_ms / 1000.0))
+                # Settle after all clicks — lets the game register and adds human-like pause
+                time.sleep(post_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ R-click: {exc}")
             finally:
@@ -663,10 +1215,22 @@ class AlarmService:
                 now = time.monotonic()
                 with self.runtime.settings_lock:
                     hp_percent = state.alarm_hp_percent
-                    hp_value = state.char_status_hp
                     hp_peak = state.char_status_hp_peak
                     auto_pause = state.alarm_auto_pause
                     threshold = state.alarm_threshold
+                    alarm_hp_value = state.alarm_hp_value
+                    alarm_mp_value = state.alarm_mp_value
+                    alarm_cap_value = state.alarm_cap_value
+                # Try pointer-based HP first, fall back to OCR
+                hp_value = None
+                if self.runtime.hp_service is not None:
+                    try:
+                        hp_value = self.runtime.hp_service.get_hp()
+                    except Exception:
+                        pass
+                if hp_value is None:
+                    with self.runtime.settings_lock:
+                        hp_value = state.char_status_hp
                 if hp_percent > 0 and hp_value is not None and hp_peak > 0 and now >= cooldown_until:
                     hp_ratio = (hp_value / hp_peak) * 100.0
                     if hp_ratio <= hp_percent:
@@ -681,6 +1245,64 @@ class AlarmService:
                             self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
                             self.runtime.ui.dispatch(self.runtime.pause.toggle)
                         continue
+                # Absolute value alerts (no % needed — uses live pointer reads)
+                mp_value = None
+                cap_value = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        mp_value = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
+                if mp_value is None:
+                    with self.runtime.settings_lock:
+                        mp_value = state.char_status_mana
+                if self.runtime.cap_service is not None:
+                    try:
+                        cap_value = self.runtime.cap_service.get_cap()
+                    except Exception:
+                        pass
+                if cap_value is None:
+                    with self.runtime.settings_lock:
+                        cap_value = state.char_status_cap
+                # Low HP (absolute value)
+                if alarm_hp_value > 0 and hp_value is not None and now >= cooldown_until:
+                    if hp_value <= alarm_hp_value:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW HP — {hp_value:.0f} (below {alarm_hp_value})")
+                        self.runtime.ui.set_status(f"⚠️  LOW HP — {hp_value:.0f}", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low HP")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
+                # Low MP (absolute value)
+                elif alarm_mp_value > 0 and mp_value is not None and now >= cooldown_until:
+                    if mp_value <= alarm_mp_value:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW MP — {mp_value:.0f} (below {alarm_mp_value})")
+                        self.runtime.ui.set_status(f"⚠️  LOW MP — {mp_value:.0f}", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low MP")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
+                # Low Cap (absolute value)
+                elif alarm_cap_value > 0 and cap_value is not None and now >= cooldown_until:
+                    if cap_value <= alarm_cap_value:
+                        cooldown_until = now + state.alarm_cooldown
+                        with self.runtime.record_lock:
+                            state.stats["alarms"] += 1
+                        self.runtime.ui.log(f"🚨 LOW CAP — {cap_value:.0f} (below {alarm_cap_value})")
+                        self.runtime.ui.set_status(f"⚠️  LOW CAP — {cap_value:.0f}", RED)
+                        self.play_alarm()
+                        self.runtime.ui.refresh_stats()
+                        if auto_pause and not self.runtime.pause.paused:
+                            self.runtime.ui.log("⏸  Auto-pausing all activities due to low Cap")
+                            self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 try:
                     frame = np.array(sct.grab(get_region()))[:, :, :3]
                 except Exception as exc:
@@ -720,14 +1342,17 @@ class CharacterStatusService:
     def get_dependency_error(self) -> str | None:
         state = self.runtime.state
         if not HAS_MSS:
-            return "mss is not installed"
+            return "mss import failed" + (f": {MSS_IMPORT_ERROR}" if MSS_IMPORT_ERROR else "")
+        if not HAS_NUMPY:
+            return "numpy import failed" + (f": {NUMPY_IMPORT_ERROR}" if NUMPY_IMPORT_ERROR else "")
         if not HAS_CV2:
-            return "opencv-python is not installed"
+            return "opencv-python import failed" + (f": {CV2_IMPORT_ERROR}" if CV2_IMPORT_ERROR else "")
         if not HAS_TESSERACT:
-            return "pytesseract is not installed"
+            return "pytesseract import failed" + (f": {TESSERACT_IMPORT_ERROR}" if TESSERACT_IMPORT_ERROR else "")
         tesseract_cmd = resolve_tesseract_cmd(state.char_status_tesseract_path)
         if not tesseract_cmd:
             return "Tesseract executable not found"
+        configure_tesseract_runtime(tesseract_cmd)
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
         return None
 
@@ -978,8 +1603,8 @@ class CharacterStatusService:
         match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
         if not match:
             return None
-        # Format is HH:MM, converting to seconds
-        return (int(match.group(1)) * 60 + int(match.group(2))) * 60
+        # Format is MM:SS (minutes:seconds), converting to total seconds
+        return int(match.group(1)) * 60 + int(match.group(2))
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
         base_w, base_h = self.BASE_SIZE
@@ -1050,10 +1675,21 @@ class FishingService:
             self.runtime.ui.log("❌ Record at least one spot")
             self.runtime.ui.set_status("Record at least one fishing spot", ORANGE)
             return
-        if state.fish_min_cap > 0 and state.char_status_cap is not None and state.char_status_cap <= state.fish_min_cap:
-            self.runtime.ui.log("⚠️  Capacity is already at or below the fishing stop threshold")
-            self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
-            return
+        if state.fish_min_cap > 0:
+            # Use pointer-based Cap first, fall back to OCR
+            fish_cap = None
+            if self.runtime.cap_service is not None:
+                try:
+                    fish_cap = self.runtime.cap_service.get_cap()
+                except Exception:
+                    pass
+            if fish_cap is None:
+                with self.runtime.settings_lock:
+                    fish_cap = state.char_status_cap
+            if fish_cap is not None and fish_cap <= state.fish_min_cap:
+                self.runtime.ui.log("⚠️  Capacity is already at or below the fishing stop threshold")
+                self.runtime.ui.set_status("Capacity too low to start fishing", ORANGE)
+                return
         self.runtime.fish_stop.clear()
         
         # Calculate random bonus time scaled by user configuration (up to 15 minutes at 60min mark)
@@ -1085,6 +1721,7 @@ class FishingService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log(f"▶ Fishing start — rod={state.fish_rod_pos}  spots={len(state.fish_spots)}")
+        stopped_by_food = False
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
             state.fish_active = False
@@ -1130,11 +1767,39 @@ class FishingService:
                 wait_min = state.fish_wait_min_ms
                 wait_max = state.fish_wait_max_ms
                 min_cap = state.fish_min_cap
-                current_cap = state.char_status_cap
+                food_seconds = state.char_status_food_seconds
+                auto_restart_enabled = state.fish_auto_restart_enabled
+                auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
+                # Use pointer-based Cap first, fall back to OCR
+                current_cap = None
+                if self.runtime.cap_service is not None:
+                    try:
+                        current_cap = self.runtime.cap_service.get_cap()
+                    except Exception:
+                        pass
+                if current_cap is None:
+                    current_cap = state.char_status_cap
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
                 self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
                 self.runtime.fish_stop.set()
+                break
+            # Check food level for auto-restart (only stop if no other session is running)
+            if not auto_restart_enabled:
+                self.runtime.ui.log("⚠️  Food check skipped — auto-restart disabled")
+            elif food_seconds is None:
+                self.runtime.ui.log("⚠️  Food check skipped — food value not available (ensure Character Status OCR is running)")
+            else:
+                self.runtime.ui.log(f"🍖 Food check: {food_seconds}s / threshold {auto_restart_food_min_secs}s")
+            if (
+                auto_restart_enabled
+                and food_seconds is not None
+                and food_seconds <= auto_restart_food_min_secs
+            ):
+                self.runtime.ui.log(f"🍖 Food running low ({food_seconds}s) — stopping session to eat")
+                self.runtime.ui.set_status("Food low — stopping fishing to eat", ORANGE)
+                self.runtime.fish_stop.set()
+                stopped_by_food = True
                 break
             cycle_locked = False
             try:
@@ -1148,13 +1813,12 @@ class FishingService:
                     if self.runtime.fish_stop.is_set():
                         break
                     continue
+                start_position = mouse.position
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
                 HumanMouse.move(mouse, rod_target)
                 time.sleep(random.uniform(0.07, 0.17))
                 mouse.click(pynput_mouse.Button.right, 1)
                 self.runtime.ui.log(f"🎣 Rod clicked at {rod_target}")
-                if not wait_with_session_limit(random.randint(cast_min, cast_max) / 1000.0):
-                    break
                 if index >= len(deck):
                     deck = list(state.fish_spots)
                     random.shuffle(deck)
@@ -1164,9 +1828,10 @@ class FishingService:
                 HumanMouse.move(mouse, spot_target)
                 time.sleep(random.uniform(0.10, 0.26))
                 mouse.click(pynput_mouse.Button.left, 1)
+                HumanMouse.move(mouse, start_position)
                 with self.runtime.record_lock:
                     state.stats["fish_casts"] += 1
-                self.runtime.ui.log(f"🪣 Cast → {spot_target}")
+                self.runtime.ui.log(f"🪣 Cast → {spot_target} and returned to {start_position}")
                 self.runtime.ui.refresh_stats()
             except Exception as exc:
                 self.runtime.ui.log(f"❌ Fish cycle: {exc}")
@@ -1186,7 +1851,24 @@ class FishingService:
         if self.runtime.fish_stop.is_set():
             state.fish_session_remaining_secs = 0
             state.fish_session_deadline = None
-        self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
+        # Check if we stopped due to low food and auto-restart is enabled
+        with self.runtime.settings_lock:
+            food_seconds = state.char_status_food_seconds
+            auto_restart_enabled = state.fish_auto_restart_enabled
+            auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
+        if (
+            stopped_by_food
+            and auto_restart_enabled
+            and food_seconds is not None
+            and food_seconds <= auto_restart_food_min_secs
+        ):
+            self.runtime.ui.log(
+                f"🔄 Auto-restart triggered — waiting 1s for cleanup, then starting fresh session"
+            )
+            time.sleep(1.0)
+            self.start()
+        else:
+            self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")
 
 
 class AutoHealerService:
@@ -1236,19 +1918,32 @@ class AutoHealerService:
                     break
                 continue
             with self.runtime.settings_lock:
-                hp_value = state.char_status_hp
                 hp_peak = state.char_status_hp_peak
-                mana_value = state.char_status_mana
+                # Use pointer-based MP first, fall back to OCR
+                mana_value = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        mana_value = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
                 mode = state.healer_mode
                 spell_key_name = state.healer_spell_key
                 use_percent = state.healer_use_percent
                 hp_percent = state.healer_hp_percent
                 hp_fixed = state.healer_hp_value
                 min_mana = state.healer_min_mana
+                max_mana = state.healer_max_mana
                 character_pos = state.healer_character_pos
                 rune_pos = state.healer_rune_pos
                 mouse_speed = state.healer_mouse_speed
                 rune_delay_ms = state.healer_rune_delay_ms
+            # Try pointer-based HP first, fall back to OCR
+            hp_value = None
+            if self.runtime.hp_service is not None:
+                try:
+                    hp_value = self.runtime.hp_service.get_hp()
+                except Exception:
+                    pass
             if hp_value is None:
                 if not self.runtime.pause.wait_interruptible(0.15, self.runtime.healer_stop):
                     break
@@ -1263,10 +1958,13 @@ class AutoHealerService:
                 if not self.runtime.pause.wait_interruptible(0.12, self.runtime.healer_stop):
                     break
                 continue
-            if min_mana > 0 and mana_value is not None and mana_value < min_mana:
-                if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
-                    break
-                continue
+            if min_mana > 0 and mana_value is not None:
+                # Pick a random threshold between min and max (if max set), otherwise use min
+                threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
+                if mana_value < threshold:
+                    if not self.runtime.pause.wait_interruptible(0.2, self.runtime.healer_stop):
+                        break
+                    continue
             try:
                 if mode == "spell":
                     spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
@@ -1343,7 +2041,8 @@ class RuneMakerService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log(
-            f"▶ Rune session start — spell={state.rune_spell_key.upper()}  cycle={state.rune_cycle_delay_ms}ms"
+            f"▶ Rune session start — spell={state.rune_spell_key.upper()}  "
+            f"cycle={state.rune_cycle_delay_ms}ms  post-settle={state.rune_post_cast_settle_ms}ms"
         )
         if not HAS_PYNPUT:
             self.runtime.ui.log("❌ pynput missing")
@@ -1371,7 +2070,16 @@ class RuneMakerService:
                 cycle_delay_ms = state.rune_cycle_delay_ms
                 cycle_variation_ms = state.rune_cycle_delay_variation_ms
                 min_mana = state.rune_min_mana
-                current_mana = state.char_status_mana
+                max_mana = state.rune_max_mana
+                # Use pointer-based MP first, fall back to OCR
+                current_mana = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        current_mana = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
+                if current_mana is None:
+                    current_mana = state.char_status_mana
                 blank_rune_limit = state.rune_available_blank_runes
                 move_min_ms = state.rune_mouse_move_min_ms
                 move_max_ms = state.rune_mouse_move_max_ms
@@ -1379,18 +2087,23 @@ class RuneMakerService:
                 press_max_ms = state.rune_mouse_press_max_ms
                 settle_min_ms = state.rune_mouse_settle_min_ms
                 settle_max_ms = state.rune_mouse_settle_max_ms
+                post_cast_settle_ms = state.rune_post_cast_settle_ms
             if blank_rune_limit > 0 and cycles_completed >= blank_rune_limit:
                 self.runtime.ui.log(f"⏲️ Rune session stopped — avb blank runes limit reached ({blank_rune_limit})")
                 self.runtime.ui.set_status("Rune session finished by avb blank runes limit", ORANGE)
                 break
-            if min_mana > 0 and current_mana is not None and current_mana < min_mana:
-                if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
-                    break
-                continue
+            if min_mana > 0 and current_mana is not None:
+                # Pick a random threshold between min and max (if max set), otherwise use min
+                threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
+                if current_mana < threshold:
+                    if not self.runtime.pause.wait_interruptible(1.0, self.runtime.rune_stop):
+                        break
+                    continue
             queue_window = max(
                 0.90,
                 cast_delay_ms / 1000.0
                 + (move_max_ms * 2 + press_max_ms * 2 + settle_max_ms * 2) / 1000.0
+                + post_cast_settle_ms / 1000.0
                 + 0.40,
             )
             if not self.runtime.execution.acquire(self.runtime.rune_stop, max_wait=queue_window, module_id="rune"):
@@ -1431,6 +2144,8 @@ class RuneMakerService:
                     settle_delay_range=settle_delay_range,
                 )
                 self.runtime.ui.log("📥 Blank rune → hand slot")
+                # Settle before next cast — lets mana deplete and OCR catch up
+                time.sleep(post_cast_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ Rune cycle: {exc}")
                 break
@@ -1494,7 +2209,13 @@ class HotkeyJobService:
         self.runtime.ui.set_status(f"Job #{job.job_id} ({job.key}) started", GREEN)
 
     def stop_job(self, job: HotkeyJob) -> None:
+        if not job.running:
+            return
         job.stop_evt.set()
+        job.running = False
+        self.runtime.ui.job_state_changed(job)
+        self.runtime.ui.log(f"⏹ Job #{job.job_id} ({job.key}) stopped")
+        self.runtime.ui.set_status(f"Job #{job.job_id} stopped", RED)
 
     def stop_all(self, stop_afk, stop_rclick, stop_alarm, stop_fishing, stop_rune) -> None:
         for job in list(self.runtime.state.jobs):
@@ -1528,9 +2249,21 @@ class HotkeyJobService:
                 break
             prev_hwnd = None
             if job.min_mana > 0:
-                current_mana = self.runtime.state.char_status_mana
-                if current_mana is not None and current_mana < job.min_mana:
-                    continue
+                # Use pointer-based MP first, fall back to OCR
+                current_mana = None
+                if self.runtime.mp_service is not None:
+                    try:
+                        current_mana = self.runtime.mp_service.get_mp()
+                    except Exception:
+                        pass
+                if current_mana is None:
+                    with self.runtime.settings_lock:
+                        current_mana = self.runtime.state.char_status_mana
+                if current_mana is not None:
+                    # Pick a random threshold between min and max (if max set), otherwise use min
+                    threshold = random.randint(job.min_mana, job.max_mana) if job.max_mana > job.min_mana else job.min_mana
+                    if current_mana < threshold:
+                        continue
             if job.use_focus and job.window_name.strip():
                 prev_hwnd = WindowService.get_foreground_hwnd()
                 if not WindowService.focus_window_by_name(job.window_name.strip()):
@@ -1548,7 +2281,9 @@ class HotkeyJobService:
                             break
                         self._press_key(keyboard, pressed_key)
                         sent += 1
-                        time.sleep(job.burst_int_ms / 1000.0)
+                        # Add slight random variation between burst clicks for natural rhythm
+                        inter_click = max(0.02, job.burst_int_ms / 1000.0 + random.uniform(-0.05, 0.08))
+                        time.sleep(inter_click)
                 finally:
                     self.runtime.execution.release()
                 with self.runtime.record_lock:
@@ -1639,4 +2374,3 @@ class HotkeyService:
     def matches(pressed_key, binding_str: str) -> bool:
         target = HotkeyService.key_str_to_pynput(binding_str)
         return target is not None and pressed_key == target
-

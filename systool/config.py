@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .models import AppState, HotkeyJob
@@ -49,6 +50,9 @@ class ConfigSerializer:
             "alarm_cooldown": state.alarm_cooldown,
             "alarm_auto_pause": state.alarm_auto_pause,
             "alarm_hp_percent": state.alarm_hp_percent,
+            "alarm_hp_value": state.alarm_hp_value,
+            "alarm_mp_value": state.alarm_mp_value,
+            "alarm_cap_value": state.alarm_cap_value,
             "alarm_region": list(state.alarm_region) if state.alarm_region else None,
             "char_status_region": list(state.char_status_region) if state.char_status_region else None,
             "char_status_hp_region": list(state.char_status_hp_region) if state.char_status_hp_region else None,
@@ -67,6 +71,8 @@ class ConfigSerializer:
             "fish_spot_jitter": state.fish_spot_jitter,
             "fish_session_minutes": state.fish_session_minutes,
             "fish_min_cap": state.fish_min_cap,
+            "fish_auto_restart_enabled": state.fish_auto_restart_enabled,
+            "fish_auto_restart_food_min_secs": state.fish_auto_restart_food_min_secs,
             "rune_spell_key": state.rune_spell_key,
             "rune_cycle_delay_ms": state.rune_cycle_delay_ms,
             "rune_cycle_delay_variation_ms": state.rune_cycle_delay_variation_ms,
@@ -92,6 +98,7 @@ class ConfigSerializer:
             "healer_hp_percent": state.healer_hp_percent,
             "healer_hp_value": state.healer_hp_value,
             "healer_min_mana": state.healer_min_mana,
+            "healer_max_mana": state.healer_max_mana,
             "healer_character_x": state.healer_character_pos[0],
             "healer_character_y": state.healer_character_pos[1],
             "healer_rune_x": state.healer_rune_pos[0],
@@ -99,14 +106,16 @@ class ConfigSerializer:
             "healer_mouse_speed": state.healer_mouse_speed,
             "healer_rune_delay_ms": state.healer_rune_delay_ms,
             "light_process_name": state.light_process_name,
-            "light_address_hex": state.light_address_hex,
-            "light_use_dynamic_pointer": state.light_use_dynamic_pointer,
-            "light_pointer_chain_index": state.light_pointer_chain_index,
-            "light_default_value_hex": state.light_default_value_hex,
-            "light_boosted_value_hex": state.light_boosted_value_hex,
+            "light_direct_address_hex": state.light_direct_address_hex,
             "light_freeze_enabled": state.light_freeze_enabled,
-            "light_freeze_value_hex": state.light_freeze_value_hex,
+            "light_freeze_color_value": state.light_freeze_color_value,
+            "light_freeze_intensity_value": state.light_freeze_intensity_value,
             "light_freeze_interval_ms": state.light_freeze_interval_ms,
+            "light_last_mode": state.light_last_mode,
+            "light_last_color_address_hex": state.light_last_color_address_hex,
+            "light_last_intensity_address_hex": state.light_last_intensity_address_hex,
+            "light_original_color_value": state.light_original_color_value,
+            "light_original_intensity_value": state.light_original_intensity_value,
             "sandbox_backend": state.sandbox_backend,
             "sandbox_box_name": state.sandbox_box_name,
             "sandbox_exe_path": state.sandbox_exe_path,
@@ -121,7 +130,52 @@ class ConfigSerializer:
             json.dump(ConfigSerializer.to_dict(state), handle, indent=2)
 
     @staticmethod
+    def save_xml(path: str, state: AppState) -> None:
+        config = ConfigSerializer.to_dict(state)
+        root = ET.Element("SystemMonitorConfig")
+        jobs_el = ET.SubElement(root, "jobs")
+        for job_data in config.pop("jobs", []):
+            job_el = ET.SubElement(jobs_el, "job")
+            for key, value in job_data.items():
+                child = ET.SubElement(job_el, key)
+                child.text = str(value)
+        hotkeys_el = ET.SubElement(root, "hotkey_bindings")
+        for key, value in config.pop("hotkey_bindings", {}).items():
+            child = ET.SubElement(hotkeys_el, key)
+            child.text = str(value)
+        spots_el = ET.SubElement(root, "fish_spots")
+        for x, y in config.pop("fish_spots", []):
+            spot = ET.SubElement(spots_el, "spot")
+            spot.text = f"{x},{y}"
+        def _region_text(val):
+            return ",".join(map(str, val)) if val else ""
+
+        region = config.pop("alarm_region", None)
+        region_el = ET.SubElement(root, "alarm_region")
+        region_el.text = _region_text(region)
+        csr = config.pop("char_status_region", None)
+        csr_el = ET.SubElement(root, "char_status_region")
+        csr_el.text = _region_text(csr)
+        chr_el = config.pop("char_status_hp_region", None)
+        char_hp_el = ET.SubElement(root, "char_status_hp_region")
+        char_hp_el.text = _region_text(chr_el)
+        cmr_el = config.pop("char_status_mana_region", None)
+        char_mana_el = ET.SubElement(root, "char_status_mana_region")
+        char_mana_el.text = _region_text(cmr_el)
+        ccr_el = config.pop("char_status_cap_region", None)
+        char_cap_el = ET.SubElement(root, "char_status_cap_region")
+        char_cap_el.text = _region_text(ccr_el)
+        for key, value in config.items():
+            child = ET.SubElement(root, key)
+            child.text = str(value)
+        tree = ET.ElementTree(root)
+        ET.indent(tree, space="  ")
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+    @staticmethod
     def load_file(path: str) -> dict:
+        if path.endswith(".xml"):
+            return ConfigSerializer._load_xml(path)
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
         return {
@@ -181,6 +235,18 @@ class ConfigSerializer:
                 hotkeys = {field.tag: field.text or "" for field in child}
             else:
                 cfg[child.tag] = child.text or ""
+        return {
+            "cfg": cfg,
+            "jobs": jobs,
+            "spots": spots,
+            "alarm_region": alarm_region,
+            "char_status_region": char_status_region,
+            "char_status_hp_region": char_status_hp_region,
+            "char_status_mana_region": char_status_mana_region,
+            "char_status_cap_region": char_status_cap_region,
+            "hotkeys": hotkeys,
+        }
+
     @staticmethod
     def apply_loaded(state: AppState, payload: dict) -> None:
         cfg = payload["cfg"]
@@ -230,6 +296,9 @@ class ConfigSerializer:
         state.alarm_cooldown = get_int("alarm_cooldown", state.alarm_cooldown)
         state.alarm_auto_pause = get_bool("alarm_auto_pause", state.alarm_auto_pause)
         state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent", state.alarm_hp_percent)))
+        state.alarm_hp_value = max(0, get_int("alarm_hp_value", state.alarm_hp_value))
+        state.alarm_mp_value = max(0, get_int("alarm_mp_value", state.alarm_mp_value))
+        state.alarm_cap_value = max(0, get_int("alarm_cap_value", state.alarm_cap_value))
         state.alarm_region = alarm_region
         state.char_status_region = char_status_region
         state.char_status_hp_region = char_status_hp_region
@@ -249,6 +318,8 @@ class ConfigSerializer:
         state.fish_spot_jitter = get_int("fish_spot_jitter", state.fish_spot_jitter)
         state.fish_session_minutes = max(1, min(40, get_int("fish_session_minutes", state.fish_session_minutes)))
         state.fish_min_cap = max(0, get_int("fish_min_cap", state.fish_min_cap))
+        state.fish_auto_restart_enabled = bool(get_bool("fish_auto_restart_enabled", state.fish_auto_restart_enabled))
+        state.fish_auto_restart_food_min_secs = max(30, min(600, get_int("fish_auto_restart_food_min_secs", state.fish_auto_restart_food_min_secs)))
         state.fish_spots = list(spots)
         state.rune_spell_key = get_str("rune_spell_key", state.rune_spell_key)
         state.rune_cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune_cycle_delay_ms)
@@ -299,6 +370,7 @@ class ConfigSerializer:
         state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent", state.healer_hp_percent)))
         state.healer_hp_value = max(1, get_int("healer_hp_value", state.healer_hp_value))
         state.healer_min_mana = max(0, get_int("healer_min_mana", state.healer_min_mana))
+        state.healer_max_mana = max(state.healer_min_mana, get_int("healer_max_mana", state.healer_max_mana))
         state.healer_character_pos = (
             get_int("healer_character_x", state.healer_character_pos[0]),
             get_int("healer_character_y", state.healer_character_pos[1]),
@@ -310,20 +382,24 @@ class ConfigSerializer:
         state.healer_mouse_speed = max(0.2, min(3.0, get_float("healer_mouse_speed", state.healer_mouse_speed)))
         state.healer_rune_delay_ms = max(50, get_int("healer_rune_delay_ms", state.healer_rune_delay_ms))
         state.light_process_name = get_str("light_process_name", state.light_process_name)
-        state.light_address_hex = get_str("light_address_hex", state.light_address_hex)
-        state.light_use_dynamic_pointer = get_bool("light_use_dynamic_pointer", state.light_use_dynamic_pointer)
-        state.light_pointer_chain_index = max(0, get_int("light_pointer_chain_index", state.light_pointer_chain_index))
-        state.light_default_value_hex = get_str("light_default_value_hex", state.light_default_value_hex)
+        state.light_direct_address_hex = get_str("light_direct_address_hex", state.light_direct_address_hex)
         state.sandbox_backend = get_str("sandbox_backend", state.sandbox_backend)
         state.sandbox_box_name = get_str("sandbox_box_name", state.sandbox_box_name)
         state.sandbox_exe_path = get_str("sandbox_exe_path", state.sandbox_exe_path)
         state.sandbox_args = get_str("sandbox_args", state.sandbox_args)
         state.sandbox_drop_admin = get_bool("sandbox_drop_admin", state.sandbox_drop_admin)
         state.sandbox_spoof_env = get_bool("sandbox_spoof_env", state.sandbox_spoof_env)
-        state.light_boosted_value_hex = get_str("light_boosted_value_hex", state.light_boosted_value_hex)
         state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
-        state.light_freeze_value_hex = get_str("light_freeze_value_hex", state.light_freeze_value_hex)
+        state.light_freeze_color_value = max(0, min(255, get_int("light_freeze_color_value", state.light_freeze_color_value)))
+        state.light_freeze_intensity_value = max(0, min(255, get_int("light_freeze_intensity_value", state.light_freeze_intensity_value)))
         state.light_freeze_interval_ms = max(30, get_int("light_freeze_interval_ms", state.light_freeze_interval_ms))
+        state.light_last_mode = get_str("light_last_mode", state.light_last_mode)
+        state.light_last_color_address_hex = get_str("light_last_color_address_hex", state.light_last_color_address_hex)
+        state.light_last_intensity_address_hex = get_str("light_last_intensity_address_hex", state.light_last_intensity_address_hex)
+        raw_original_color = cfg.get("light_original_color_value")
+        raw_original_intensity = cfg.get("light_original_intensity_value")
+        state.light_original_color_value = None if raw_original_color in (None, "", "None") else max(0, min(255, get_int("light_original_color_value", 0)))
+        state.light_original_intensity_value = None if raw_original_intensity in (None, "", "None") else max(0, min(255, get_int("light_original_intensity_value", 0)))
 
         for action, binding in hotkeys.items():
             if action in state.hotkey_bindings:
@@ -349,4 +425,3 @@ class ConfigSerializer:
             )
             state.jobs.append(job)
             state.job_counter = max(state.job_counter, job.job_id)
-

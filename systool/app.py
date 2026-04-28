@@ -11,6 +11,7 @@ import os
 import subprocess
 
 from .config import ConfigSerializer
+from .container import ServiceContainer
 from .models import HotkeyJob
 from .runtime import (
     AppRuntime,
@@ -27,20 +28,7 @@ from .runtime import (
     pynput_kb,
     pynput_mouse,
 )
-from .services import (
-    AlarmService,
-    AntiAfkService,
-    AutoHealerService,
-    CharacterStatusService,
-    FishingService,
-    HAS_LIGHT_MODULE,
-    HotkeyJobService,
-    HotkeyService,
-    LightControlService,
-    PositionCaptureService,
-    RightClickService,
-    RuneMakerService,
-)
+from .services import HAS_LIGHT_MODULE, HotkeyService
 from .theme import BG, BLUE, BODY, BOLD, FG, GREEN, HEADER, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
 
 try:
@@ -58,19 +46,41 @@ except ImportError:
 
 
 class SystemMonitorApp:
+    """Tkinter application layer for SystemMonitor.
+
+    All service instances are owned by a ``ServiceContainer`` (dependency-
+    injection container).  This class only holds references to them via
+    lazy properties so that the UI code never imports or instantiates
+    concrete service classes directly — making it trivial to swap, mock,
+    or extend services without touching GUI logic.
+    """
+
     def __init__(self) -> None:
-        self.runtime = AppRuntime()
-        self._kill_vmwaretools()
-        self.position_capture = PositionCaptureService(self.runtime)
-        self.afk_service = AntiAfkService(self.runtime)
-        self.rclick_service = RightClickService(self.runtime)
-        self.alarm_service = AlarmService(self.runtime)
-        self.char_status_service = CharacterStatusService(self.runtime)
-        self.fishing_service = FishingService(self.runtime)
-        self.healer_service = AutoHealerService(self.runtime)
-        self.light_service = LightControlService(self.runtime)
-        self.rune_service = RuneMakerService(self.runtime)
-        self.job_service = HotkeyJobService(self.runtime)
+        # Dependency-injection container owns all services.
+        self.container = ServiceContainer()
+
+        # Convenience properties that delegate to the container.
+        # These keep existing attribute references (e.g. ``self.afk_service``)
+        # working without touching the rest of the UI code.
+        self.runtime: AppRuntime = self.container.runtime  # shared runtime
+        self.position_capture = self.container.position_capture
+        self.afk_service = self.container.afk_service
+        self.rclick_service = self.container.rclick_service
+        self.alarm_service = self.container.alarm_service
+        self.char_status_service = self.container.char_status_service
+        self.fishing_service = self.container.fishing_service
+        self.healer_service = self.container.healer_service
+        self.light_service = self.container.light_service
+        self.hp_service = self.container.hp_service
+        # Wire HP service into runtime so alarm/healer services can access it
+        self.runtime.hp_service = self.hp_service
+        self.mp_service = self.container.mp_service
+        self.runtime.mp_service = self.mp_service
+        self.cap_service = self.container.cap_service
+        self.runtime.cap_service = self.cap_service
+        self.rune_service = self.container.rune_service
+        self.job_service = self.container.job_service
+
 
         self.root: tk.Tk | None = None
         self.log_window: tk.Toplevel | None = None
@@ -129,6 +139,10 @@ class SystemMonitorApp:
         self.hotkey_vars: dict[str, tk.StringVar] = {}
         self.log_history: list[str] = []
 
+        # Background stats polling (HP/MP/Cap pointer reads)
+        self._stats_poll_timer_id: int | None = None
+        self._prev_stats_values: tuple[float | None, float | None, float | None] = (None, None, None)
+
     def run(self) -> None:
         self.build_ui()
         self.root.mainloop()
@@ -158,6 +172,10 @@ class SystemMonitorApp:
         self._poll_settings()
         self._refresh_stats()
         self._refresh_character_status_display()
+        self._refresh_variables_display()
+        # Start background stats polling (100ms interval, UI-only-on-change)
+        self._start_stats_polling()
+
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()
         if HAS_TRAY:
@@ -206,6 +224,7 @@ class SystemMonitorApp:
         pause_bar = tk.Frame(self.root, bg=BG)
         pause_bar.pack(fill="x", padx=14, pady=(2, 0))
         self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
+        self._btn(pause_bar, "🔗  Attach", self.attach_light_process, BLUE).pack(side="left", padx=(8, 0))
         self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
         if HAS_SANDBOX_LAUNCHER:
             self._btn(pause_bar, "🔒  Sandbox Launcher UNSAFE", self._show_sandbox_launcher_popup, PURPLE).pack(side="left", padx=(8, 0))
@@ -230,6 +249,7 @@ class SystemMonitorApp:
         light_tab = tk.Frame(notebook, bg=BG)
         alarm_tab = tk.Frame(notebook, bg=BG)
         char_status_tab = tk.Frame(notebook, bg=BG)
+        variables_tab = tk.Frame(notebook, bg=BG)
         fish_tab = tk.Frame(notebook, bg=BG)
         hotkeys_tab = tk.Frame(notebook, bg=BG)
         config_tab = tk.Frame(notebook, bg=BG)
@@ -241,6 +261,7 @@ class SystemMonitorApp:
         self.light_tab = light_tab
         self.alarm_tab = alarm_tab
         self.char_status_tab = char_status_tab
+        self.variables_tab = variables_tab
         self.fish_tab = fish_tab
         self.hotkeys_tab = hotkeys_tab
         self.config_tab = config_tab
@@ -251,6 +272,7 @@ class SystemMonitorApp:
         notebook.add(light_tab, text="💡  Light Control??")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
         notebook.add(char_status_tab, text="📊  Character Status")
+        notebook.add(variables_tab, text="🔬  Variables")
         notebook.add(fish_tab, text="🎣  Fishing Session")
         notebook.add(hotkeys_tab, text="⌨️  Hotkeys")
         notebook.add(config_tab, text="💾  Config")
@@ -261,6 +283,7 @@ class SystemMonitorApp:
         self._build_light_tab(light_tab)
         self._build_alarm_tab(alarm_tab)
         self._build_character_status_tab(char_status_tab)
+        self._build_variables_tab(variables_tab)
         self._build_fish_tab(fish_tab)
         self._build_hotkeys_tab(hotkeys_tab)
         self._build_config_tab(config_tab)
@@ -350,13 +373,21 @@ class SystemMonitorApp:
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
         rclick_require_food = tk.BooleanVar(value=self.runtime.state.rclick_require_food)
         rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_secs))
-        rclick_food_burst_count = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count))
+        rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
+        rclick_food_burst_count_max = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_max))
         rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
+        click_delay_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_min_ms)))
+        click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
+        post_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_post_click_settle_ms)))
         self.ui_vars["rclick_mode_var"] = rclick_mode
         self.ui_vars["rclick_require_food_var"] = rclick_require_food
         self.ui_vars["rclick_food_min_var"] = rclick_food_min
-        self.ui_vars["rclick_food_burst_count_var"] = rclick_food_burst_count
+        self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
+        self.ui_vars["rclick_food_burst_count_max_var"] = rclick_food_burst_count_max
         self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
+        self.ui_vars["rclick_click_delay_min_var"] = click_delay_min
+        self.ui_vars["rclick_click_delay_max_var"] = click_delay_max
+        self.ui_vars["rclick_post_settle_ms_var"] = post_settle
         mode_row = tk.Frame(panel, bg=PANEL)
         mode_row.pack(fill="x", pady=2)
         tk.Label(mode_row, text="Mode:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
@@ -366,8 +397,12 @@ class SystemMonitorApp:
         mode_menu.pack(side="left", padx=4)
         tk.Checkbutton(panel, text="Timer checks food threshold first", variable=rclick_require_food, font=BOLD, fg=FG, bg=PANEL, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w", pady=(2, 2))
         self._label_entry(panel, "Min food timer (sec):", rclick_food_min, width=6)
-        self._label_entry(panel, "Food burst clicks:", rclick_food_burst_count, width=6)
+        self._label_entry(panel, f"Burst clicks min:", rclick_food_burst_count_min, width=6)
+        self._label_entry(panel, f"Burst clicks max:", rclick_food_burst_count_max, width=6)
         self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
+        self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
+        self._label_entry(panel, f"Click delay max ({unit}):", click_delay_max, width=6)
+        self._label_entry(panel, f"Post-click settle ({unit}):", post_settle, width=6)
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
@@ -396,6 +431,7 @@ class SystemMonitorApp:
         rune_cycle_variation = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_cycle_delay_variation_ms)))
         rune_jitter = tk.StringVar(value=str(self.runtime.state.rune_jitter))
         rune_cast = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_cast_delay_ms)))
+        rune_post_cast_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_post_cast_settle_ms)))
         rune_blank_cycles = tk.StringVar(value=str(self.runtime.state.rune_available_blank_runes))
         rune_move_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_mouse_move_min_ms)))
         rune_move_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rune_mouse_move_max_ms)))
@@ -408,6 +444,7 @@ class SystemMonitorApp:
         self.ui_vars["rune_cycle_variation_var"] = rune_cycle_variation
         self.ui_vars["rune_jitter_var"] = rune_jitter
         self.ui_vars["rune_cast_delay_var"] = rune_cast
+        self.ui_vars["rune_post_cast_settle_var"] = rune_post_cast_settle
         self.ui_vars["rune_blank_cycles_var"] = rune_blank_cycles
         self.ui_vars["rune_move_min_var"] = rune_move_min
         self.ui_vars["rune_move_max_var"] = rune_move_max
@@ -417,12 +454,16 @@ class SystemMonitorApp:
         self.ui_vars["rune_settle_max_var"] = rune_settle_max
         self._label_entry(spell_panel, "Spell hotkey:", rune_spell, width=6)
         self._label_entry(spell_panel, f"Cast settle delay ({unit}):", rune_cast, width=7)
+        self._label_entry(spell_panel, f"Post-cast settle ({unit}):", rune_post_cast_settle, width=8)
         self._label_entry(spell_panel, f"Cycle delay base ({unit}):", rune_cycle, width=7)
         self._label_entry(spell_panel, f"Cycle variation ({unit}):", rune_cycle_variation, width=7)
         self._label_entry(spell_panel, "Position jitter (px ±):", rune_jitter, width=5)
         rune_min_mana = tk.StringVar(value=str(self.runtime.state.rune_min_mana))
+        rune_max_mana = tk.StringVar(value=str(self.runtime.state.rune_max_mana))
         self.ui_vars["rune_min_mana_var"] = rune_min_mana
+        self.ui_vars["rune_max_mana_var"] = rune_max_mana
         self._label_entry(spell_panel, "Min mana to cast:", rune_min_mana, width=7)
+        self._label_entry(spell_panel, "Max mana (random range):", rune_max_mana, width=10)
         self._label_entry(spell_panel, "avb blank runes:", rune_blank_cycles, width=7)
         cycle_label = tk.Label(spell_panel, text="≈ Cycle time: —", font=SMALL_B, fg=TEAL, bg=PANEL)
         cycle_label.pack(anchor="w", pady=(6, 0))
@@ -431,8 +472,9 @@ class SystemMonitorApp:
             try:
                 base_ms = self._display_to_ms(float(rune_cycle.get()))
                 variation_ms = self._display_to_ms(float(rune_cycle_variation.get()))
-                min_seconds = max(0.0, (base_ms - variation_ms) / 1000.0)
-                max_seconds = (base_ms + variation_ms) / 1000.0
+                post_settle_ms = self._display_to_ms(float(rune_post_cast_settle.get())) if rune_post_cast_settle.get() else 600
+                min_seconds = max(0.0, (base_ms - variation_ms + post_settle_ms) / 1000.0)
+                max_seconds = (base_ms + variation_ms + post_settle_ms) / 1000.0
                 cycle_label.config(
                     text=f"≈ {min_seconds:.1f}–{max_seconds:.1f} s between casts"
                 )
@@ -498,11 +540,18 @@ class SystemMonitorApp:
         self._btn(mp3_row, "Browse", self.browse_alarm_sound, PURPLE).pack(side="left")
 
         alarm_threshold = tk.StringVar(value=str(int(self.runtime.state.alarm_threshold * 100)))
-        alarm_hp_percent = tk.StringVar(value=str(self.runtime.state.alarm_hp_percent))
+        alarm_hp_value = tk.StringVar(value=str(self.runtime.state.alarm_hp_value))
+        alarm_mp_value = tk.StringVar(value=str(self.runtime.state.alarm_mp_value))
+        alarm_cap_value = tk.StringVar(value=str(self.runtime.state.alarm_cap_value))
         self.ui_vars["alarm_thresh_var"] = alarm_threshold
-        self.ui_vars["alarm_hp_percent_var"] = alarm_hp_percent
+        self.ui_vars["alarm_hp_value_var"] = alarm_hp_value
+        self.ui_vars["alarm_mp_value_var"] = alarm_mp_value
+        self.ui_vars["alarm_cap_value_var"] = alarm_cap_value
         self._label_entry(panel, "Change threshold (%):", alarm_threshold, width=6)
-        self._label_entry(panel, "Low HP alert (%):", alarm_hp_percent, width=6)
+        tk.Label(panel, text="— or —", font=SMALL, fg=MUTED, bg=PANEL).pack(anchor="w")
+        self._label_entry(panel, "Low HP alert (value):", alarm_hp_value, width=8)
+        self._label_entry(panel, "Low MP/Mana alert (value):", alarm_mp_value, width=8)
+        self._label_entry(panel, "Low Cap alert (value):", alarm_cap_value, width=8)
         auto_pause = tk.BooleanVar(value=self.runtime.state.alarm_auto_pause)
         self.ui_vars["alarm_auto_pause_var"] = auto_pause
         tk.Checkbutton(panel, text="Auto-pause all activities when screen watch triggers", variable=auto_pause, font=BOLD, bg=PANEL, fg=ORANGE, selectcolor=PANEL, activebackground=PANEL, activeforeground=ORANGE).pack(anchor="w", pady=(8, 2))
@@ -535,12 +584,14 @@ class SystemMonitorApp:
         healer_hp_percent = tk.StringVar(value=str(self.runtime.state.healer_hp_percent))
         healer_hp_value = tk.StringVar(value=str(self.runtime.state.healer_hp_value))
         healer_min_mana = tk.StringVar(value=str(self.runtime.state.healer_min_mana))
+        healer_max_mana = tk.StringVar(value=str(self.runtime.state.healer_max_mana))
         self.ui_vars["healer_mode_var"] = healer_mode
         self.ui_vars["healer_spell_key_var"] = healer_spell_key
         self.ui_vars["healer_use_percent_var"] = healer_use_percent
         self.ui_vars["healer_hp_percent_var"] = healer_hp_percent
         self.ui_vars["healer_hp_value_var"] = healer_hp_value
         self.ui_vars["healer_min_mana_var"] = healer_min_mana
+        self.ui_vars["healer_max_mana_var"] = healer_max_mana
         mode_row = tk.Frame(mode_panel, bg=PANEL)
         mode_row.pack(fill="x", pady=2)
         tk.Label(mode_row, text="Heal with:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
@@ -553,6 +604,7 @@ class SystemMonitorApp:
         self._label_entry(mode_panel, "Heal below HP %:", healer_hp_percent, width=6)
         self._label_entry(mode_panel, "Heal below HP value:", healer_hp_value, width=6)
         self._label_entry(mode_panel, "Min mana to heal:", healer_min_mana, width=6)
+        self._label_entry(mode_panel, "Max mana (random range):", healer_max_mana, width=8)
 
         rune_panel = tk.LabelFrame(left, text=" 🧿  Rune Healing ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         rune_panel.pack(fill="x", pady=(0, 8))
@@ -602,54 +654,20 @@ class SystemMonitorApp:
         panel = tk.LabelFrame(wrapper, text=" 💡  Light Memory Control - Alpha test ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=10, padx=14)
         panel.pack(fill="x")
         light_process = tk.StringVar(value=self.runtime.state.light_process_name)
-        light_address = tk.StringVar(value=self.runtime.state.light_address_hex)
-        light_use_dynamic = tk.BooleanVar(value=self.runtime.state.light_use_dynamic_pointer)
-        light_chain_index = tk.StringVar(value=str(self.runtime.state.light_pointer_chain_index + 1))
+        light_direct_address = tk.StringVar(value=self.runtime.state.light_direct_address_hex)
         light_freeze_enabled = tk.BooleanVar(value=self.runtime.state.light_freeze_enabled)
-        light_freeze_value = tk.StringVar(value=self.runtime.state.light_freeze_value_hex)
         light_freeze_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.light_freeze_interval_ms)))
-        light_default = tk.StringVar(value=self.runtime.state.light_default_value_hex)
-        light_boosted = tk.StringVar(value=self.runtime.state.light_boosted_value_hex)
         self.ui_vars["light_process_name_var"] = light_process
-        self.ui_vars["light_address_hex_var"] = light_address
-        self.ui_vars["light_use_dynamic_pointer_var"] = light_use_dynamic
-        self.ui_vars["light_pointer_chain_index_var"] = light_chain_index
+        self.ui_vars["light_direct_address_hex_var"] = light_direct_address
         self.ui_vars["light_freeze_enabled_var"] = light_freeze_enabled
-        self.ui_vars["light_freeze_value_hex_var"] = light_freeze_value
         self.ui_vars["light_freeze_interval_ms_var"] = light_freeze_interval
-        self.ui_vars["light_default_value_hex_var"] = light_default
-        self.ui_vars["light_boosted_value_hex_var"] = light_boosted
         self._label_entry(panel, "Process name:", light_process, width=22)
-        self._label_entry(panel, "Fallback address (hex):", light_address, width=14)
-        mode_row = tk.Frame(panel, bg=PANEL)
-        mode_row.pack(fill="x", pady=2)
-        tk.Checkbutton(
-            mode_row,
-            text="Use dynamic pointer mode - experimental testing",
-            variable=light_use_dynamic,
-            font=BOLD,
-            fg=FG,
-            bg=PANEL,
-            selectcolor=PANEL,
-            activebackground=PANEL,
-            activeforeground=FG,
-        ).pack(side="left")
-        chain_row = tk.Frame(panel, bg=PANEL)
-        chain_row.pack(fill="x", pady=2)
-        tk.Label(chain_row, text="Pointer chain #:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
-        chain_menu = tk.OptionMenu(chain_row, light_chain_index, "1", "2", "3")
-        chain_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
-        chain_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
-        chain_menu.pack(side="left", padx=4)
-        self._btn(chain_row, "Select Chain", self.select_light_chain, BLUE).pack(side="left", padx=4)
+        self._label_entry(panel, "Target color address (hex):", light_direct_address, width=18)
         unit = self._get_unit_label()
-        self._label_entry(panel, "Default value (hex):", light_default, width=10)
-        self._label_entry(panel, "Boosted value (hex):", light_boosted, width=10)
-        self._label_entry(panel, "Freeze value (hex):", light_freeze_value, width=10)
         self._label_entry(panel, f"Freeze interval ({unit}):", light_freeze_interval, width=8)
         tk.Checkbutton(
             panel,
-            text="Freeze applied hex value",
+            text="Freeze",
             variable=light_freeze_enabled,
             command=self.toggle_light_freeze,
             font=BOLD,
@@ -662,12 +680,10 @@ class SystemMonitorApp:
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(8, 0))
         self._btn(buttons, "Attach", self.attach_light_process, BLUE).pack(side="left", padx=2, expand=True, fill="x")
-        self._btn(buttons, "Test Chain", self.test_light_chain, PURPLE).pack(side="left", padx=2, expand=True, fill="x")
-        self._btn(buttons, "Test All Chains", self.test_all_light_chains, BLUE).pack(side="left", padx=2, expand=True, fill="x")
-        self._btn(buttons, "Read Current", self.read_light_value, PURPLE).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Apply Default", self.apply_light_default, ORANGE).pack(side="left", padx=2, expand=True, fill="x")
         self._btn(buttons, "Apply Boosted", self.apply_light_boosted, GREEN).pack(side="left", padx=2, expand=True, fill="x")
-        tk.Label(panel, text="Manual process name is preserved. Use dynamic pointer mode + chain selector to test pointer behavior across sessions. Fallback raw address remains available.", font=SMALL, fg=MUTED, bg=PANEL, justify="left", wraplength=860).pack(anchor="w", pady=(10, 6))
+        self._btn(buttons, "Reset", self.reset_light_original, BLUE).pack(side="left", padx=2, expand=True, fill="x")
+        tk.Label(panel, text="Leave target color address blank to use the pointer list from Light Pointers.CT. Apply Default writes color 215 and intensity 7. Apply Boosted writes color 215 and intensity 8 to the next byte. Reset restores the last unchanged pair that was captured before an apply.", font=SMALL, fg=MUTED, bg=PANEL, justify="left", wraplength=860).pack(anchor="w", pady=(10, 6))
         dep_text = "Light module ready" if HAS_LIGHT_MODULE else "Install psutil and pymem to use this tab"
         self.light_status_label = tk.Label(panel, text=dep_text, font=SMALL_B, fg=TEAL if HAS_LIGHT_MODULE else ORANGE, bg=PANEL, anchor="w", justify="left")
         self.light_status_label.pack(fill="x")
@@ -739,6 +755,29 @@ class SystemMonitorApp:
         fish_min_cap = tk.StringVar(value=str(self.runtime.state.fish_min_cap))
         self.ui_vars["fish_min_cap_var"] = fish_min_cap
         self._label_entry(timing_panel, "Stop below cap:", fish_min_cap, width=6)
+
+        # Auto-restart fishing when food drops
+        fish_auto_restart_enabled = tk.BooleanVar(value=self.runtime.state.fish_auto_restart_enabled)
+        fish_auto_restart_food_secs = tk.StringVar(value=str(self.runtime.state.fish_auto_restart_food_min_secs))
+        self.ui_vars["fish_auto_restart_enabled_var"] = fish_auto_restart_enabled
+        self.ui_vars["fish_auto_restart_food_secs_var"] = fish_auto_restart_food_secs
+
+        ar_frame = tk.Frame(timing_panel, bg=PANEL)
+        ar_frame.pack(fill="x", pady=2)
+        tk.Checkbutton(
+            ar_frame,
+            variable=fish_auto_restart_enabled,
+            command=lambda: self._on_fish_auto_restart_toggle(fish_auto_restart_food_secs),
+            bg=PANEL,
+            fg=FG,
+            font=BOLD,
+            activebackground=PANEL,
+            activeforeground=TEAL,
+        ).pack(side="left")
+        ar_label = tk.Label(ar_frame, text="Auto-restart session when food drops below:", font=BOLD, fg=FG, bg=PANEL)
+        ar_label.pack(side="left", padx=(8, 4))
+        self._entry(ar_frame, fish_auto_restart_food_secs, width=5).pack(side="left")
+        tk.Label(ar_frame, text="sec", font=BOLD, fg=TEAL, bg=PANEL).pack(side="left", padx=(2, 0))
 
         session_panel = tk.LabelFrame(right, text=" ⏲️  Fishing Session ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         session_panel.pack(fill="x", pady=(0, 8))
@@ -897,8 +936,71 @@ class SystemMonitorApp:
             "4. If OCR misses a frame, the last good values are kept until the next valid read.",
         ]:
             tk.Label(help_panel, text=line, font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w").pack(fill="x", pady=2)
-        dep_text = "Python OCR packages loaded" if (HAS_MSS and HAS_CV2 and HAS_TESSERACT) else "Install mss, opencv-python, and pytesseract to use this tab"
-        tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if (HAS_MSS and HAS_CV2 and HAS_TESSERACT) else ORANGE, bg=PANEL, justify="left").pack(anchor="w", pady=(10, 0))
+        dependency_error = self.char_status_service.get_dependency_error()
+        dep_ready = dependency_error is None
+        dep_text = "Python OCR packages loaded" if dep_ready else f"OCR dependency status: {dependency_error}"
+        tk.Label(help_panel, text=dep_text, font=SMALL_B, fg=TEAL if dep_ready else ORANGE, bg=PANEL, justify="left", wraplength=300).pack(anchor="w", pady=(10, 0))
+
+    def _build_variables_tab(self, parent: tk.Frame) -> None:
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+        content_frame = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        # Left column: live values
+        left = tk.Frame(content_frame, bg=BG)
+        left.pack(side="left", fill="both", expand=True, padx=(6, 3), pady=6)
+
+        vars_panel = tk.LabelFrame(left, text=" 📡  Live Variables ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        vars_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_level_label = tk.Label(vars_panel, text="Level: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.var_level_label.pack(fill="x", pady=2)
+        self.var_hp_label = tk.Label(vars_panel, text="HP: —", font=HEADER, fg=RED, bg=PANEL, anchor="w")
+        self.var_hp_label.pack(fill="x", pady=2)
+        self.var_cap_label = tk.Label(vars_panel, text="Cap: —", font=HEADER, fg=TEAL, bg=PANEL, anchor="w")
+        self.var_cap_label.pack(fill="x", pady=2)
+        self.var_mp_label = tk.Label(vars_panel, text="MP: —", font=HEADER, fg=BLUE, bg=PANEL, anchor="w")
+        self.var_mp_label.pack(fill="x", pady=2)
+        self.var_food_label = tk.Label(vars_panel, text="Food: —", font=HEADER, fg=GREEN, bg=PANEL, anchor="w")
+        self.var_food_label.pack(fill="x", pady=2)
+
+        # Right column: metadata & stats
+        right = tk.Frame(content_frame, bg=BG)
+        right.pack(side="right", fill="both", expand=True, padx=(3, 6), pady=6)
+
+        meta_panel = tk.LabelFrame(right, text=" 📋  Source Metadata ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        meta_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_hp_source_label = tk.Label(meta_panel, text="HP source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_hp_source_label.pack(fill="x", pady=2)
+        self.var_mp_source_label = tk.Label(meta_panel, text="MP source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_mp_source_label.pack(fill="x", pady=2)
+        self.var_cap_source_label = tk.Label(meta_panel, text="Cap source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_cap_source_label.pack(fill="x", pady=2)
+
+        addr_frame = tk.Frame(meta_panel, bg=PANEL)
+        addr_frame.pack(fill="x", pady=(4, 0))
+        self.var_hp_addr_label = tk.Label(addr_frame, text="HP address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_hp_addr_label.pack(fill="x", pady=1)
+        self.var_mp_addr_label = tk.Label(addr_frame, text="MP address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_mp_addr_label.pack(fill="x", pady=1)
+        self.var_cap_addr_label = tk.Label(addr_frame, text="Cap address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_cap_addr_label.pack(fill="x", pady=1)
+
+        stats_panel = tk.LabelFrame(right, text=" 📊  Read Statistics ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        stats_panel.pack(fill="both", expand=True, pady=(0, 8))
+
+        self.var_regen_label = tk.Label(stats_panel, text="Regen: HP 0.0/min | Mana 0.0/min", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_regen_label.pack(fill="x", pady=2)
+        self.var_read_stats_label = tk.Label(stats_panel, text="Reads: — | Misses: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_read_stats_label.pack(fill="x", pady=2)
+        self.var_last_update_label = tk.Label(stats_panel, text="Last update: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_last_update_label.pack(fill="x", pady=(10, 2))
 
     def _build_hotkeys_tab(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BG)
@@ -1232,6 +1334,23 @@ class SystemMonitorApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _on_fish_auto_restart_toggle(self, food_secs_var: tk.StringVar) -> None:
+        """Toggle handler for auto-restart checkbox. Clears entry when unchecked, defaults to 300s when checked."""
+        state = self.runtime.state
+        if not state.fish_auto_restart_enabled:
+            # Unchecked — clear the entry field
+            food_secs_var.set("")
+        else:
+            # Checked — default to 300s if empty or invalid
+            try:
+                val = int(food_secs_var.get())
+                if val < 30:
+                    food_secs_var.set("30")
+                elif val > 600:
+                    food_secs_var.set("600")
+            except (ValueError, TypeError):
+                food_secs_var.set("300")
+
     def _terminate_sandbox(self) -> None:
         if not self.sandbox_proc:
             return
@@ -1515,6 +1634,10 @@ class SystemMonitorApp:
         min_mana_var = tk.StringVar(value=str(job.min_mana))
         self._entry(row1, min_mana_var, 6).pack(side="left", padx=4)
         outer._vars["min_mana"] = min_mana_var
+        tk.Label(row1, text="Max mana:", font=BOLD, fg=FG, bg=PANEL).pack(side="left", padx=(8, 0))
+        max_mana_var = tk.StringVar(value=str(job.max_mana))
+        self._entry(row1, max_mana_var, 6).pack(side="left", padx=4)
+        outer._vars["max_mana"] = max_mana_var
         indicator = tk.Label(row1, text="●", font=BOLD, fg=MUTED, bg=PANEL)
         indicator.pack(side="right", padx=4)
         outer._indicator = indicator
@@ -1565,11 +1688,12 @@ class SystemMonitorApp:
             job.key = vars_map["key"].get()
             job.min_ms = self._display_to_ms(float(vars_map["min"].get()))
             job.max_ms = self._display_to_ms(float(vars_map["max"].get()))
-            job.min_mana = int(vars_map["min_mana"].get())
+            job.min_mana = max(0, int(vars_map["min_mana"].get()))
+            job.max_mana = max(job.min_mana, int(vars_map["max_mana"].get()))
             job.burst_enabled = vars_map["burst"].get()
-            job.burst_chance = int(vars_map["b_chance"].get()) / 100.0
-            job.burst_cnt_min = int(vars_map["b_cmin"].get())
-            job.burst_cnt_max = int(vars_map["b_cmax"].get())
+            job.burst_chance = min(1.0, max(0.0, int(vars_map["b_chance"].get()) / 100.0))
+            job.burst_cnt_min = max(0, int(vars_map["b_cmin"].get()))
+            job.burst_cnt_max = max(job.burst_cnt_min, int(vars_map["b_cmax"].get()))
             job.burst_int_ms = self._display_to_ms(float(vars_map["b_int"].get()))
             job.use_focus = vars_map["focus"].get()
             job.window_name = vars_map["win_name"].get()
@@ -1715,32 +1839,33 @@ class SystemMonitorApp:
 
     def attach_light_process(self) -> None:
         ok, message = self.light_service.attach()
-        self._set_light_status(ok, message)
-
-    def select_light_chain(self) -> None:
-        try:
-            selected = int(str(self.ui_vars["light_pointer_chain_index_var"].get()).strip()) - 1
-        except Exception:
-            self._set_light_status(False, "Invalid pointer chain selection.")
-            return
-        ok, message = self.light_service.set_chain_index(selected)
-        self._set_light_status(ok, message)
-
-    def test_light_chain(self) -> None:
-        ok, message = self.light_service.validate_selected_chain()
-        self._set_light_status(ok, message)
-
-    def test_all_light_chains(self) -> None:
-        ok, message = self.light_service.validate_all_chains()
+        # Also resolve HP/MP/Cap pointers on light attach (same process handle)
+        if ok and self.hp_service is not None:
+            try:
+                hp_ok, hp_msg = self.hp_service.attach()
+                if hp_ok:
+                    message += f" | {hp_msg}"
+            except Exception as exc:
+                message += f" | HP attach warning: {exc}"
+        if ok and self.mp_service is not None:
+            try:
+                mp_ok, mp_msg = self.mp_service.attach()
+                if mp_ok:
+                    message += f" | {mp_msg}"
+            except Exception as exc:
+                message += f" | MP attach warning: {exc}"
+        if ok and self.cap_service is not None:
+            try:
+                cap_ok, cap_msg = self.cap_service.attach()
+                if cap_ok:
+                    message += f" | {cap_msg}"
+            except Exception as exc:
+                message += f" | Cap attach warning: {exc}"
         self._set_light_status(ok, message)
 
     def toggle_light_freeze(self) -> None:
         enabled = bool(self.ui_vars.get("light_freeze_enabled_var").get()) if "light_freeze_enabled_var" in self.ui_vars else False
         ok, message = self.light_service.set_freeze_enabled(enabled)
-        self._set_light_status(ok, message)
-
-    def read_light_value(self) -> None:
-        ok, message = self.light_service.read_current()
         self._set_light_status(ok, message)
 
     def apply_light_default(self) -> None:
@@ -1749,6 +1874,10 @@ class SystemMonitorApp:
 
     def apply_light_boosted(self) -> None:
         ok, message = self.light_service.apply_boosted()
+        self._set_light_status(ok, message)
+
+    def reset_light_original(self) -> None:
+        ok, message = self.light_service.reset_original()
         self._set_light_status(ok, message)
 
     def _set_light_status(self, success: bool, message: str) -> None:
@@ -1908,6 +2037,7 @@ class SystemMonitorApp:
             "rune_cycle_delay_var": state.rune_cycle_delay_ms,
             "rune_cycle_variation_var": state.rune_cycle_delay_variation_ms,
             "rune_cast_delay_var": state.rune_cast_delay_ms,
+            "rune_post_cast_settle_var": state.rune_post_cast_settle_ms,
             "rune_move_min_var": state.rune_mouse_move_min_ms,
             "rune_move_max_var": state.rune_mouse_move_max_ms,
             "rune_press_min_var": state.rune_mouse_press_min_ms,
@@ -1925,20 +2055,26 @@ class SystemMonitorApp:
         mappings = {
             "alarm_mp3_var": state.alarm_mp3,
             "alarm_thresh_var": int(state.alarm_threshold * 100),
-            "alarm_hp_percent_var": state.alarm_hp_percent,
+            "alarm_hp_value_var": state.alarm_hp_value,
+            "alarm_mp_value_var": state.alarm_mp_value,
+            "alarm_cap_value_var": state.alarm_cap_value,
             "char_status_tesseract_var": state.char_status_tesseract_path,
             "char_status_samples_var": state.char_status_samples,
             "fish_min_cap_var": state.fish_min_cap,
             "fish_rod_jit_var": state.fish_rod_jitter,
             "fish_spot_jit_var": state.fish_spot_jitter,
             "fish_session_var": state.fish_session_minutes,
+            "fish_auto_restart_enabled_var": bool(state.fish_auto_restart_enabled),
+            "fish_auto_restart_food_secs_var": str(state.fish_auto_restart_food_min_secs),
             "rclick_mode_var": state.rclick_mode,
             "rclick_food_min_var": state.rclick_food_min_secs,
             "rclick_require_food_var": state.rclick_require_food,
-            "rclick_food_burst_count_var": state.rclick_food_burst_count,
+            "rclick_food_burst_count_min_var": state.rclick_food_burst_count_min,
+            "rclick_food_burst_count_max_var": state.rclick_food_burst_count_max,
             "rune_spell_key_var": state.rune_spell_key,
             "rune_jitter_var": state.rune_jitter,
             "rune_min_mana_var": state.rune_min_mana,
+            "rune_max_mana_var": state.rune_max_mana,
             "rune_blank_cycles_var": state.rune_available_blank_runes,
             "healer_mode_var": state.healer_mode,
             "healer_spell_key_var": state.healer_spell_key,
@@ -1946,15 +2082,12 @@ class SystemMonitorApp:
             "healer_hp_percent_var": state.healer_hp_percent,
             "healer_hp_value_var": state.healer_hp_value,
             "healer_min_mana_var": state.healer_min_mana,
+            "healer_max_mana_var": state.healer_max_mana,
             "healer_mouse_speed_var": state.healer_mouse_speed,
             "healer_rune_delay_var": state.healer_rune_delay_ms,
             "light_process_name_var": state.light_process_name,
-            "light_address_hex_var": state.light_address_hex,
-            "light_pointer_chain_index_var": state.light_pointer_chain_index + 1,
-            "light_freeze_value_hex_var": state.light_freeze_value_hex,
+            "light_direct_address_hex_var": state.light_direct_address_hex,
             "light_freeze_interval_ms_var": state.light_freeze_interval_ms,
-            "light_default_value_hex_var": state.light_default_value_hex,
-            "light_boosted_value_hex_var": state.light_boosted_value_hex,
         }
         for name, value in mappings.items():
             if name in self.ui_vars:
@@ -1963,8 +2096,6 @@ class SystemMonitorApp:
             self.ui_vars["alarm_auto_pause_var"].set(state.alarm_auto_pause)
         if "healer_use_percent_var" in self.ui_vars:
             self.ui_vars["healer_use_percent_var"].set(state.healer_use_percent)
-        if "light_use_dynamic_pointer_var" in self.ui_vars:
-            self.ui_vars["light_use_dynamic_pointer_var"].set(state.light_use_dynamic_pointer)
         if "light_freeze_enabled_var" in self.ui_vars:
             self.ui_vars["light_freeze_enabled_var"].set(state.light_freeze_enabled)
         if self.pos_label:
@@ -1988,6 +2119,7 @@ class SystemMonitorApp:
             else:
                 self.alarm_region_label.config(text="Area: centre 200×200 px (default)")
         self._refresh_character_status_display()
+        self._refresh_variables_display()
         if self.spots_listbox:
             self.spots_listbox.delete(0, "end")
             for index, spot in enumerate(state.fish_spots, start=1):
@@ -2024,10 +2156,16 @@ class SystemMonitorApp:
             if "rclick_mode_var" in self.ui_vars:
                 state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
             state.rclick_food_min_secs = max(0, get_int("rclick_food_min_var", state.rclick_food_min_secs))
-            state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count_var", state.rclick_food_burst_count))
+            state.rclick_food_burst_count_min = max(1, get_int("rclick_food_burst_count_min_var", state.rclick_food_burst_count_min))
+            state.rclick_food_burst_count_max = max(state.rclick_food_burst_count_min, get_int("rclick_food_burst_count_max_var", state.rclick_food_burst_count_max))
             state.rclick_food_burst_interval_ms = max(50, get_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
+            state.rclick_click_delay_min_ms = max(100, get_ms("rclick_click_delay_min_var", state.rclick_click_delay_min_ms))
+            state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, get_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))
+            state.rclick_post_click_settle_ms = max(100, get_ms("rclick_post_settle_ms_var", state.rclick_post_click_settle_ms))
             state.alarm_threshold = get_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
-            state.alarm_hp_percent = max(0, min(100, get_int("alarm_hp_percent_var", state.alarm_hp_percent)))
+            state.alarm_hp_value = max(0, get_int("alarm_hp_value_var", state.alarm_hp_value))
+            state.alarm_mp_value = max(0, get_int("alarm_mp_value_var", state.alarm_mp_value))
+            state.alarm_cap_value = max(0, get_int("alarm_cap_value_var", state.alarm_cap_value))
             state.char_status_poll_ms = max(250, get_ms("char_status_poll_var", state.char_status_poll_ms))
             state.char_status_samples = max(1, get_int("char_status_samples_var", state.char_status_samples))
             state.char_status_sample_delay_ms = max(0, get_ms("char_status_sample_delay_var", state.char_status_sample_delay_ms))
@@ -2048,13 +2186,20 @@ class SystemMonitorApp:
             state.fish_rod_jitter = get_int("fish_rod_jit_var", state.fish_rod_jitter)
             state.fish_spot_jitter = get_int("fish_spot_jit_var", state.fish_spot_jitter)
             state.fish_session_minutes = max(1, min(60, get_int("fish_session_var", state.fish_session_minutes)))
+            if "fish_auto_restart_enabled_var" in self.ui_vars:
+                state.fish_auto_restart_enabled = bool(self.ui_vars["fish_auto_restart_enabled_var"].get())
+            if "fish_auto_restart_food_secs_var" in self.ui_vars:
+                val = get_int("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
+                state.fish_auto_restart_food_min_secs = max(30, min(600, val))
             if "rune_spell_key_var" in self.ui_vars:
                 state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
             state.rune_cycle_delay_ms = get_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)
             state.rune_cycle_delay_variation_ms = max(0, get_ms("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
             state.rune_jitter = get_int("rune_jitter_var", state.rune_jitter)
             state.rune_cast_delay_ms = get_ms("rune_cast_delay_var", state.rune_cast_delay_ms)
+            state.rune_post_cast_settle_ms = max(100, get_ms("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
             state.rune_min_mana = max(0, get_int("rune_min_mana_var", state.rune_min_mana))
+            state.rune_max_mana = max(state.rune_min_mana, get_int("rune_max_mana_var", state.rune_max_mana))
             state.rune_available_blank_runes = max(0, get_int("rune_blank_cycles_var", state.rune_available_blank_runes))
             state.rune_mouse_move_min_ms = max(20, get_ms("rune_move_min_var", state.rune_mouse_move_min_ms))
             state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, get_ms("rune_move_max_var", state.rune_mouse_move_max_ms))
@@ -2071,6 +2216,7 @@ class SystemMonitorApp:
             state.healer_hp_percent = max(1, min(100, get_int("healer_hp_percent_var", state.healer_hp_percent)))
             state.healer_hp_value = max(1, get_int("healer_hp_value_var", state.healer_hp_value))
             state.healer_min_mana = max(0, get_int("healer_min_mana_var", state.healer_min_mana))
+            state.healer_max_mana = max(state.healer_min_mana, get_int("healer_max_mana_var", state.healer_max_mana))
             try:
                 state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
             except (KeyError, ValueError):
@@ -2078,26 +2224,12 @@ class SystemMonitorApp:
             state.healer_rune_delay_ms = max(50, get_ms("healer_rune_delay_var", state.healer_rune_delay_ms))
             if "light_process_name_var" in self.ui_vars:
                 state.light_process_name = str(self.ui_vars["light_process_name_var"].get()).strip()
-            if "light_address_hex_var" in self.ui_vars:
-                state.light_address_hex = str(self.ui_vars["light_address_hex_var"].get()).strip()
-            if "light_use_dynamic_pointer_var" in self.ui_vars:
-                state.light_use_dynamic_pointer = bool(self.ui_vars["light_use_dynamic_pointer_var"].get())
-            if "light_pointer_chain_index_var" in self.ui_vars:
-                try:
-                    chain_idx = int(str(self.ui_vars["light_pointer_chain_index_var"].get()).strip()) - 1
-                except ValueError:
-                    chain_idx = state.light_pointer_chain_index
-                state.light_pointer_chain_index = max(0, min(2, chain_idx))
+            if "light_direct_address_hex_var" in self.ui_vars:
+                state.light_direct_address_hex = str(self.ui_vars["light_direct_address_hex_var"].get()).strip()
             if "light_freeze_enabled_var" in self.ui_vars:
                 state.light_freeze_enabled = bool(self.ui_vars["light_freeze_enabled_var"].get())
-            if "light_freeze_value_hex_var" in self.ui_vars:
-                state.light_freeze_value_hex = str(self.ui_vars["light_freeze_value_hex_var"].get()).strip()
             if "light_freeze_interval_ms_var" in self.ui_vars:
                 state.light_freeze_interval_ms = max(30, get_ms("light_freeze_interval_ms_var", state.light_freeze_interval_ms))
-            if "light_default_value_hex_var" in self.ui_vars:
-                state.light_default_value_hex = str(self.ui_vars["light_default_value_hex_var"].get()).strip()
-            if "light_boosted_value_hex_var" in self.ui_vars:
-                state.light_boosted_value_hex = str(self.ui_vars["light_boosted_value_hex_var"].get()).strip()
         self._refresh_character_status_display()
         self._refresh_fish_session_display()
         if schedule_next:
@@ -2152,11 +2284,26 @@ class SystemMonitorApp:
         if self.char_status_level_label:
             self.char_status_level_label.config(text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}")
         if self.char_status_hp_label:
-            self.char_status_hp_label.config(text=f"HP: {state.char_status_hp if state.char_status_hp is not None else '—'}")
+            # Show pointer-derived HP when available, fall back to OCR
+            hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
+            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
+            self.char_status_hp_label.config(
+                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_mana_label:
-            self.char_status_mana_label.config(text=f"Mana: {state.char_status_mana if state.char_status_mana is not None else '—'}")
+            # Show pointer-derived MP when available, fall back to OCR
+            mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
+            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
+            self.char_status_mana_label.config(
+                text=f"Mana: {mp_display if mp_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_cap_label:
-            self.char_status_cap_label.config(text=f"Cap: {state.char_status_cap if state.char_status_cap is not None else '—'}")
+            # Show pointer-derived Cap when available, fall back to OCR
+            cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
+            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
+            self.char_status_cap_label.config(
+                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
+            )
         if self.char_status_food_label:
             self.char_status_food_label.config(text=f"Food: {state.char_status_food_text or '—'}")
         if self.char_status_regen_label:
@@ -2177,6 +2324,105 @@ class SystemMonitorApp:
             color = ORANGE if state.char_status_last_error else MUTED
             self.char_status_error_label.config(text=f"OCR: {message}", fg=color)
 
+    def _refresh_variables_display(self) -> None:
+        state = self.runtime.state
+
+        # Trigger batch memory read from HP service (reads HP, MP, Cap together)
+        if self.hp_service is not None and hasattr(self.hp_service, "_read_all_stats"):
+            try:
+                self.hp_service._read_all_stats()
+            except Exception:
+                pass
+        else:
+            # Fallback to individual reads if batch method unavailable
+            if self.hp_service is not None:
+                try:
+                    self.hp_service.get_hp()
+                except Exception:
+                    pass
+            if self.mp_service is not None:
+                try:
+                    self.mp_service.get_mp()
+                except Exception:
+                    pass
+            if self.cap_service is not None:
+                try:
+                    self.cap_service.get_cap()
+                except Exception:
+                    pass
+
+        # Left column: live values (pointer-based when available, OCR fallback)
+        if self.var_level_label:
+            self.var_level_label.config(
+                text=f"Level: {state.char_status_level if state.char_status_level is not None else '—'}"
+            )
+        if self.var_hp_label:
+            hp_display = state.hp_value if state.hp_value is not None else state.char_status_hp
+            source_tag = f" [{state.hp_source}]" if state.hp_source == "pointer" and state.hp_value is not None else ""
+            self.var_hp_label.config(
+                text=f"HP: {hp_display if hp_display is not None else '—'}{source_tag}"
+            )
+        if self.var_cap_label:
+            cap_display = state.cap_value if state.cap_value is not None else state.char_status_cap
+            source_tag = f" [{state.cap_source}]" if state.cap_source == "pointer" and state.cap_value is not None else ""
+            self.var_cap_label.config(
+                text=f"Cap: {cap_display if cap_display is not None else '—'}{source_tag}"
+            )
+        if self.var_mp_label:
+            mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
+            source_tag = f" [{state.mp_source}]" if state.mp_source == "pointer" and state.mp_value is not None else ""
+            self.var_mp_label.config(
+                text=f"MP: {mp_display if mp_display is not None else '—'}{source_tag}"
+            )
+        if self.var_food_label:
+            food_text = state.char_status_food_text or "—"
+            self.var_food_label.config(text=f"Food: {food_text}")
+
+        # Right column: source metadata (pointer/ocr/none)
+        if self.var_hp_source_label:
+            src = state.hp_source if state.hp_value is not None else ("ocr" if state.char_status_hp is not None else "none")
+            self.var_hp_source_label.config(text=f"HP source: {src}")
+        if self.var_mp_source_label:
+            src = state.mp_source if state.mp_value is not None else ("ocr" if state.char_status_mana is not None else "none")
+            self.var_mp_source_label.config(text=f"MP source: {src}")
+        if self.var_cap_source_label:
+            src = state.cap_source if state.cap_value is not None else ("ocr" if state.char_status_cap is not None else "none")
+            self.var_cap_source_label.config(text=f"Cap source: {src}")
+
+        # Right column: pointer addresses (hex)
+        if self.var_hp_addr_label:
+            addr = state.hp_pointer_address_hex or "—"
+            self.var_hp_addr_label.config(text=f"HP address: {addr}")
+        if self.var_mp_addr_label:
+            addr = state.mp_pointer_address_hex or "—"
+            self.var_mp_addr_label.config(text=f"MP address: {addr}")
+        if self.var_cap_addr_label:
+            addr = state.cap_pointer_address_hex or "—"
+            self.var_cap_addr_label.config(text=f"Cap address: {addr}")
+
+        # Right column: regen rates & read statistics (from OCR character status service)
+        if self.var_regen_label:
+            hp_regen = state.char_status_hp_regen_per_min if hasattr(state, 'char_status_hp_regen_per_min') else 0.0
+            mp_regen = state.char_status_mana_regen_per_min if hasattr(state, 'char_status_mana_regen_per_min') else 0.0
+            self.var_regen_label.config(
+                text=f"Regen: HP {hp_regen:.1f}/min | Mana {mp_regen:.1f}/min"
+            )
+        if self.var_read_stats_label:
+            reads = state.char_status_reads if hasattr(state, 'char_status_reads') else 0
+            misses = state.char_status_failures if hasattr(state, 'char_status_failures') else 0
+            self.var_read_stats_label.config(
+                text=f"Reads: {reads} | Misses: {misses}"
+            )
+        if self.var_last_update_label:
+            if state.char_status_last_seen:
+                seen = time.strftime("%H:%M:%S", time.localtime(state.char_status_last_seen))
+                peak_text = f"  |  HP max: {state.char_status_hp_peak}" if hasattr(state, 'char_status_hp_peak') and state.char_status_hp_peak else ""
+                self.var_last_update_label.config(
+                    text=f"Last update: {seen}  |  Reads: {reads}{peak_text}"
+                )
+            else:
+                self.var_last_update_label.config(text="Last update: —")
+
     @staticmethod
     def _refresh_character_status_region_label(label: tk.Label | None, title: str, region: tuple[int, int, int, int] | None) -> None:
         if not label:
@@ -2187,21 +2433,154 @@ class SystemMonitorApp:
         else:
             label.config(text=f"{title}: not selected")
 
+    def _start_stats_polling(self) -> None:
+        """Start background HP/MP/Cap pointer polling (100ms interval)."""
+        self._stats_poll_timer_id = 100
+        self.root.after(100, self._poll_stats_background)
+
+    def _poll_stats_background(self) -> None:
+        """Background poller: read HP/MP/Cap every 100ms, update UI only on change."""
+        state = self.runtime.state
+        old_hp, old_mp, old_cap = self._prev_stats_values
+
+        # Trigger batch memory read (updates state.hp_value, state.mp_value, state.cap_value)
+        if self.hp_service is not None and hasattr(self.hp_service, "_read_all_stats"):
+            try:
+                self.hp_service._read_all_stats()
+            except Exception:
+                pass
+
+        new_hp = state.hp_value
+        new_mp = state.mp_value
+        new_cap = state.cap_value
+
+        # Also read OCR fallback values (char_status_hp/mana/cap) which are updated by the
+        # CharStatusService running in a separate thread. When pointers fail, these provide
+        # the live values that should be displayed.
+        ocr_hp = state.char_status_hp
+        ocr_mp = state.char_status_mana
+        ocr_cap = state.char_status_cap
+
+        # Only update UI if at least one value changed (pointer OR OCR)
+        if (new_hp != old_hp or new_mp != old_mp or new_cap != old_cap or
+            ocr_hp is not None and ocr_hp != state._prev_ocr_hp or
+            ocr_mp is not None and ocr_mp != state._prev_ocr_mp or
+            ocr_cap is not None and ocr_cap != state._prev_ocr_cap):
+            self._prev_stats_values = (new_hp, new_mp, new_cap)
+            # Store OCR values for next comparison
+            state._prev_ocr_hp = ocr_hp if ocr_hp is not None else 0
+            state._prev_ocr_mp = ocr_mp if ocr_mp is not None else 0
+            state._prev_ocr_cap = ocr_cap if ocr_cap is not None else 0
+            self.root.after(0, self._refresh_variables_display)
+
+        # Schedule next poll (non-blocking via root.after)
+        if self._stats_poll_timer_id is not None:
+            self.root.after(100, self._poll_stats_background)
+
+    def _stop_stats_polling(self) -> None:
+        """Stop background stats polling."""
+        self._stats_poll_timer_id = None
+
+
     def on_close(self) -> None:
         try:
             self.light_service.detach()
         except Exception:
             pass
+        try:
+            if self.hp_service is not None:
+                self.hp_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.mp_service is not None:
+                self.mp_service.detach()
+        except Exception:
+            pass
+        try:
+            if self.cap_service is not None:
+                self.cap_service.detach()
+        except Exception:
+            pass
         self._hide_log_window()
         self.root.withdraw()
 
-    def _make_tray_image(self):
-        image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    def _make_tray_image(self, color: tuple[int, int, int] = (48, 209, 88)) -> Image.Image:
+        """Create the tray icon image with a colored circle and white 'M' overlay.
+
+        Args:
+            color: RGB tuple for the circle fill (default green).
+        Returns:
+            PIL Image in RGB mode (safe for pystray on Windows).
+        """
+        # Use RGB mode — some pystray builds on Windows silently fail with RGBA tray icons
+        image = Image.new("RGB", (64, 64), (*color[:3], 0))
         draw = ImageDraw.Draw(image)
-        draw.ellipse([4, 4, 60, 60], fill=(48, 209, 88, 255))
-        draw.rectangle([20, 28, 44, 36], fill=(255, 255, 255, 220))
-        draw.rectangle([28, 20, 36, 44], fill=(255, 255, 255, 220))
+        # Draw colored background circle
+        draw.ellipse([4, 4, 60, 60], fill=color[:3])
+        # White 'M' overlay (two rectangles forming an M shape)
+        draw.rectangle([20, 28, 44, 36], fill=(255, 255, 255))
+        draw.rectangle([28, 20, 36, 44], fill=(255, 255, 255))
         return image
+
+    def _get_tray_color(self) -> tuple[int, int, int]:
+        """Determine the tray icon color based on current application state.
+
+        Returns:
+            RGB tuple for the circle fill color.
+        """
+        state = self.runtime.state
+
+        # Blue when fishing is active (highest priority)
+        if state.fish_active:
+            return (59, 130, 246)
+
+        # Yellow when paused
+        if self.runtime.pause.paused:
+            return (255, 191, 0)
+
+        # Green when any service is running
+        if (state.afk_active or state.rclick_active or
+                state.alarm_active or state.rune_active):
+            return (48, 209, 88)
+
+        # Red when stopped (no services active and not paused)
+        return (239, 68, 68)
+
+    def _update_tray_icon(self) -> None:
+        """Update the system tray icon to reflect current application state."""
+        if self.tray_icon is None or not HAS_TRAY:
+            return
+        try:
+            color = self._get_tray_color()
+            new_image = self._make_tray_image(color)
+            
+            # Detect which pystray API version we're using
+            # Old (pre-0.19): icon.image, New (0.19+): icon.icon
+            image_attr = 'icon' if hasattr(self.tray_icon, 'icon') else 'image'
+            
+            # Compare by RGB data instead of object identity (PIL doesn't implement __eq__)
+            old_rgb = None
+            current_image = getattr(self.tray_icon, image_attr)
+            if hasattr(current_image, 'tobytes'):
+                try:
+                    old_rgb = bytes(current_image.tobytes())
+                except Exception:
+                    pass  # .tobytes() may fail on some image types
+            new_rgb = bytes(new_image.tobytes())
+            
+            if old_rgb != new_rgb:
+                setattr(self.tray_icon, image_attr, new_image)
+                # Small delay to let pystray process the new image before forcing a redraw
+                time.sleep(0.05)
+                try:
+                    self.tray_icon.update()
+                except Exception:
+                    pass  # update() may not exist in older pystray versions
+                print(f"[SystemMonitor] Tray icon updated → RGB{color}")
+        except Exception as exc:
+            # Log tray errors so we can diagnose issues — don't silently swallow
+            print(f"[SystemMonitor] Tray icon update error: {exc}")
 
     def _start_tray(self) -> None:
         menu = pystray.Menu(
@@ -2211,13 +2590,23 @@ class SystemMonitorApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", self.exit_app),
         )
-        self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image(), "SystemMonitor", menu)
+        self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image((239, 68, 68)), "SystemMonitor", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+        # Start periodic tray icon updates (every 500ms) to catch state changes
+        def _poll_tray():
+            self._update_tray_icon()
+            self.root.after(500, _poll_tray)
+
+        self.root.after(1000, _poll_tray)
 
     def show_window(self, *args) -> None:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift(), self.root.focus_force()))
 
     def exit_app(self, *args) -> None:
+        # Stop background stats polling
+        self._stop_stats_polling()
+
         self.char_status_service.stop()
         if self.tray_icon:
             self.tray_icon.stop()
@@ -2235,7 +2624,3 @@ class SystemMonitorApp:
 
 def run() -> None:
     SystemMonitorApp().run()
-
-
-
-

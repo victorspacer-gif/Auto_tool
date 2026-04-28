@@ -34,31 +34,48 @@ except ImportError:
     pystray = None
     HAS_TRAY = False
 
+MSS_IMPORT_ERROR = ""
+NUMPY_IMPORT_ERROR = ""
+
 try:
     import mss
-    import numpy as np
 
     HAS_MSS = True
-except ImportError:
+except Exception as exc:
     mss = None
-    np = None
     HAS_MSS = False
+    MSS_IMPORT_ERROR = str(exc)
+
+try:
+    import numpy as np
+
+    HAS_NUMPY = True
+except Exception as exc:
+    np = None
+    HAS_NUMPY = False
+    NUMPY_IMPORT_ERROR = str(exc)
+
+CV2_IMPORT_ERROR = ""
 
 try:
     import cv2
 
     HAS_CV2 = True
-except ImportError:
+except Exception as exc:
     cv2 = None
     HAS_CV2 = False
+    CV2_IMPORT_ERROR = str(exc)
+
+TESSERACT_IMPORT_ERROR = ""
 
 try:
     import pytesseract
 
     HAS_TESSERACT = True
-except ImportError:
+except Exception as exc:
     pytesseract = None
     HAS_TESSERACT = False
+    TESSERACT_IMPORT_ERROR = str(exc)
 
 try:
     import pygame
@@ -188,9 +205,6 @@ class ExecutionGate:
         self._owner: object | None = None
         self._queue: list[CursorRequest] = []
         self._condition = threading.Condition()
-        self._last_module_id: str | None = None
-        self._consecutive_grants = 0
-        self._max_consecutive_grants = 2
 
     def acquire(
         self,
@@ -198,10 +212,7 @@ class ExecutionGate:
         max_wait: float | None = None,
         module_id: str = "anonymous",
     ) -> bool:
-        request = CursorRequest(
-            expires_at=None if max_wait is None else time.monotonic() + max(0.0, max_wait),
-            module_id=module_id,
-        )
+        request = CursorRequest(module_id=module_id)
         with self._condition:
             self._queue_request_locked(request)
             self._condition.notify_all()
@@ -211,53 +222,21 @@ class ExecutionGate:
                 return False
             self._pause.wait()
             with self._condition:
-                self._prune_expired_locked()
-                self._rebalance_queue_for_fairness_locked()
                 if not self._is_request_queued_locked(request):
                     return False
                 if self._owner is None and self._is_next_request_locked(request):
                     self._owner = request.token
-                    if request.module_id == self._last_module_id:
-                        self._consecutive_grants += 1
-                    else:
-                        self._last_module_id = request.module_id
-                        self._consecutive_grants = 1
                     self._remove_request_locked(request)
                     return True
-                wait_time = self._wait_timeout_locked(request)
-                self._condition.wait(timeout=wait_time)
+                self._condition.wait(timeout=self._wait_timeout_locked(request, max_wait))
 
     def release(self) -> None:
         with self._condition:
             self._owner = None
-            self._prune_expired_locked()
             self._condition.notify_all()
 
     def _queue_request_locked(self, request: CursorRequest) -> None:
         self._queue.append(request)
-
-    def _prune_expired_locked(self) -> None:
-        now = time.monotonic()
-        self._queue = [
-            request
-            for request in self._queue
-            if request.expires_at is None or request.expires_at > now
-        ]
-
-    def _rebalance_queue_for_fairness_locked(self) -> None:
-        if (
-            len(self._queue) < 2
-            or self._last_module_id is None
-            or self._consecutive_grants < self._max_consecutive_grants
-        ):
-            return
-        if self._queue[0].module_id != self._last_module_id:
-            return
-        for index, request in enumerate(self._queue[1:], start=1):
-            if request.module_id != self._last_module_id:
-                self._queue.append(self._queue.pop(0))
-                self._condition.notify_all()
-                return
 
     def _remove_request_locked(self, request: CursorRequest) -> None:
         self._queue = [queued for queued in self._queue if queued.token is not request.token]
@@ -274,10 +253,10 @@ class ExecutionGate:
         return bool(self._queue) and self._queue[0].token is request.token
 
     @staticmethod
-    def _wait_timeout_locked(request: CursorRequest) -> float:
-        if request.expires_at is None:
+    def _wait_timeout_locked(_request: CursorRequest, max_wait: float | None) -> float:
+        if max_wait is None:
             return 0.05
-        return max(0.01, min(0.05, request.expires_at - time.monotonic()))
+        return max(0.01, min(0.05, max_wait))
 
 
 class MouseGate:
@@ -306,8 +285,8 @@ class AppRuntime:
                 ConfigSerializer.apply_loaded(self.state, payload)
             except Exception as e:
                 print(f"Failed to load config: {e}")
-        self.settings_lock = threading.Lock()
-        self.record_lock = threading.Lock()
+        self.settings_lock = threading.RLock()
+        self.record_lock = threading.RLock()
         self.ui = UINotifier()
         self.pause = PauseController(self.ui)
         self.execution = ExecutionGate(self.pause)
@@ -319,6 +298,10 @@ class AppRuntime:
         self.fish_stop = threading.Event()
         self.healer_stop = threading.Event()
         self.rune_stop = threading.Event()
+        # Optional service references — set by app.py after creation
+        self.hp_service: object | None = None
+        self.mp_service: object | None = None
+        self.cap_service: object | None = None
 
     def save_config(self) -> None:
         config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
@@ -346,3 +329,13 @@ def resolve_tesseract_cmd(explicit_path: str = "") -> str | None:
         if candidate and os.path.exists(candidate):
             return candidate
     return None
+
+
+def configure_tesseract_runtime(tesseract_cmd: str) -> None:
+    tesseract_dir = os.path.dirname(os.path.abspath(tesseract_cmd))
+    tessdata_dir = os.path.join(tesseract_dir, "tessdata")
+    if os.path.isdir(tessdata_dir):
+        os.environ["TESSDATA_PREFIX"] = tessdata_dir
+    path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    if tesseract_dir not in path_entries:
+        os.environ["PATH"] = tesseract_dir + os.pathsep + os.environ.get("PATH", "")

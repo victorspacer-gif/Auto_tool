@@ -14,6 +14,7 @@ class HotkeyJob:
     min_ms: int = 20_000
     max_ms: int = 30_000
     min_mana: int = 0
+    max_mana: int = 0
     burst_enabled: bool = False
     burst_chance: float = 0.20
     burst_cnt_min: int = 3
@@ -68,8 +69,13 @@ class AppState:
     rclick_mode: str = "timer"
     rclick_require_food: bool = False
     rclick_food_min_secs: int = 600
-    rclick_food_burst_count: int = 3
+    rclick_food_burst_count: int = 4
+    rclick_food_burst_count_min: int = 3
+    rclick_food_burst_count_max: int = 6
     rclick_food_burst_interval_ms: int = 700
+    rclick_click_delay_min_ms: int = 150
+    rclick_click_delay_max_ms: int = 250
+    rclick_post_click_settle_ms: int = 300
 
     alarm_active: bool = False
     alarm_mp3: str = ""
@@ -78,6 +84,9 @@ class AppState:
     alarm_region: tuple[int, int, int, int] | None = None
     alarm_auto_pause: bool = False
     alarm_hp_percent: int = 0
+    alarm_hp_value: int = 0
+    alarm_mp_value: int = 0
+    alarm_cap_value: int = 0
     char_status_active: bool = False
     char_status_region: tuple[int, int, int, int] | None = None
     char_status_hp_region: tuple[int, int, int, int] | None = None
@@ -121,6 +130,8 @@ class AppState:
     fish_session_remaining_secs: int = 0
     fish_session_deadline: float | None = None
     fish_min_cap: int = 0
+    fish_auto_restart_enabled: bool = False
+    fish_auto_restart_food_min_secs: int = 300
 
     rune_active: bool = False
     rune_spell_key: str = "f1"
@@ -131,14 +142,16 @@ class AppState:
     rune_blank_pos: tuple[int, int] = (0, 0)
     rune_jitter: int = 6
     rune_cast_delay_ms: int = 900
+    rune_post_cast_settle_ms: int = 600
     rune_min_mana: int = 0
+    rune_max_mana: int = 0
     rune_available_blank_runes: int = 0
-    rune_mouse_move_min_ms: int = 110
-    rune_mouse_move_max_ms: int = 240
-    rune_mouse_press_min_ms: int = 45
-    rune_mouse_press_max_ms: int = 90
-    rune_mouse_settle_min_ms: int = 80
-    rune_mouse_settle_max_ms: int = 180
+    rune_mouse_move_min_ms: int = 180
+    rune_mouse_move_max_ms: int = 350
+    rune_mouse_press_min_ms: int = 60
+    rune_mouse_press_max_ms: int = 120
+    rune_mouse_settle_min_ms: int = 100
+    rune_mouse_settle_max_ms: int = 220
 
     healer_active: bool = False
     healer_mode: str = "spell"
@@ -147,20 +160,47 @@ class AppState:
     healer_hp_percent: int = 60
     healer_hp_value: int = 120
     healer_min_mana: int = 0
+    healer_max_mana: int = 0
     healer_character_pos: tuple[int, int] = (0, 0)
     healer_rune_pos: tuple[int, int] = (0, 0)
     healer_mouse_speed: float = 1.0
     healer_rune_delay_ms: int = 250
 
     light_process_name: str = "miracle_gl.exe"
-    light_address_hex: str = "133AA965"
-    light_use_dynamic_pointer: bool = True
-    light_pointer_chain_index: int = 0
-    light_default_value_hex: str = "07"
-    light_boosted_value_hex: str = "08"
+    light_direct_address_hex: str = ""
     light_freeze_enabled: bool = False
-    light_freeze_value_hex: str = "08"
-    light_freeze_interval_ms: int = 50
+    light_freeze_color_value: int = 0
+    light_freeze_intensity_value: int = 0
+    light_freeze_interval_ms: int = 1000
+    light_last_mode: str = ""
+    light_last_color_address_hex: str = ""
+    light_last_intensity_address_hex: str = ""
+    light_original_color_value: int | None = None
+    light_original_intensity_value: int | None = None
+
+    # HP pointer (primary source, falls back to OCR)
+    hp_pointer_address_hex: str = ""
+    hp_source: str = "ocr"  # 'pointer' or 'ocr'
+    hp_value: int | None = None  # Current HP from pointer resolution (primary source)
+
+    # MP pointer (primary source, falls back to OCR)
+    mp_pointer_address_hex: str = ""
+    mp_source: str = "none"  # 'pointer', 'ocr', or 'none'
+    mp_value: float | None = None  # Current MP from pointer resolution
+
+    # Cap (Max HP) pointer (primary source, falls back to OCR)
+    cap_pointer_address_hex: str = ""
+    cap_source: str = "none"  # 'pointer', 'ocr', or 'none'
+    cap_value: float | None = None  # Current Cap from pointer resolution
+
+    # Previous OCR values for change detection in background poller (internal)
+    _prev_ocr_hp: int | None = None
+    _prev_ocr_mp: int | None = None
+    _prev_ocr_cap: int | None = None
+
+    # Resolved addresses for batch memory reads (shared across HP/MP/Cap services)
+    _mp_resolved_addr: int | None = None  # MP address resolved by MpService.attach()
+    _cap_resolved_addr: int | None = None  # Cap address resolved by CapService.attach()
 
     stats: dict[str, int] = dataclasses.field(
         default_factory=lambda: {
@@ -183,4 +223,3 @@ class AppState:
     sandbox_args: str = ""
     sandbox_drop_admin: bool = False
     sandbox_spoof_env: bool = False
-
