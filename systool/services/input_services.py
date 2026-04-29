@@ -241,7 +241,6 @@ class HumanMouse:
                     duration=corr_dur,
                     noise_scale=random.uniform(0.15, 0.30),
                     smooth=True,
-                    control_scale_override=raw_scale * random.uniform(0.6, 0.9),
                 )
 
         # --- Smooth settle to true target (no hard snap) ---
@@ -260,7 +259,6 @@ class HumanMouse:
             duration=settle_duration,
             noise_scale=random.uniform(0.08, 0.18),
             smooth=True,
-            control_scale_override=raw_scale * random.uniform(0.4, 0.7),
         )
 
     @staticmethod
