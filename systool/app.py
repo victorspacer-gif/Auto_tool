@@ -33,6 +33,7 @@ from .runtime import (
 )
 from .services import HAS_LIGHT_MODULE, HotkeyService
 from .theme import BG, BLUE, BODY, BOLD, FG, GREEN, HEADER, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
+from .ui.tabs import CharacterStatusTab, FishingTab, HealerTab, RuneTab
 
 try:
     from purecase_module import (
@@ -122,6 +123,10 @@ class SystemMonitorApp:
         self.fish_session_remaining_label: tk.Label | None = None
         self.jobs_frame: tk.Frame | None = None
         self.notebook_widget: ttk.Notebook | None = None
+        self.rune_tab_ui: RuneTab | None = None
+        self.healer_tab_ui: HealerTab | None = None
+        self.fishing_tab_ui: FishingTab | None = None
+        self.character_status_tab_ui: CharacterStatusTab | None = None
         self.tray_icon = None
         self.listener = None
 
@@ -146,6 +151,25 @@ class SystemMonitorApp:
         # Background stats polling (HP/MP/Cap pointer reads)
         self._stats_poll_timer_id: int | None = None
         self._prev_stats_values: tuple[float | None, float | None, float | None] = (None, None, None)
+
+    def _build_tab_helpers(self) -> dict[str, object]:
+        return {
+            "btn": self._btn,
+            "create_responsive_columns": self._create_responsive_columns,
+            "create_scrollable_content": self._create_scrollable_content,
+            "display_to_ms": self._display_to_ms,
+            "entry": self._entry,
+            "format_food_timer": self._format_food_timer,
+            "get_ui_int": self._get_ui_int,
+            "get_ui_ms": self._get_ui_ms,
+            "get_unit_label": self._get_unit_label,
+            "label_entry": self._label_entry,
+            "monotonic": time.monotonic,
+            "ms_to_display": self._ms_to_display,
+            "register_module_indicator": self._register_module_indicator,
+            "select_region": self._select_region,
+            "set_stat_label": self._set_stat_label,
+        }
 
     def run(self) -> None:
         self.build_ui()
@@ -176,7 +200,8 @@ class SystemMonitorApp:
         self._start_global_hotkeys()
         self._poll_settings()
         self._refresh_stats()
-        self._refresh_character_status_display()
+        if self.character_status_tab_ui:
+            self.character_status_tab_ui.refresh_display()
         self._refresh_variables_display()
         # Start background stats polling (100ms interval, UI-only-on-change)
         self._start_stats_polling()
@@ -282,14 +307,40 @@ class SystemMonitorApp:
         notebook.add(hotkeys_tab, text="⌨️  Hotkeys")
         notebook.add(config_tab, text="💾  Config")
 
+        tab_helpers = self._build_tab_helpers()
+
         self._build_automation_tab(automation_tab)
-        self._build_rune_tab(rune_tab)
-        self._build_healer_tab(healer_tab)
+        self.rune_tab_ui = RuneTab(
+            rune_tab,
+            self.runtime,
+            {"position_capture": self.position_capture, "rune_service": self.rune_service},
+            tab_helpers,
+            self.ui_vars,
+        )
+        self.healer_tab_ui = HealerTab(
+            healer_tab,
+            self.runtime,
+            {"healer_service": self.healer_service, "position_capture": self.position_capture},
+            tab_helpers,
+            self.ui_vars,
+        )
         self._build_light_tab(light_tab)
         self._build_alarm_tab(alarm_tab)
-        self._build_character_status_tab(char_status_tab)
+        self.character_status_tab_ui = CharacterStatusTab(
+            char_status_tab,
+            self.runtime,
+            {"char_status_service": self.char_status_service},
+            tab_helpers,
+            self.ui_vars,
+        )
         self._build_variables_tab(variables_tab)
-        self._build_fish_tab(fish_tab)
+        self.fishing_tab_ui = FishingTab(
+            fish_tab,
+            self.runtime,
+            {"fishing_service": self.fishing_service, "position_capture": self.position_capture},
+            tab_helpers,
+            self.ui_vars,
+        )
         self._build_hotkeys_tab(hotkeys_tab)
         self._build_config_tab(config_tab)
 
@@ -1858,7 +1909,8 @@ class SystemMonitorApp:
         if path:
             self.runtime.state.char_status_tesseract_path = path
             self.ui_vars["char_status_tesseract_var"].set(path)
-            self._refresh_character_status_display()
+            if self.character_status_tab_ui:
+                self.character_status_tab_ui.refresh_display()
 
     def attach_light_process(self) -> None:
         ok, message = self.light_service.attach()
@@ -1937,7 +1989,8 @@ class SystemMonitorApp:
                 self.runtime.ui.set_status(f"Screen watch area: {text}", TEAL)
                 return
 
-            self._refresh_character_status_display()
+            if self.character_status_tab_ui:
+                self.character_status_tab_ui.refresh_display()
             if state_attr == "char_status_region":
                 self.runtime.ui.log(f"✅ Character status window selected: {region}")
                 self.runtime.ui.set_status("Character status window selected", TEAL)
@@ -2101,31 +2154,21 @@ class SystemMonitorApp:
         self._refresh_all_module_indicators_from_state()
         if self.pos_label:
             self.pos_label.config(text=f"Pos: {state.rclick_pos[0]}, {state.rclick_pos[1]}")
-        if self.rod_label:
-            self.rod_label.config(text=f"Rod: {state.fish_rod_pos[0]}, {state.fish_rod_pos[1]}")
-        if self.rune_hand_label:
-            self.rune_hand_label.config(text=f"Hand slot: {state.rune_hand_pos[0]},{state.rune_hand_pos[1]}")
-        if self.rune_storage_label:
-            self.rune_storage_label.config(text=f"Finished storage pos: {state.rune_storage_pos[0]},{state.rune_storage_pos[1]}")
-        if self.rune_blank_label:
-            self.rune_blank_label.config(text=f"Blank rune backpack pos: {state.rune_blank_pos[0]},{state.rune_blank_pos[1]}")
-        if self.healer_char_label:
-            self.healer_char_label.config(text=f"Character center: {state.healer_character_pos[0]}, {state.healer_character_pos[1]}")
-        if self.healer_rune_label:
-            self.healer_rune_label.config(text=f"Healing rune: {state.healer_rune_pos[0]}, {state.healer_rune_pos[1]}")
+        if self.rune_tab_ui:
+            self.rune_tab_ui.refresh_from_state()
+        if self.healer_tab_ui:
+            self.healer_tab_ui.refresh_from_state()
         if self.alarm_region_label:
             if state.alarm_region:
                 x_val, y_val, width, height = state.alarm_region
                 self.alarm_region_label.config(text=f"Area: ({x_val},{y_val}) {width}×{height} px")
             else:
                 self.alarm_region_label.config(text="Area: centre 200×200 px (default)")
-        self._refresh_character_status_display()
+        if self.character_status_tab_ui:
+            self.character_status_tab_ui.refresh_display()
         self._refresh_variables_display()
-        if self.spots_listbox:
-            self.spots_listbox.delete(0, "end")
-            for index, spot in enumerate(state.fish_spots, start=1):
-                self.spots_listbox.insert("end", f"#{index}  {spot[0]},{spot[1]}")
-        self._refresh_fish_session_display()
+        if self.fishing_tab_ui:
+            self.fishing_tab_ui.refresh_from_state()
         for child in list(self.jobs_frame.winfo_children()):
             child.destroy()
         for job in self.runtime.state.jobs:
@@ -2140,13 +2183,20 @@ class SystemMonitorApp:
         with self.runtime.settings_lock:
             self._poll_activity_settings(state)
             self._poll_alarm_and_status_settings(state)
-            self._poll_fishing_settings(state)
-            self._poll_rune_settings(state)
-            self._poll_healer_settings(state)
+            if self.fishing_tab_ui:
+                self.fishing_tab_ui.poll_settings(state)
+            if self.rune_tab_ui:
+                self.rune_tab_ui.poll_settings(state)
+            if self.healer_tab_ui:
+                self.healer_tab_ui.poll_settings(state)
+            if self.character_status_tab_ui:
+                self.character_status_tab_ui.poll_settings(state)
             self._poll_light_settings(state)
         self._refresh_all_module_indicators_from_state()
-        self._refresh_character_status_display()
-        self._refresh_fish_session_display()
+        if self.character_status_tab_ui:
+            self.character_status_tab_ui.refresh_display()
+        if self.fishing_tab_ui:
+            self.fishing_tab_ui.refresh_session_display()
         if schedule_next:
             self.root.after(500, self._poll_settings)
 
@@ -2185,67 +2235,10 @@ class SystemMonitorApp:
         state.alarm_hp_value = max(0, self._get_ui_int("alarm_hp_value_var", state.alarm_hp_value))
         state.alarm_mp_value = max(0, self._get_ui_int("alarm_mp_value_var", state.alarm_mp_value))
         state.alarm_cap_value = max(0, self._get_ui_int("alarm_cap_value_var", state.alarm_cap_value))
-        state.char_status_poll_ms = max(250, self._get_ui_ms("char_status_poll_var", state.char_status_poll_ms))
-        state.char_status_samples = max(1, self._get_ui_int("char_status_samples_var", state.char_status_samples))
-        state.char_status_sample_delay_ms = max(0, self._get_ui_ms("char_status_sample_delay_var", state.char_status_sample_delay_ms))
-        if "char_status_samples_var" not in self.ui_vars:
-            state.char_status_samples = max(1, 2000 // state.char_status_poll_ms)
         if "alarm_auto_pause_var" in self.ui_vars:
             state.alarm_auto_pause = bool(self.ui_vars["alarm_auto_pause_var"].get())
         if "alarm_mp3_var" in self.ui_vars:
             state.alarm_mp3 = str(self.ui_vars["alarm_mp3_var"].get())
-        if "char_status_tesseract_var" in self.ui_vars:
-            state.char_status_tesseract_path = str(self.ui_vars["char_status_tesseract_var"].get()).strip()
-
-    def _poll_fishing_settings(self, state) -> None:
-        state.fish_cast_min_ms = self._get_ui_ms("fish_cast_min_var", state.fish_cast_min_ms)
-        state.fish_cast_max_ms = self._get_ui_ms("fish_cast_max_var", state.fish_cast_max_ms)
-        state.fish_wait_min_ms = self._get_ui_ms("fish_wait_min_var", state.fish_wait_min_ms)
-        state.fish_wait_max_ms = self._get_ui_ms("fish_wait_max_var", state.fish_wait_max_ms)
-        state.fish_min_cap = max(0, self._get_ui_int("fish_min_cap_var", state.fish_min_cap))
-        state.fish_rod_jitter = self._get_ui_int("fish_rod_jit_var", state.fish_rod_jitter)
-        state.fish_spot_jitter = self._get_ui_int("fish_spot_jit_var", state.fish_spot_jitter)
-        state.fish_session_minutes = max(1, min(60, self._get_ui_int("fish_session_var", state.fish_session_minutes)))
-        if "fish_auto_restart_enabled_var" in self.ui_vars:
-            state.fish_auto_restart_enabled = bool(self.ui_vars["fish_auto_restart_enabled_var"].get())
-        if "fish_auto_restart_food_secs_var" in self.ui_vars:
-            value = self._get_ui_int("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
-            state.fish_auto_restart_food_min_secs = max(30, min(600, value))
-
-    def _poll_rune_settings(self, state) -> None:
-        if "rune_spell_key_var" in self.ui_vars:
-            state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
-        state.rune_cycle_delay_ms = self._get_ui_ms("rune_cycle_delay_var", state.rune_cycle_delay_ms)
-        state.rune_cycle_delay_variation_ms = max(0, self._get_ui_ms("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
-        state.rune_jitter = self._get_ui_int("rune_jitter_var", state.rune_jitter)
-        state.rune_cast_delay_ms = self._get_ui_ms("rune_cast_delay_var", state.rune_cast_delay_ms)
-        state.rune_post_cast_settle_ms = max(100, self._get_ui_ms("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
-        state.rune_min_mana = max(0, self._get_ui_int("rune_min_mana_var", state.rune_min_mana))
-        state.rune_max_mana = max(state.rune_min_mana, self._get_ui_int("rune_max_mana_var", state.rune_max_mana))
-        state.rune_available_blank_runes = max(0, self._get_ui_int("rune_blank_cycles_var", state.rune_available_blank_runes))
-        state.rune_mouse_move_min_ms = max(20, self._get_ui_ms("rune_move_min_var", state.rune_mouse_move_min_ms))
-        state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, self._get_ui_ms("rune_move_max_var", state.rune_mouse_move_max_ms))
-        state.rune_mouse_press_min_ms = max(10, self._get_ui_ms("rune_press_min_var", state.rune_mouse_press_min_ms))
-        state.rune_mouse_press_max_ms = max(state.rune_mouse_press_min_ms, self._get_ui_ms("rune_press_max_var", state.rune_mouse_press_max_ms))
-        state.rune_mouse_settle_min_ms = max(10, self._get_ui_ms("rune_settle_min_var", state.rune_mouse_settle_min_ms))
-        state.rune_mouse_settle_max_ms = max(state.rune_mouse_settle_min_ms, self._get_ui_ms("rune_settle_max_var", state.rune_mouse_settle_max_ms))
-
-    def _poll_healer_settings(self, state) -> None:
-        if "healer_mode_var" in self.ui_vars:
-            state.healer_mode = str(self.ui_vars["healer_mode_var"].get()).strip().lower() or "spell"
-        if "healer_spell_key_var" in self.ui_vars:
-            state.healer_spell_key = str(self.ui_vars["healer_spell_key_var"].get()).lower().strip()
-        if "healer_use_percent_var" in self.ui_vars:
-            state.healer_use_percent = bool(self.ui_vars["healer_use_percent_var"].get())
-        state.healer_hp_percent = max(1, min(100, self._get_ui_int("healer_hp_percent_var", state.healer_hp_percent)))
-        state.healer_hp_value = max(1, self._get_ui_int("healer_hp_value_var", state.healer_hp_value))
-        state.healer_min_mana = max(0, self._get_ui_int("healer_min_mana_var", state.healer_min_mana))
-        state.healer_max_mana = max(state.healer_min_mana, self._get_ui_int("healer_max_mana_var", state.healer_max_mana))
-        try:
-            state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
-        except (KeyError, ValueError):
-            pass
-        state.healer_rune_delay_ms = max(50, self._get_ui_ms("healer_rune_delay_var", state.healer_rune_delay_ms))
 
     def _poll_light_settings(self, state) -> None:
         if "light_process_name_var" in self.ui_vars:
