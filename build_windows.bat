@@ -126,10 +126,8 @@ if not defined TESSERACT_SOURCE (
     echo Install Tesseract on the build machine first, or copy it into vendor\tesseract manually.
     exit /b 1
 )
-mkdir vendor\tesseract\tessdata >nul 2>nul
-robocopy "%TESSERACT_SOURCE%" "vendor\tesseract" tesseract.exe /NFL /NDL /NJH /NJS /NP >nul
-if errorlevel 8 exit /b 1
-robocopy "%TESSERACT_SOURCE%\tessdata" "vendor\tesseract\tessdata" *.traineddata /NFL /NDL /NJH /NJS /NP /S >nul
+mkdir vendor\tesseract >nul 2>nul
+robocopy "%TESSERACT_SOURCE%" "vendor\tesseract" /MIR /FFT /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 exit /b 1
 
 echo [6/6] Building executable with PyInstaller...
