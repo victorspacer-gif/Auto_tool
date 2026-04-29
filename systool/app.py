@@ -1836,13 +1836,56 @@ class SystemMonitorApp:
             state.light_freeze_enabled,
         ))
 
+    def resolve_tray_icon(self) -> tuple[int, int, int]:
+        """Resolve the tray icon color using a deterministic priority system.
+
+        Priority (highest → lowest):
+            1. Stopped (Red)     — no modules running at all
+            2. Paused   (Yellow) — paused overrides everything except stopped
+            3. Fishing  (Blue)   — fishing active while running
+            4. Running  (Green)  — any other module running
+
+        Rules:
+            - If state == stopped → ALWAYS red (override everything)
+            - Else if paused     → ALWAYS yellow (override everything except stopped)
+            - Else if fishing    → blue
+            - Else               → green
+        """
+        state = self.runtime.state
+        paused = self.runtime.pause.paused
+        fishing_active = state.fish_active
+
+        # Priority 1: Stopped — no modules running at all
+        has_any_module = self._has_running_modules()
+        if not has_any_module and not paused:
+            color = (239, 68, 68)  # Red — stopped
+        # Priority 2: Paused overrides everything except stopped
+        elif paused:
+            color = (255, 191, 0)   # Yellow — paused
+        # Priority 3: Fishing active while running → blue
+        elif fishing_active:
+            color = (10, 132, 255)  # Blue — fishing active
+        # Priority 4: Running with other modules → green
+        else:
+            color = (48, 209, 88)   # Green — running
+
+        logger.debug(
+            "Tray icon resolved → state=%s paused=%s fish_active=%s has_modules=%s → RGB%s",
+            "running" if has_any_module else "idle",
+            paused,
+            fishing_active,
+            has_any_module,
+            color,
+        )
+        return color
+
     def _get_tray_color(self) -> tuple[int, int, int]:
-        """Determine the tray icon color based on current application state."""
-        if self.runtime.pause.paused:
-            return (255, 191, 0)
-        if self._has_running_modules():
-            return (48, 209, 88)
-        return (239, 68, 68)
+        """Determine the tray icon color based on current application state.
+
+        Deprecated — use ``resolve_tray_icon()`` instead. Kept for backward
+        compatibility with any code that may reference this method directly.
+        """
+        return self.resolve_tray_icon()
 
     def _update_tray_icon(self) -> None:
         """Update the system tray icon to reflect current application state."""
