@@ -45,6 +45,131 @@ from ..constants import (
 )
 from ..theme import GREEN, ORANGE, RED
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers (not part of the public API)
+# ---------------------------------------------------------------------------
+
+def _curve_move(
+    mouse,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    duration: float,
+    *,
+    noise_scale: float = 1.0,
+    smooth: bool = False,
+    control_scale_override: float | None = None,
+    easing_mode: str = "ballistic",
+) -> None:
+    """Execute a single Bézier-curve mouse movement from *start* to *end*.
+
+    Reuses the original quadratic-Bézier math with easing and fading jitter.
+
+    Parameters
+    ----------
+    noise_scale : float
+        Scales jitter intensity (1.0 = original, < 1.0 = smoother).
+    smooth : bool
+        When True, reduces control-point randomness and noise for a cleaner arc.
+    control_scale_override : float | None
+        If given, overrides the random control-scale selection.
+    easing_mode : str
+        "ballistic" → original cubic ease-out (t²·(3−2t))
+        "correction" → quadratic ease-in (t²) for slower, deliberate motion
+    """
+    sx, sy = start
+    ex, ey = end
+    dx, dy = ex - sx, ey - sy
+    distance = math.hypot(dx, dy)
+
+    if distance < 1:
+        mouse.position = (int(ex), int(ey))
+        return
+
+    steps = max(10, int(distance / 7))
+    step_duration = duration / steps
+
+    # Control point — perpendicular offset from midpoint
+    if smooth:
+        # Reduced randomness for smoother curves
+        raw_scale = random.uniform(*INPUT_CONTROL_SCALE_RANGE) * 0.45
+    else:
+        raw_scale = (
+            control_scale_override
+            if control_scale_override is not None
+            else random.uniform(*INPUT_CONTROL_SCALE_RANGE)
+        )
+
+    cx = (sx + ex) / 2 + (-dy / distance) * raw_scale
+    cy = (sy + ey) / 2 + (dx / distance) * raw_scale
+
+    # Easing function selection
+    if easing_mode == "correction":
+        # Quadratic ease-in: slower start, builds up speed
+        def _easing(t):
+            return t * t
+    else:
+        # Original cubic ease-out
+        def _easing(t):
+            return t * t * (3.0 - 2.0 * t)
+
+    for index in range(steps):
+        t_value = index / steps
+        eased = _easing(t_value)
+
+        x_pos = (1 - eased) ** 2 * sx + 2 * (1 - eased) * eased * cx + eased**2 * ex
+        y_pos = (1 - eased) ** 2 * sy + 2 * (1 - eased) * eased * cy + eased**2 * ey
+
+        # Fading jitter — less noise near the end of movement
+        fade = 1.0 - t_value
+        x_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade * noise_scale
+        y_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade * noise_scale
+
+        mouse.position = (int(x_pos), int(y_pos))
+        time.sleep(step_duration)
+
+
+def _apply_target_error(
+    sx: float, sy: float, ex: float, ey: float, distance: float
+) -> tuple[float, float, str]:
+    """Decide whether to introduce overshoot / undershoot on the target.
+
+    Returns (tx, ty, error_type) where *error_type* is one of:
+        "none", "overshoot", "undershoot"
+
+    Short distances (< 50 px) are strongly biased toward no error so that
+    tiny movements remain clean and direct.
+    """
+    # Bias toward "none" for short distances
+    if distance < 50:
+        none_chance = min(0.92, 0.7 + (distance / 50) * 0.14)
+    else:
+        none_chance = 0.6
+
+    roll = random.random()
+
+    if roll < 0.20:
+        # Overshoot: 20-35% probability overall
+        factor = 1.02 + (distance / 500) * 0.06  # scales with distance, capped ~1.08
+        tx = sx + (ex - sx) * factor
+        ty = sy + (ey - sy) * factor
+        return (tx, ty, "overshoot")
+
+    if roll < 0.35:
+        # Undershoot: 10-20% probability overall
+        factor = 0.92 + random.random() * 0.06  # ~0.92–0.98
+        tx = sx + (ex - sx) * factor
+        ty = sy + (ey - sy) * factor
+        return (tx, ty, "undershoot")
+
+    # None: majority of the time
+    return (ex, ey, "none")
+
+
+# ---------------------------------------------------------------------------
+# Public API — HumanMouse
+# ---------------------------------------------------------------------------
+
 class HumanMouse:
     @staticmethod
     def jitter(pos: tuple[int, int], amount: int) -> tuple[int, int]:
@@ -59,26 +184,57 @@ class HumanMouse:
         ex, ey = target
         dx, dy = ex - sx, ey - sy
         distance = math.hypot(dx, dy)
+
         if distance < 1:
             mouse.position = (int(ex), int(ey))
             return
+
+        # --- Phase 0 — Optional reaction delay (20–120 ms) ---
+        time.sleep(random.uniform(0.020, 0.120))
+
         if duration is None:
             duration = max(INPUT_MOUSE_DURATION_MIN, min(INPUT_MOUSE_DURATION_MAX, distance / random.uniform(INPUT_MOUSE_SPEED_DIVISOR_MIN, INPUT_MOUSE_SPEED_DIVISOR_MAX)))
-        steps = max(10, int(distance / 7))
-        control_scale = random.uniform(*INPUT_CONTROL_SCALE_RANGE)
-        cx = (sx + ex) / 2 + (-dy / distance) * control_scale
-        cy = (sy + ey) / 2 + (dx / distance) * control_scale
-        step_duration = duration / steps
-        for index in range(steps):
-            t_value = index / steps
-            eased = t_value * t_value * (3.0 - 2.0 * t_value)
-            x_pos = (1 - eased) ** 2 * sx + 2 * (1 - eased) * eased * cx + eased**2 * ex
-            y_pos = (1 - eased) ** 2 * sy + 2 * (1 - eased) * eased * cy + eased**2 * ey
-            fade = 1.0 - t_value
-            x_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade
-            y_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade
-            mouse.position = (int(x_pos), int(y_pos))
-            time.sleep(step_duration)
+
+        # --- Phase 1 — Ballistic movement with possible target error ---
+        err_ex, err_ey, error_type = _apply_target_error(sx, sy, ex, ey, distance)
+
+        ballistic_duration = duration * random.uniform(0.75, 0.90)
+        _curve_move(
+            mouse,
+            start=(sx, sy),
+            end=(int(err_ex), int(err_ey)),
+            duration=ballistic_duration,
+            noise_scale=1.0,
+            smooth=False,
+            easing_mode="ballistic",
+        )
+
+        # --- Phase 2 — Correction phase (only if error was introduced) ---
+        if error_type != "none":
+            correction_count = random.randint(1, 3)
+            remaining_duration = duration - ballistic_duration
+
+            for _ci in range(correction_count):
+                cur_x, cur_y = mouse.position
+                corr_dist = math.hypot(ex - cur_x, ey - cur_y)
+                if corr_dist < 1:
+                    break
+
+                # Each correction gets a fraction of the remaining time
+                corr_dur = max(0.02, remaining_duration * random.uniform(0.08, 0.18))
+                remaining_duration -= corr_dur
+
+                _curve_move(
+                    mouse,
+                    start=(cur_x, cur_y),
+                    end=(int(ex), int(ey)),
+                    duration=corr_dur,
+                    noise_scale=random.uniform(0.2, 0.4),
+                    smooth=True,
+                    easing_mode="correction",
+                )
+
+        # --- Final snap to true target ---
         mouse.position = (int(ex), int(ey))
 
     @staticmethod
