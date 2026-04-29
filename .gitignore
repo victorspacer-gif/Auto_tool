@@ -48,3 +48,45 @@ Thumbs.db
 *.dll
 *.so
 /Pointer_study
+
+
+# =========================
+# Vendor Files
+# =========================
+vendor/tesseract/*.exe
+vendor/tesseract/*.dll
+vendor/tesseract/doc/AUTHORS
+vendor/tesseract/doc/LICENSE
+vendor/tesseract/doc/README.md
+vendor/tesseract/tessdata/configs/alto
+vendor/tesseract/tessdata/configs/ambigs.train
+vendor/tesseract/tessdata/configs/api_config
+vendor/tesseract/tessdata/configs/bigram
+vendor/tesseract/tessdata/configs/box.train
+vendor/tesseract/tessdata/configs/box.train.stderr
+vendor/tesseract/tessdata/configs/digits
+vendor/tesseract/tessdata/configs/get.images
+vendor/tesseract/tessdata/configs/hocr
+vendor/tesseract/tessdata/configs/inter
+vendor/tesseract/tessdata/configs/kannada
+vendor/tesseract/tessdata/configs/linebox
+vendor/tesseract/tessdata/configs/logfile
+vendor/tesseract/tessdata/configs/lstm.train
+vendor/tesseract/tessdata/configs/lstmbox
+vendor/tesseract/tessdata/configs/lstmdebug
+vendor/tesseract/tessdata/configs/makebox
+vendor/tesseract/tessdata/configs/page
+vendor/tesseract/tessdata/configs/pdf
+vendor/tesseract/tessdata/configs/quiet
+vendor/tesseract/tessdata/configs/rebox
+vendor/tesseract/tessdata/configs/strokewidth
+vendor/tesseract/tessdata/configs/tsv
+vendor/tesseract/tessdata/configs/txt
+vendor/tesseract/tessdata/configs/unlv
+vendor/tesseract/tessdata/configs/wordstrbox
+vendor/tesseract/tessdata/tessconfigs/batch
+vendor/tesseract/tessdata/tessconfigs/batch.nochop
+vendor/tesseract/tessdata/tessconfigs/matdemo
+vendor/tesseract/tessdata/tessconfigs/msdemo
+vendor/tesseract/tessdata/tessconfigs/nobatch
+vendor/tesseract/tessdata/tessconfigs/segdemo
