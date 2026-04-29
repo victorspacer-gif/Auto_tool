@@ -439,10 +439,10 @@ class SystemMonitorApp:
         self.rclick_food_mode_container.pack(fill="x")
         self.rclick_food_mode_rows = [
             self._label_entry(self.rclick_food_mode_container, "Min food timer (minutes):", rclick_food_min, width=6),
-            self._label_entry(self.rclick_food_mode_container, "Burst clicks min:", rclick_food_burst_count_min, width=6),
-            self._label_entry(self.rclick_food_mode_container, "Burst clicks max:", rclick_food_burst_count_max, width=6),
-            self._label_entry(self.rclick_food_mode_container, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6),
         ]
+        self._label_entry(panel, "Burst clicks min:", rclick_food_burst_count_min, width=6)
+        self._label_entry(panel, "Burst clicks max:", rclick_food_burst_count_max, width=6)
+        self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
         self.rclick_food_mode_anchor = self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
         self._label_entry(panel, f"Click delay max ({unit}):", click_delay_max, width=6)
         self._label_entry(panel, f"Post-click settle ({unit}):", post_settle, width=6)
