@@ -388,7 +388,7 @@ def configure_tesseract_runtime(tesseract_cmd: str) -> None:
     tesseract_dir = os.path.dirname(os.path.abspath(tesseract_cmd))
     tessdata_dir = os.path.join(tesseract_dir, "tessdata")
     if os.path.isdir(tessdata_dir):
-        os.environ["TESSDATA_PREFIX"] = tessdata_dir
+        os.environ["TESSDATA_PREFIX"] = tesseract_dir
     path_entries = os.environ.get("PATH", "").split(os.pathsep)
     if tesseract_dir not in path_entries:
         os.environ["PATH"] = tesseract_dir + os.pathsep + os.environ.get("PATH", "")
