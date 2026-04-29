@@ -46,6 +46,9 @@ class TestExecutionGateFIFO:
             daemon=True,
         )
 
+        # Unpause so threads can acquire the execution gate
+        runtime.pause.toggle()
+
         first.start()
         assert first_granted.wait(timeout=2.0)
 
@@ -102,6 +105,9 @@ class TestExecutionGateFIFO:
 
         fishing = threading.Thread(target=fishing_worker, daemon=True)
         rune = threading.Thread(target=rune_worker, daemon=True)
+
+        # Unpause so threads can acquire the execution gate
+        runtime.pause.toggle()
 
         fishing.start()
         assert fishing_first_granted.wait(timeout=2.0)

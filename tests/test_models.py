@@ -25,8 +25,8 @@ class TestHotkeyJobDefaults:
         job = HotkeyJob(job_id=1)
         assert job.burst_enabled is False
         assert job.burst_chance == 0.20
-        assert job.burst_cnt_min == 3
-        assert job.burst_cnt_max == 8
+        assert job.burst_cnt_min == 2
+        assert job.burst_cnt_max == 4
         assert job.burst_int_ms == 80
 
     def test_focus_defaults(self):
@@ -117,12 +117,12 @@ class TestAppStateDefaults:
         state = AppState()
         assert state.fish_rod_pos == (0, 0)
         assert state.fish_session_minutes == 10
-        assert state.fish_min_cap == 0
+        assert state.fish_min_cap == 10
 
     def test_rune_defaults(self):
         state = AppState()
         assert state.rune_spell_key == "f1"
-        assert state.rune_cycle_delay_ms == 5_000
+        assert state.rune_cycle_delay_ms == 18_000
         assert state.rune_hand_pos == (0, 0)
 
     def test_healer_defaults(self):
