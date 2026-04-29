@@ -85,6 +85,10 @@ try:
 
     pygame.mixer.pre_init(44100, -16, 2, 512)
     pygame.mixer.init()
+    # Mute all channels to prevent white noise / feedback on init.
+    # Channels will be unmuted when a sound actually needs to play.
+    for ch in range(pygame.mixer.get_num_channels()):
+        pygame.mixer.Channel(ch).set_volume(0.0)
     HAS_PYGAME = True
 except Exception as exc:
     pygame = None

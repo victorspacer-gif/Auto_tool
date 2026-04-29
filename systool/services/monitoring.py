@@ -574,6 +574,7 @@ class AlarmService:
         def play() -> None:
             try:
                 if HAS_PYGAME:
+                    pygame.mixer.music.set_volume(1.0)
                     pygame.mixer.music.load(path)
                     pygame.mixer.music.play()
                 else:
