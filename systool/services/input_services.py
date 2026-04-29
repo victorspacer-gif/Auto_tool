@@ -211,27 +211,37 @@ class HumanMouse:
 
         # --- Phase 2 — Correction phase (only if error was introduced) ---
         if error_type != "none":
-            correction_count = random.randint(1, 3)
-            remaining_duration = duration - ballistic_duration
+            # Allocate a dedicated correction budget: 30–50% of total duration.
+            # This is separate from the ballistic time so corrections feel deliberate,
+            # not rushed into whatever milliseconds are left over.
+            correction_budget = duration * random.uniform(0.30, 0.50)
 
+            correction_count = random.randint(1, 2)  # fewer corrections, longer each
             for _ci in range(correction_count):
                 cur_x, cur_y = mouse.position
                 corr_dist = math.hypot(ex - cur_x, ey - cur_y)
                 if corr_dist < 1:
                     break
 
-                # Each correction gets a fraction of the remaining time
-                corr_dur = max(0.02, remaining_duration * random.uniform(0.08, 0.18))
-                remaining_duration -= corr_dur
+                # Each correction gets a generous slice of the dedicated budget.
+                # First correction takes more (it's bigger), subsequent ones taper off.
+                share = random.uniform(0.55, 0.75) if _ci == 0 else random.uniform(0.30, 0.50)
+                corr_dur = max(0.06, correction_budget * share)
+                correction_budget -= corr_dur
+
+                # Micro-pause between corrections — humans don't correct instantly;
+                # there's a brief processing delay (~15–40 ms) before the next adjustment.
+                if _ci > 0:
+                    time.sleep(random.uniform(0.015, 0.040))
 
                 _curve_move(
                     mouse,
                     start=(cur_x, cur_y),
                     end=(int(ex), int(ey)),
                     duration=corr_dur,
-                    noise_scale=random.uniform(0.2, 0.4),
+                    noise_scale=random.uniform(0.15, 0.30),
                     smooth=True,
-                    easing_mode="correction",
+                    control_scale_override=raw_scale * random.uniform(0.6, 0.9),
                 )
 
         # --- Smooth settle to true target (no hard snap) ---
@@ -240,16 +250,17 @@ class HumanMouse:
         if settle_dist < 1:
             return
 
-        # Use a fraction of the remaining correction budget for a gentle final approach
-        settle_duration = max(0.03, (duration - ballistic_duration) * random.uniform(0.5, 0.8))
+        # Gentle final approach — slow and deliberate, using a fraction of the
+        # original duration so it never feels rushed.
+        settle_duration = max(0.05, duration * random.uniform(0.10, 0.20))
         _curve_move(
             mouse,
             start=(cur_x, cur_y),
             end=(int(ex), int(ey)),
             duration=settle_duration,
-            noise_scale=random.uniform(0.1, 0.25),
+            noise_scale=random.uniform(0.08, 0.18),
             smooth=True,
-            easing_mode="correction",
+            control_scale_override=raw_scale * random.uniform(0.4, 0.7),
         )
 
     @staticmethod
