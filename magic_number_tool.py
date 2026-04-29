@@ -66,32 +66,44 @@ SAFE_LITERAL_TYPES = (int, float)
 
 @dataclass
 class MagicNumberFinding:
-    file: str
-    line: int
+    file_path: str
+    class_name: str
+    variable_name: str
     value: int | float
-    suggested_name: str
+    value_type: str
+    line_number: int
     category: str
     confidence: float
     context: str
     editable: bool = False
-    symbol: str | None = None
     unsafe_edit: bool = False
+
+    @property
+    def display_name(self) -> str:
+        if self.class_name == "module_level":
+            return self.variable_name
+        return f"{self.class_name}.{self.variable_name}"
+
+    @property
+    def identifier_key(self) -> tuple[str, str, str]:
+        return (self.file_path, self.class_name, self.variable_name)
 
     def to_report(self) -> dict[str, Any]:
         return {
-            "file": self.file,
-            "line": self.line,
+            "file_path": self.file_path,
+            "class_name": self.class_name,
+            "variable_name": self.variable_name,
             "value": self.value,
-            "suggested_name": self.suggested_name,
-            "category": self.category,
-            "confidence": round(self.confidence, 2),
+            "type": self.value_type,
+            "line_number": self.line_number,
         }
 
 
 @dataclass
 class EditableAssignment:
     file_path: Path
-    symbol: str
+    class_name: str
+    variable_name: str
     value: int | float
     value_type: type[int] | type[float]
     line_no: int
@@ -101,8 +113,14 @@ class EditableAssignment:
     unsafe: bool = False
 
     @property
-    def file_key(self) -> str:
-        return self.file_path.as_posix()
+    def identifier_key(self) -> tuple[str, str, str]:
+        return (self.file_path.as_posix(), self.class_name, self.variable_name)
+
+    @property
+    def display_name(self) -> str:
+        if self.class_name == "module_level":
+            return self.variable_name
+        return f"{self.class_name}.{self.variable_name}"
 
 
 class _ParentAwareVisitor(ast.NodeVisitor):
@@ -162,10 +180,13 @@ class _ParentAwareVisitor(ast.NodeVisitor):
 
         category = self._classify_assignment_category(value)
         is_unsafe = not is_safe_assignment
+        class_name = self._owner_class_name(node)
+        value_type = "float" if isinstance(value.value, float) else "int"
         self.editable_assignments.append(
             EditableAssignment(
                 file_path=self.path,
-                symbol=target.id,
+                class_name=class_name,
+                variable_name=target.id,
                 value=value.value,
                 value_type=float if isinstance(value.value, float) else int,
                 line_no=value.lineno,
@@ -177,15 +198,16 @@ class _ParentAwareVisitor(ast.NodeVisitor):
         )
         self.findings.append(
             MagicNumberFinding(
-                file=self.path.as_posix(),
-                line=value.lineno,
+                file_path=self.path.as_posix(),
+                class_name=class_name,
+                variable_name=target.id,
                 value=value.value,
-                suggested_name=target.id,
+                value_type=value_type,
+                line_number=value.lineno,
                 category=category,
                 confidence=0.99,
                 context=self._line_text(value.lineno),
                 editable=True,
-                symbol=target.id,
                 unsafe_edit=is_unsafe,
             )
         )
@@ -194,12 +216,15 @@ class _ParentAwareVisitor(ast.NodeVisitor):
         category, confidence = self._classify_literal(node)
         if category == "DERIVED" and confidence < 0.75:
             return
+        value_type = "float" if isinstance(node.value, float) else "int"
         self.findings.append(
             MagicNumberFinding(
-                file=self.path.as_posix(),
-                line=node.lineno,
+                file_path=self.path.as_posix(),
+                class_name=self._owner_class_name(node),
+                variable_name=self._suggest_name(node),
                 value=node.value,
-                suggested_name=self._suggest_name(node),
+                value_type=value_type,
+                line_number=node.lineno,
                 category=category,
                 confidence=confidence,
                 context=self._line_text(node.lineno),
@@ -298,6 +323,14 @@ class _ParentAwareVisitor(ast.NodeVisitor):
             return func.attr
         return ""
 
+    def _owner_class_name(self, node: ast.AST) -> str:
+        current = self.parents.get(node)
+        while current is not None:
+            if isinstance(current, ast.ClassDef):
+                return current.name
+            current = self.parents.get(current)
+        return "module_level"
+
     def _line_text(self, line_no: int) -> str:
         return self.lines[line_no - 1] if 0 < line_no <= len(self.lines) else ""
 
@@ -326,8 +359,8 @@ def scan_project(
         visitor.visit(tree)
         findings.extend(visitor.findings)
         editable.extend(visitor.editable_assignments)
-    findings.sort(key=lambda item: (item.file, item.line, item.suggested_name))
-    editable.sort(key=lambda item: (item.unsafe, item.category, item.symbol))
+    findings.sort(key=lambda item: (item.file_path, item.class_name, item.line_number, item.variable_name))
+    editable.sort(key=lambda item: (item.unsafe, item.file_path.as_posix(), item.class_name, item.category, item.variable_name))
     return findings, editable
 
 
@@ -349,12 +382,12 @@ def parse_numeric_value(raw: str, expected_type: type[int] | type[float]) -> int
 
 
 def apply_assignment_updates(
-    updates: dict[tuple[str, str], int | float],
+    updates: dict[tuple[str, str, str], int | float],
     dry_run: bool = False,
     include_unsafe_editable: bool = False,
 ) -> dict[str, list[str]]:
     _findings, editable = scan_project(include_unsafe_editable=include_unsafe_editable)
-    editable_map = {(item.file_key, item.symbol): item for item in editable}
+    editable_map = {item.identifier_key: item for item in editable}
     file_changes: dict[Path, list[EditableAssignment]] = {}
     for key, value in updates.items():
         assignment = editable_map.get(key)
@@ -399,9 +432,9 @@ class MagicNumberEditor(tk.Tk):
         self.include_unsafe_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready")
         self.summary_var = tk.StringVar(value="")
-        self.change_vars: dict[tuple[str, str], tk.StringVar] = {}
-        self.original_values: dict[tuple[str, str], str] = {}
-        self.value_types: dict[tuple[str, str], type[int] | type[float]] = {}
+        self.change_vars: dict[tuple[str, str, str], tk.StringVar] = {}
+        self.original_values: dict[tuple[str, str, str], str] = {}
+        self.value_types: dict[tuple[str, str, str], type[int] | type[float]] = {}
         self._search_after_id: str | None = None
 
         self._build()
@@ -421,6 +454,7 @@ class MagicNumberEditor(tk.Tk):
             command=self.reload,
         ).pack(side="left", padx=(0, 12))
         ttk.Button(toolbar, text="Reload Scan", command=self.reload).pack(side="left")
+        ttk.Button(toolbar, text="Generate Report", command=self.generate_report).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Export JSON", command=self.export_report).pack(side="left", padx=8)
         ttk.Button(toolbar, text="Preview Save", command=self.preview_save).pack(side="left")
         ttk.Button(toolbar, text="Save Changes", command=self.save_changes).pack(side="left", padx=(8, 0))
@@ -431,14 +465,15 @@ class MagicNumberEditor(tk.Tk):
         findings_frame = tk.LabelFrame(self, text="Detected Values", padx=8, pady=8)
         findings_frame.pack(fill="both", expand=True, padx=12, pady=(8, 10))
 
-        columns = ("category", "name", "value", "current", "origin", "line", "confidence", "edit_mode")
+        columns = ("category", "name", "value", "type", "current", "origin", "line", "confidence", "edit_mode")
         self.tree = ttk.Treeview(findings_frame, columns=columns, show="headings")
         widths = {
             "category": 130,
-            "name": 290,
-            "value": 110,
+            "name": 250,
+            "value": 100,
+            "type": 70,
             "current": 110,
-            "origin": 380,
+            "origin": 360,
             "line": 60,
             "confidence": 90,
             "edit_mode": 100,
@@ -474,7 +509,7 @@ class MagicNumberEditor(tk.Tk):
         self.change_vars.clear()
         self.value_types.clear()
         for item in self.editable:
-            key = (item.file_key, item.symbol)
+            key = item.identifier_key
             self.original_values[key] = str(item.value)
             self.change_vars[key] = tk.StringVar(value=str(item.value))
             self.value_types[key] = item.value_type
@@ -491,6 +526,12 @@ class MagicNumberEditor(tk.Tk):
             )
         )
         self.status_var.set("Scan complete.")
+
+    def generate_report(self) -> None:
+        self.reload()
+        path = write_report(REPORT_FILE, self.findings)
+        self.status_var.set(f"Report generated at {path}")
+        messagebox.showinfo("Report generated", f"Regenerated report and refreshed the UI:\n{path}")
 
     def export_report(self) -> None:
         path = write_report(REPORT_FILE, self.findings)
@@ -521,16 +562,17 @@ class MagicNumberEditor(tk.Tk):
         self.tree.delete(*self.tree.get_children())
         for finding in self.findings:
             current = ""
-            if finding.symbol:
-                key = (finding.file, finding.symbol)
-                var = self.change_vars.get(key)
+            if finding.editable:
+                var = self.change_vars.get(finding.identifier_key)
                 current = var.get() if var else ""
             if not self._matches_query(
                 finding.category,
-                finding.suggested_name,
+                finding.display_name,
                 finding.value,
+                finding.value_type,
                 current,
-                finding.file,
+                finding.file_path,
+                finding.class_name,
                 finding.context,
                 "unsafe" if finding.unsafe_edit else "safe",
             ):
@@ -540,11 +582,12 @@ class MagicNumberEditor(tk.Tk):
                 "end",
                 values=(
                     finding.category,
-                    finding.suggested_name,
+                    finding.display_name,
                     finding.value,
+                    finding.value_type,
                     current,
-                    finding.file,
-                    finding.line,
+                    finding.file_path,
+                    finding.line_number,
                     f"{finding.confidence:.2f}",
                     "unsafe" if finding.unsafe_edit else "safe",
                 ),
@@ -556,9 +599,18 @@ class MagicNumberEditor(tk.Tk):
 
         grouped: dict[str, list[EditableAssignment]] = defaultdict(list)
         for item in self.editable:
-            key = (item.file_key, item.symbol)
+            key = item.identifier_key
             current = self.change_vars[key].get()
-            if not self._matches_query(item.category, item.symbol, item.value, current, item.file_path.name, item.file_path.as_posix()):
+            if not self._matches_query(
+                item.category,
+                item.display_name,
+                item.variable_name,
+                item.class_name,
+                item.value,
+                current,
+                item.file_path.name,
+                item.file_path.as_posix(),
+            ):
                 continue
             grouped[item.category].append(item)
 
@@ -583,8 +635,8 @@ class MagicNumberEditor(tk.Tk):
                 ).grid(row=row, column=0, sticky="w", pady=(0, 6))
                 row += 1
                 for item in items:
-                    key = (item.file_key, item.symbol)
-                    tk.Label(self.editor_frame, text=item.symbol, width=38, anchor="w").grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
+                    key = item.identifier_key
+                    tk.Label(self.editor_frame, text=item.display_name, width=38, anchor="w").grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
                     tk.Entry(self.editor_frame, textvariable=self.change_vars[key], width=16).grid(row=row, column=1, sticky="w", padx=(0, 8), pady=2)
                     tk.Label(self.editor_frame, text=f"{item.file_path.name}:{item.line_no}", width=26, anchor="w").grid(row=row, column=2, sticky="w", pady=2)
                     tk.Label(self.editor_frame, text=f"Original: {self.original_values[key]}", width=20, anchor="w").grid(row=row, column=3, sticky="w", pady=2)
@@ -593,8 +645,8 @@ class MagicNumberEditor(tk.Tk):
         if row == 0:
             tk.Label(self.editor_frame, text="No editable values match the current search.").grid(row=0, column=0, sticky="w")
 
-    def _collect_updates(self) -> dict[tuple[str, str], int | float]:
-        updates: dict[tuple[str, str], int | float] = {}
+    def _collect_updates(self) -> dict[tuple[str, str, str], int | float]:
+        updates: dict[tuple[str, str, str], int | float] = {}
         for key, variable in self.change_vars.items():
             original = self.original_values[key]
             if variable.get().strip() == original:
