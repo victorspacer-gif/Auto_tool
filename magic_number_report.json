@@ -160,6 +160,62 @@
     "confidence": 0.85
   },
   {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_cap_module/cap_profile.py",
+    "line": 14,
+    "value": 0,
+    "suggested_name": "structure_value_offset",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_hp_module/hp_profile.py",
+    "line": 14,
+    "value": 0,
+    "suggested_name": "structure_value_offset",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "line": 9,
+    "value": 0,
+    "suggested_name": "structure_value_offset",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "line": 11,
+    "value": 0,
+    "suggested_name": "signature_offset_to_base",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "line": 12,
+    "value": 215,
+    "suggested_name": "color_enabled_value",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "line": 13,
+    "value": 8,
+    "suggested_name": "default_intensity_value",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "line": 14,
+    "value": 11,
+    "suggested_name": "boosted_intensity_value",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/memory_backend.py",
     "line": 128,
     "value": 0,
@@ -177,11 +233,75 @@
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 43,
+    "value": 173,
+    "suggested_name": "VALUE_OFFSET",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 44,
+    "value": 7,
+    "suggested_name": "TORCH_ON_VALUE",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 45,
+    "value": 17,
+    "suggested_name": "TORCH_BOOST",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 48,
+    "value": 768,
+    "suggested_name": "SIGNATURE_WINDOW",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 54,
+    "value": 4,
+    "suggested_name": "FLOAT_BLOCK_MIN_COUNT",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
     "line": 89,
     "value": 561708176,
     "suggested_name": "MIRACLE_GL_RESOLVER_0X217AFC90_SESSION_SECONDARY_ALSO_VALIDATED",
     "category": "CONSTANT",
     "confidence": 0.76
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 106,
+    "value": 0.0,
+    "suggested_name": "sig_score",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 108,
+    "value": 1.0,
+    "suggested_name": "prior_score",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "line": 109,
+    "value": 0.0,
+    "suggested_name": "final_score",
+    "category": "CONSTANT",
+    "confidence": 0.99
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
@@ -209,6 +329,54 @@
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "line": 16,
+    "value": 0,
+    "suggested_name": "attempts",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "line": 17,
+    "value": 0,
+    "suggested_name": "resolves",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "line": 18,
+    "value": 0,
+    "suggested_name": "value_reads",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "line": 19,
+    "value": 0,
+    "suggested_name": "expected_value_hits",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "line": 20,
+    "value": 0,
+    "suggested_name": "signature_hits",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "line": 21,
+    "value": 0,
+    "suggested_name": "errors",
+    "category": "CONSTANT",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
     "line": 101,
     "value": 8,
     "suggested_name": "POINTER_CHAIN_RANKER_PARSER_ADD_ARGUMENT_SAMPLES_TYPE_INT",
@@ -222,6 +390,14 @@
     "suggested_name": "POINTER_CHAIN_RANKER_REPORT_RUN_RANKING_SAMPLE_COUNT_MAX",
     "category": "DEFAULT_CONFIG",
     "confidence": 0.84
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_mp_module/mp_profile.py",
+    "line": 14,
+    "value": 0,
+    "suggested_name": "structure_value_offset",
+    "category": "CONSTANT",
+    "confidence": 0.99
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/app.py",
@@ -2681,6 +2857,134 @@
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 51,
+    "value": 0,
+    "suggested_name": "hp_percent",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 52,
+    "value": 0,
+    "suggested_name": "hp_value",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 53,
+    "value": 0,
+    "suggested_name": "mp_value",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 54,
+    "value": 0,
+    "suggested_name": "cap_value",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 74,
+    "value": 0,
+    "suggested_name": "hp_peak",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 75,
+    "value": 0.0,
+    "suggested_name": "hp_regen_per_min",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 76,
+    "value": 0.0,
+    "suggested_name": "mana_regen_per_min",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 77,
+    "value": 0,
+    "suggested_name": "reads",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 78,
+    "value": 0,
+    "suggested_name": "failures",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 95,
+    "value": 0,
+    "suggested_name": "session_remaining_secs",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 97,
+    "value": 10,
+    "suggested_name": "min_cap",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 114,
+    "value": 0,
+    "suggested_name": "min_mana",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 115,
+    "value": 0,
+    "suggested_name": "max_mana",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 116,
+    "value": 0,
+    "suggested_name": "available_blank_runes",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 133,
+    "value": 20,
+    "suggested_name": "min_mana",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 134,
+    "value": 0,
+    "suggested_name": "max_mana",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
     "line": 136,
     "value": 0,
     "suggested_name": "MODELS_RUNE_POS_TUPLE_INT_INT",
@@ -2710,6 +3014,22 @@
     "suggested_name": "MODELS_RCLICK_POS_TUPLE_INT_INT",
     "category": "DEFAULT_CONFIG",
     "confidence": 0.78
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 209,
+    "value": 0,
+    "suggested_name": "light_freeze_color_value",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 210,
+    "value": 0,
+    "suggested_name": "light_freeze_intensity_value",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
@@ -2736,1828 +3056,20 @@
     "confidence": 0.78
   },
   {
+    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "line": 249,
+    "value": 0,
+    "suggested_name": "job_counter",
+    "category": "DEFAULT_CONFIG",
+    "confidence": 0.99
+  },
+  {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/runtime.py",
     "line": 310,
     "value": 0,
     "suggested_name": "RUNTIME_RETURN_BOOL_SELF_QUEUE_AND_SELF",
     "category": "DERIVED",
     "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 64,
-    "value": 0,
-    "suggested_name": "SERVICES_POS_RANDOM_RANDINT_AMOUNT_AMOUNT",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 65,
-    "value": 1,
-    "suggested_name": "SERVICES_POS_RANDOM_RANDINT_AMOUNT_AMOUNT",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 78,
-    "value": 0.12,
-    "suggested_name": "SERVICES_DURATION_MAX_MIN_DISTANCE_RANDOM_UNIFORM",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 78,
-    "value": 0.55,
-    "suggested_name": "SERVICES_DURATION_MAX_MIN_DISTANCE_RANDOM_UNIFORM",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 78,
-    "value": 900,
-    "suggested_name": "SERVICES_DURATION_MAX_MIN_DISTANCE_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 78,
-    "value": 1500,
-    "suggested_name": "SERVICES_DURATION_MAX_MIN_DISTANCE_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 80,
-    "value": 35,
-    "suggested_name": "SERVICES_CONTROL_SCALE_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 81,
-    "value": 2,
-    "suggested_name": "SERVICES_CX_SX_EX_DY_DISTANCE_CONTROL",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 82,
-    "value": 2,
-    "suggested_name": "SERVICES_CY_SY_EY_DX_DISTANCE_CONTROL",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 90,
-    "value": 0.9,
-    "suggested_name": "SERVICES_X_POS_RANDOM_UNIFORM_FADE",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 91,
-    "value": 0.9,
-    "suggested_name": "SERVICES_Y_POS_RANDOM_UNIFORM_FADE",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 103,
-    "value": 0.06,
-    "suggested_name": "SERVICES_PRESS_DELAY_RANGE_TUPLE_FLOAT_FLOAT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 103,
-    "value": 0.14,
-    "suggested_name": "SERVICES_PRESS_DELAY_RANGE_TUPLE_FLOAT_FLOAT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 104,
-    "value": 0.05,
-    "suggested_name": "SERVICES_HOLD_DELAY_RANGE_TUPLE_FLOAT_FLOAT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 104,
-    "value": 0.1,
-    "suggested_name": "SERVICES_HOLD_DELAY_RANGE_TUPLE_FLOAT_FLOAT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 105,
-    "value": 0.04,
-    "suggested_name": "SERVICES_SETTLE_DELAY_RANGE_TUPLE_FLOAT_FLOAT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 105,
-    "value": 0.09,
-    "suggested_name": "SERVICES_SETTLE_DELAY_RANGE_TUPLE_FLOAT_FLOAT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 134,
-    "value": 1,
-    "suggested_name": "SERVICES_FOR_INDEX_IN_RANGE_LEN_SELF",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 165,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_FOUND",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 170,
-    "value": 0,
-    "suggested_name": "SERVICES_FOUND_HWND",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 176,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_FOUND",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 177,
-    "value": 0,
-    "suggested_name": "SERVICES_WIN32GUI_SHOWWINDOW_FOUND_WIN32CON_SW_RESTORE",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 178,
-    "value": 0,
-    "suggested_name": "SERVICES_WIN32GUI_SETFOREGROUNDWINDOW_FOUND",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 179,
-    "value": 0.08,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 312,
-    "value": 30,
-    "suggested_name": "SERVICES_F_EVERY_MAX_SELF_RUNTIME_STATE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 329,
-    "value": 30,
-    "suggested_name": "SERVICES_DELAY_MAX_SELF_RUNTIME_STATE_LIGHT",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 329,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_DELAY_MAX_SELF_RUNTIME_STATE_LIGHT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 762,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_OCR_MANA_IS_NOT_NONE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 912,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_OCR_CAP_IS_NOT_NONE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 967,
-    "value": 0,
-    "suggested_name": "SERVICES_HOLDER_PYNPUT_MOUSE_CONTROLLER_POSITION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 978,
-    "value": 30,
-    "suggested_name": "SERVICES_CAPTURED_WAIT_TIMEOUT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 980,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_HOLDER",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 981,
-    "value": 0,
-    "suggested_name": "SERVICES_ON_DONE_HOLDER",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1029,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1039,
-    "value": 0.5,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_EXECUTION_ACQUIRE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1046,
-    "value": 0.04,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1046,
-    "value": 0.08,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1048,
-    "value": 0.03,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1048,
-    "value": 0.06,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1050,
-    "value": 0.02,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1050,
-    "value": 0.04,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1072,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_STATE_RCLICK_POS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1072,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_STATE_RCLICK_POS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1121,
-    "value": 1.0,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1127,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1127,
-    "value": 0,
-    "suggested_name": "SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1127,
-    "value": 1,
-    "suggested_name": "SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1127,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1127,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1130,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1147,
-    "value": 0.2,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1160,
-    "value": 0.5,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1173,
-    "value": 0.02,
-    "suggested_name": "SERVICES_INTER_CLICK_MAX_BURST_INTERVAL_MS",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1173,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_INTER_CLICK_MAX_BURST_INTERVAL_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1173,
-    "value": 0.08,
-    "suggested_name": "SERVICES_INTER_CLICK_MAX_BURST_INTERVAL_MS",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1175,
-    "value": 1,
-    "suggested_name": "SERVICES_MOUSE_CLICK_PYNPUT_MOUSE_BUTTON_RIGHT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1177,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_TIME_SLEEP_POST_SETTLE_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1190,
-    "value": 1.5,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1244,
-    "value": 1,
-    "suggested_name": "SERVICES_MONITOR_SCT_MONITORS",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1252,
-    "value": 1,
-    "suggested_name": "SERVICES_RETURN_TOP_REGION_LEFT_REGION_WIDTH",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1252,
-    "value": 0,
-    "suggested_name": "SERVICES_RETURN_TOP_REGION_LEFT_REGION_WIDTH",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1252,
-    "value": 2,
-    "suggested_name": "SERVICES_RETURN_TOP_REGION_LEFT_REGION_WIDTH",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1252,
-    "value": 3,
-    "suggested_name": "SERVICES_RETURN_TOP_REGION_LEFT_REGION_WIDTH",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1259,
-    "value": 0.1,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1279,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_HP_PERCENT_AND_HP_VALUE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1279,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_HP_PERCENT_AND_HP_VALUE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1284,
-    "value": 1,
-    "suggested_name": "SERVICES_STATE_STATS_ALARMS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1313,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_ALARM_HP_VALUE_AND_HP",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1317,
-    "value": 1,
-    "suggested_name": "SERVICES_STATE_STATS_ALARMS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1326,
-    "value": 0,
-    "suggested_name": "SERVICES_ELIF_ALARM_MP_VALUE_AND_MP",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1330,
-    "value": 1,
-    "suggested_name": "SERVICES_STATE_STATS_ALARMS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1339,
-    "value": 0,
-    "suggested_name": "SERVICES_ELIF_ALARM_CAP_VALUE_AND_CAP",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1343,
-    "value": 1,
-    "suggested_name": "SERVICES_STATE_STATS_ALARMS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1363,
-    "value": 1,
-    "suggested_name": "SERVICES_STATE_STATS_ALARMS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1364,
-    "value": 100,
-    "suggested_name": "SERVICES_SELF_RUNTIME_UI_LOG_F_ALARM",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1365,
-    "value": 100,
-    "suggested_name": "SERVICES_SELF_RUNTIME_UI_SET_STATUS_F",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 136,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 21,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 169,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 39,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 128,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 20,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 169,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1379,
-    "value": 41,
-    "suggested_name": "SERVICES_MANA",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 0,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 180,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 42,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 203,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 0,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 164,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 44,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1380,
-    "value": 203,
-    "suggested_name": "SERVICES_CAP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1450,
-    "value": 250,
-    "suggested_name": "SERVICES_POLL_MS_MAX_STATE_CHAR_STATUS",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1459,
-    "value": 0,
-    "suggested_name": "SERVICES_LEFT_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1460,
-    "value": 1,
-    "suggested_name": "SERVICES_TOP_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1461,
-    "value": 2,
-    "suggested_name": "SERVICES_WIDTH_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1462,
-    "value": 3,
-    "suggested_name": "SERVICES_HEIGHT_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1479,
-    "value": 1,
-    "suggested_name": "SERVICES_IF_STATE_CHAR_STATUS_SAMPLES",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1480,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_TIME_SLEEP_STATE_CHAR_STATUS_SAMPLE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1493,
-    "value": 0.5,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1511,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_SELF_RUNTIME_CHAR_STATUS_STOP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1534,
-    "value": 0,
-    "suggested_name": "SERVICES_LEFT_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1535,
-    "value": 1,
-    "suggested_name": "SERVICES_TOP_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1536,
-    "value": 2,
-    "suggested_name": "SERVICES_WIDTH_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1537,
-    "value": 3,
-    "suggested_name": "SERVICES_HEIGHT_REGION",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1555,
-    "value": 1,
-    "suggested_name": "SERVICES_IF_NOT_HISTORY_OR_HISTORY_VALUE",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1558,
-    "value": 0,
-    "suggested_name": "SERVICES_WHILE_LEN_HISTORY_AND_HISTORY_CUTOFF",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1558,
-    "value": 0,
-    "suggested_name": "SERVICES_WHILE_LEN_HISTORY_AND_HISTORY_CUTOFF",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1566,
-    "value": 1,
-    "suggested_name": "SERVICES_FOR_INDEX_IN_RANGE_LEN_HISTORY",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1567,
-    "value": 1,
-    "suggested_name": "SERVICES_DELTA_HISTORY_INDEX_HISTORY_INDEX",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1567,
-    "value": 1,
-    "suggested_name": "SERVICES_DELTA_HISTORY_INDEX_HISTORY_INDEX",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1570,
-    "value": 0,
-    "suggested_name": "SERVICES_ELAPSED_MINUTES_MAX_HISTORY_HISTORY_1E",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1570,
-    "value": 0,
-    "suggested_name": "SERVICES_ELAPSED_MINUTES_MAX_HISTORY_HISTORY_1E",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1570,
-    "value": 0,
-    "suggested_name": "SERVICES_ELAPSED_MINUTES_MAX_HISTORY_HISTORY_1E",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1596,
-    "value": 0,
-    "suggested_name": "SERVICES_AGGREGATED_KEY_COUNTER_TEXT_VALUES_MOST",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1596,
-    "value": 0,
-    "suggested_name": "SERVICES_AGGREGATED_KEY_COUNTER_TEXT_VALUES_MOST",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1612,
-    "value": 0,
-    "suggested_name": "SERVICES_BINARY_CV2_THRESHOLD_GRAY_CV2_THRESH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1612,
-    "value": 255,
-    "suggested_name": "SERVICES_BINARY_CV2_THRESHOLD_GRAY_CV2_THRESH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1615,
-    "value": 255,
-    "suggested_name": "SERVICES_ADAPTIVE_CV2_ADAPTIVETHRESHOLD_GRAY_CV2_ADAPTIVE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1615,
-    "value": 31,
-    "suggested_name": "SERVICES_ADAPTIVE_CV2_ADAPTIVETHRESHOLD_GRAY_CV2_ADAPTIVE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1615,
-    "value": 7,
-    "suggested_name": "SERVICES_ADAPTIVE_CV2_ADAPTIVETHRESHOLD_GRAY_CV2_ADAPTIVE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1638,
-    "value": 1,
-    "suggested_name": "SERVICES_FOOD_TEXT_MATCH_GROUP",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1657,
-    "value": 0,
-    "suggested_name": "SERVICES_X1_MAX_INT_ROUND_BOX_BASE",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1658,
-    "value": 1,
-    "suggested_name": "SERVICES_Y1_MAX_INT_ROUND_BOX_BASE",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1659,
-    "value": 2,
-    "suggested_name": "SERVICES_X2_MIN_FRAME_W_INT_ROUND",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1660,
-    "value": 3,
-    "suggested_name": "SERVICES_Y2_MIN_FRAME_H_INT_ROUND",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1667,
-    "value": 7,
-    "suggested_name": "SERVICES_SCALE_IF_KEY_CAP_ELSE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1667,
-    "value": 6,
-    "suggested_name": "SERVICES_SCALE_IF_KEY_CAP_ELSE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1672,
-    "value": 0,
-    "suggested_name": "SERVICES_BINARY_CV2_THRESHOLD_GRAY_CV2_THRESH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1672,
-    "value": 255,
-    "suggested_name": "SERVICES_BINARY_CV2_THRESHOLD_GRAY_CV2_THRESH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1698,
-    "value": 2,
-    "suggested_name": "SERVICES_IF_KEY_IN_HP_MANA_AND",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1700,
-    "value": 1,
-    "suggested_name": "SERVICES_IF_KEY_CAP_AND_LEN_CANDIDATE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1723,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_STATE_FISH_MIN_CAP",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1741,
-    "value": 1.0,
-    "suggested_name": "SERVICES_MAX_BONUS_MINS_MAX_STATE_FISH",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1741,
-    "value": 15.0,
-    "suggested_name": "SERVICES_MAX_BONUS_MINS_MAX_STATE_FISH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1741,
-    "value": 60.0,
-    "suggested_name": "SERVICES_MAX_BONUS_MINS_MAX_STATE_FISH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1742,
-    "value": 60,
-    "suggested_name": "SERVICES_BONUS_SECS_RANDOM_RANDINT_MAX_INT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1742,
-    "value": 60,
-    "suggested_name": "SERVICES_BONUS_SECS_RANDOM_RANDINT_MAX_INT",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1742,
-    "value": 60,
-    "suggested_name": "SERVICES_BONUS_SECS_RANDOM_RANDINT_MAX_INT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1743,
-    "value": 1,
-    "suggested_name": "SERVICES_TOTAL_SECONDS_MAX_STATE_FISH_SESSION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1743,
-    "value": 60,
-    "suggested_name": "SERVICES_TOTAL_SECONDS_MAX_STATE_FISH_SESSION",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1754,
-    "value": 60,
-    "suggested_name": "SERVICES_F_FISHING_SESSION_RUNNING_STATE_FISH",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1757,
-    "value": 60,
-    "suggested_name": "SERVICES_SELF_RUNTIME_UI_LOG_F_SESSION",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1757,
-    "value": 60,
-    "suggested_name": "SERVICES_SELF_RUNTIME_UI_LOG_F_SESSION",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1783,
-    "value": 1,
-    "suggested_name": "SERVICES_SESSION_DEADLINE_STATE_FISH_SESSION_DEADLINE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1786,
-    "value": 0,
-    "suggested_name": "SERVICES_REMAINING_MAX_INT_MATH_CEIL_SESSION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1794,
-    "value": 0.25,
-    "suggested_name": "SERVICES_CHUNK_MIN_SECONDS_MAX_SESSION_DEADLINE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1794,
-    "value": 0.0,
-    "suggested_name": "SERVICES_CHUNK_MIN_SECONDS_MAX_SESSION_DEADLINE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1834,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_MIN_CAP_AND_CURRENT_CAP",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1873,
-    "value": 0.07,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1873,
-    "value": 0.17,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1874,
-    "value": 1,
-    "suggested_name": "SERVICES_MOUSE_CLICK_PYNPUT_MOUSE_BUTTON_RIGHT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1876,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_NOT_WAIT_WITH_SESSION_LIMIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1885,
-    "value": 0.1,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1885,
-    "value": 0.26,
-    "suggested_name": "SERVICES_TIME_SLEEP_RANDOM_UNIFORM",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1886,
-    "value": 1,
-    "suggested_name": "SERVICES_MOUSE_CLICK_PYNPUT_MOUSE_BUTTON_LEFT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1916,
-    "value": 0.5,
-    "suggested_name": "SERVICES_IF_NOT_WAIT_WITH_SESSION_LIMIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1927,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_NOT_WAIT_WITH_SESSION_LIMIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1950,
-    "value": 1.0,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1965,
-    "value": 0,
-    "suggested_name": "SERVICES_STATE_HEALER_CHARACTER_POS_OR_STATE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1965,
-    "value": 0,
-    "suggested_name": "SERVICES_STATE_HEALER_CHARACTER_POS_OR_STATE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1965,
-    "value": 0,
-    "suggested_name": "SERVICES_STATE_HEALER_CHARACTER_POS_OR_STATE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 1965,
-    "value": 0,
-    "suggested_name": "SERVICES_STATE_HEALER_CHARACTER_POS_OR_STATE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2004,
-    "value": 0.1,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2035,
-    "value": 0.15,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2045,
-    "value": 0.12,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2048,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_MIN_MANA_AND_MANA_VALUE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2052,
-    "value": 0.2,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2065,
-    "value": 0.15,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2078,
-    "value": 0.5,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2087,
-    "value": 0.25,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_EXECUTION_ACQUIRE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2090,
-    "value": 0.05,
-    "suggested_name": "SERVICES_COOLDOWN_UNTIL_TIME_MONOTONIC",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2094,
-    "value": 0.03,
-    "suggested_name": "SERVICES_SESSION_TAP_SPELL_KEY_HOLD_SECONDS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2098,
-    "value": 0.35,
-    "suggested_name": "SERVICES_COOLDOWN_UNTIL_TIME_MONOTONIC",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2101,
-    "value": 0.35,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_MOUSE_ACQUIRE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2104,
-    "value": 0.08,
-    "suggested_name": "SERVICES_COOLDOWN_UNTIL_TIME_MONOTONIC",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2107,
-    "value": 0.05,
-    "suggested_name": "SERVICES_HUMANMOUSE_MOVE_MOUSE_RUNE_POS_DURATION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2107,
-    "value": 0.2,
-    "suggested_name": "SERVICES_HUMANMOUSE_MOVE_MOUSE_RUNE_POS_DURATION",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2107,
-    "value": 0.2,
-    "suggested_name": "SERVICES_HUMANMOUSE_MOVE_MOUSE_RUNE_POS_DURATION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2108,
-    "value": 0.04,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2109,
-    "value": 1,
-    "suggested_name": "SERVICES_MOUSE_CLICK_PYNPUT_MOUSE_BUTTON_RIGHT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2110,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2112,
-    "value": 0.05,
-    "suggested_name": "SERVICES_HUMANMOUSE_MOVE_MOUSE_CHARACTER_POS_DURATION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2112,
-    "value": 0.2,
-    "suggested_name": "SERVICES_HUMANMOUSE_MOVE_MOUSE_CHARACTER_POS_DURATION",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2112,
-    "value": 0.2,
-    "suggested_name": "SERVICES_HUMANMOUSE_MOVE_MOUSE_CHARACTER_POS_DURATION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2113,
-    "value": 0.04,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2114,
-    "value": 1,
-    "suggested_name": "SERVICES_MOUSE_CLICK_PYNPUT_MOUSE_BUTTON_LEFT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2120,
-    "value": 0.45,
-    "suggested_name": "SERVICES_COOLDOWN_UNTIL_TIME_MONOTONIC_MAX_RUNE",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2120,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_COOLDOWN_UNTIL_TIME_MONOTONIC_MAX_RUNE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2120,
-    "value": 0.15,
-    "suggested_name": "SERVICES_COOLDOWN_UNTIL_TIME_MONOTONIC_MAX_RUNE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2140,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_ANY_POSITION_FOR_POSITION_IN",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2140,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_ANY_POSITION_FOR_POSITION_IN",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2214,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_BLANK_RUNE_LIMIT_AND_CYCLES",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2218,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_MIN_MANA_AND_CURRENT_MANA",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2222,
-    "value": 1.0,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2236,
-    "value": 0.15,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2249,
-    "value": 0.5,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2254,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_CAST_DELAY_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2255,
-    "value": 2,
-    "suggested_name": "SERVICES_MOVE_MAX_MS_PRESS_MAX_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2255,
-    "value": 2,
-    "suggested_name": "SERVICES_MOVE_MAX_MS_PRESS_MAX_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2255,
-    "value": 2,
-    "suggested_name": "SERVICES_MOVE_MAX_MS_PRESS_MAX_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2255,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_MOVE_MAX_MS_PRESS_MAX_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2256,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_POST_CAST_SETTLE_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2262,
-    "value": 0.15,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2267,
-    "value": 0.04,
-    "suggested_name": "SERVICES_SESSION_TAP_SPELL_HOLD_SECONDS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2269,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2272,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_MOVE_DURATION_RANDOM_UNIFORM_MOVE_MIN",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2273,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_PRESS_DELAY_RANGE_PRESS_MIN_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2273,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_PRESS_DELAY_RANGE_PRESS_MIN_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2274,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_SETTLE_DELAY_RANGE_SETTLE_MIN_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2274,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_SETTLE_DELAY_RANGE_SETTLE_MIN_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2291,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_MOVE_DURATION_RANDOM_UNIFORM_MOVE_MIN",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2298,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_TIME_SLEEP_POST_CAST_SETTLE_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2310,
-    "value": 1,
-    "suggested_name": "SERVICES_STATE_STATS_RUNES_MADE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2314,
-    "value": 0,
-    "suggested_name": "SERVICES_MAX_CYCLE_DELAY_MS_CYCLE_VARIATION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2315,
-    "value": 0,
-    "suggested_name": "SERVICES_MAX_CYCLE_DELAY_MS_CYCLE_VARIATION",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2334,
-    "value": 1,
-    "suggested_name": "SERVICES_MAPPING_F_F_I_GETATTR_PYNPUT",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2334,
-    "value": 13,
-    "suggested_name": "SERVICES_MAPPING_F_F_I_GETATTR_PYNPUT",
-    "category": "DERIVED",
-    "confidence": 0.85
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2408,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_DELAY_RANDOM_RANDINT_JOB_MIN_MS",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2421,
-    "value": 0.5,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2425,
-    "value": 0,
-    "suggested_name": "SERVICES_IF_JOB_MIN_MANA",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.82
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2445,
-    "value": 0.45,
-    "suggested_name": "SERVICES_IF_NOT_SELF_RUNTIME_EXECUTION_ACQUIRE",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2459,
-    "value": 0.02,
-    "suggested_name": "SERVICES_INTER_CLICK_MAX_JOB_BURST_INT",
-    "category": "DEFAULT_CONFIG",
-    "confidence": 0.84
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2459,
-    "value": 1000.0,
-    "suggested_name": "SERVICES_INTER_CLICK_MAX_JOB_BURST_INT",
-    "category": "CONSTANT",
-    "confidence": 0.76
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2459,
-    "value": 0.08,
-    "suggested_name": "SERVICES_INTER_CLICK_MAX_JOB_BURST_INT",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2478,
-    "value": 0.05,
-    "suggested_name": "SERVICES_TIME_SLEEP",
-    "category": "CONSTANT",
-    "confidence": 0.8
-  },
-  {
-    "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services.py",
-    "line": 2489,
-    "value": 0.03,
-    "suggested_name": "SERVICES_SESSION_TAP_PRESSED_KEY_HOLD_SECONDS",
-    "category": "CONSTANT",
-    "confidence": 0.76
   },
   {
     "file": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/fishing.py",
