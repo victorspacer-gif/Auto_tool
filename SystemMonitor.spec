@@ -17,6 +17,7 @@ datas = vendor_tesseract_datas
 binaries = []
 
 hiddenimports = [
+    # Core dependencies
     "mss.windows",
     "pynput.keyboard",
     "pynput.mouse",
@@ -26,6 +27,15 @@ hiddenimports = [
     "win32process",
     "pywintypes",
     "pythoncom",
+    # Dynamically loaded memory modules (imported inside methods, not at module level)
+    "studiomemuer_hp_module",
+    "studiomemuer_mp_module",
+    "studiomemuer_cap_module",
+    "studiomemuer_light_module",
+    "studiomemuer_light_module.light_profile",
+    "studiomemuer_light_module.memory_backend",
+    # Purecase module (dynamically imported at runtime)
+    "purecase_module",
 ]
 
 # Hook and runtime hook paths (ensure these directories exist and are committed)

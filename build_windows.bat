@@ -136,6 +136,12 @@ if "%CLEAN_BUILD%"=="1" set "PYINSTALLER_FLAGS=%PYINSTALLER_FLAGS% --clean"
 py -m PyInstaller %PYINSTALLER_FLAGS% "SystemMonitor.spec"
 if errorlevel 1 exit /b 1
 
+REM Remove stray bootloader exe (COLLECT output has the correct bundled version)
+if exist "dist\SystemMonitor.exe" (
+    echo Removing stray executable at dist\SystemMonitor.exe...
+    del "dist\SystemMonitor.exe"
+)
+
 echo Build complete.
 echo Executable path: "%cd%\dist\SystemMonitor\SystemMonitor.exe"
 

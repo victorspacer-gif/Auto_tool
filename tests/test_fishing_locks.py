@@ -12,8 +12,10 @@ import time
 from unittest.mock import MagicMock, patch
 
 # Mock Windows-only deps before importing runtime/services.
-sys.modules["tkinter"] = MagicMock()
-sys.modules["_tkinter"] = MagicMock()
+tk_mock = MagicMock()
+tk_mock.TkVersion = 8.6
+sys.modules["tkinter"] = tk_mock
+sys.modules["_tkinter"] = tk_mock
 for mod in ["win32con", "win32gui", "pywin32"]:
     sys.modules[mod] = MagicMock()
 

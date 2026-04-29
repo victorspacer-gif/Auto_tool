@@ -12,3 +12,6 @@ sys.modules["_tkinter"] = tk_mock
 # Mock pywin32 — Windows-only, not available on Linux
 for mod in ["win32con", "win32gui", "pywin32"]:
     sys.modules[mod] = MagicMock()
+
+# Optional runtime deps that may not be installed in the test environment.
+sys.modules.setdefault("psutil", MagicMock())

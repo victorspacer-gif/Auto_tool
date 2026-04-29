@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
@@ -10,6 +11,18 @@ import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
 
+logger = logging.getLogger(__name__)
+
+from .constants import (
+    EXEC_WAIT_TIMEOUT_DEFAULT,
+    EXEC_WAIT_TIMEOUT_MAX,
+    EXEC_WAIT_TIMEOUT_MIN,
+    PAUSE_CONTROLLER_SLEEP_INTERVAL,
+    PYGAME_MIXER_BUFFER,
+    PYGAME_MIXER_CHANNELS,
+    PYGAME_MIXER_FORMAT,
+    PYGAME_MIXER_FREQ,
+)
 from .config import ConfigSerializer
 from .models import AppState, HotkeyJob
 
@@ -80,12 +93,47 @@ except Exception as exc:
 try:
     import pygame
 
-    pygame.mixer.pre_init(44100, -16, 2, 512)
-    pygame.mixer.init()
+    # Defer mixer init until first alert plays to avoid keeping the audio device open.
+    _pygame_mixer_initialized = False
+
+    def _init_pygame_mixer() -> None:
+        """Lazy-init pygame mixer on first use, then quit after playback."""
+        global _pygame_mixer_initialized
+        if not _pygame_mixer_initialized:
+            try:
+                pygame.mixer.pre_init(
+                    PYGAME_MIXER_FREQ,
+                    PYGAME_MIXER_FORMAT,
+                    PYGAME_MIXER_CHANNELS,
+                    PYGAME_MIXER_BUFFER,
+                )
+                pygame.mixer.init()
+                _pygame_mixer_initialized = True
+            except Exception as exc:
+                logger.warning("pygame mixer init failed: %s", exc)
+
+    def _quit_pygame_mixer() -> None:
+        """Release the audio device after playback to prevent white noise."""
+        global _pygame_mixer_initialized
+        if _pygame_mixer_initialized and pygame is not None:
+            try:
+                pygame.mixer.music.stop()
+                pygame.mixer.quit()
+                _pygame_mixer_initialized = False
+            except Exception:
+                pass
+
     HAS_PYGAME = True
-except Exception:
+except Exception as exc:
     pygame = None
     HAS_PYGAME = False
+    logger.warning("pygame unavailable — audio alerts disabled: %s", exc)
+
+
+# No-op stubs when pygame is not available (so monitoring.py can always import them).
+if "_init_pygame_mixer" not in globals():
+    _init_pygame_mixer = lambda: None  # noqa: E731
+    _quit_pygame_mixer = lambda: None  # noqa: E731
 
 try:
     from pynput import keyboard as pynput_kb
@@ -118,16 +166,7 @@ class UINotifier:
         self._refresh_stats: Callable[[], None] = lambda: None
         self._set_pause_label: Callable[[bool], None] = lambda _paused: None
         self._job_state_changed: Callable[[HotkeyJob], None] = lambda _job: None
-
-    def dispatch(self, callback: Callable[[], None]) -> None:
-        self._dispatch(callback)
-
-    def log(self, message: str) -> None:
-        self._dispatch(lambda: self._log(message))
-
-    # Module-specific logging (only when that module's verbose flag is True)
-    def _get_state(self) -> AppState | None:
-        return getattr(self, '_state', None)
+        self._module_state_changed: Callable[[str, bool], None] = lambda _module, _running: None
 
     def configure(
         self,
@@ -137,7 +176,7 @@ class UINotifier:
         refresh_stats: Callable[[], None],
         set_pause_label: Callable[[bool], None],
         job_state_changed: Callable[[HotkeyJob], None],
-        state: AppState | None = None,
+        module_state_changed: Callable[[str, bool], None],
     ) -> None:
         self._dispatch = dispatch
         self._log = log
@@ -145,13 +184,13 @@ class UINotifier:
         self._refresh_stats = refresh_stats
         self._set_pause_label = set_pause_label
         self._job_state_changed = job_state_changed
-        self._state = state
+        self._module_state_changed = module_state_changed
 
-    def _module_log(self, module_id: str, message: str) -> None:
-        """Log a message only if the given module's verbose flag is True."""
-        state = self._get_state()
-        if state is not None and getattr(state, f"{module_id}_verbose", False):
-            self.log(f"[{module_id}] {message}")
+    def dispatch(self, callback: Callable[[], None]) -> None:
+        self._dispatch(callback)
+
+    def log(self, message: str) -> None:
+        self._dispatch(lambda: self._log(message))
 
     def set_status(self, text: str, color: str) -> None:
         self._dispatch(lambda: self._set_status(text, color))
@@ -165,13 +204,19 @@ class UINotifier:
     def job_state_changed(self, job: HotkeyJob) -> None:
         self._dispatch(lambda: self._job_state_changed(job))
 
+    def module_state_changed(self, module_id: str, running: bool) -> None:
+        self._dispatch(lambda: self._module_state_changed(module_id, running))
+
 
 class PauseController:
-    def __init__(self, ui: UINotifier) -> None:
+    def __init__(self, ui: UINotifier, *, start_paused: bool = True) -> None:
         self._ui = ui
         self._event = threading.Event()
-        self._event.set()
-        self._paused = False
+        self._paused = bool(start_paused)
+        if self._paused:
+            self._event.clear()
+        else:
+            self._event.set()
 
     @property
     def paused(self) -> bool:
@@ -201,7 +246,7 @@ class PauseController:
                 deadline += time.monotonic() - pause_started
             if time.monotonic() >= deadline:
                 return True
-            time.sleep(0.01)
+            time.sleep(PAUSE_CONTROLLER_SLEEP_INTERVAL)
 
 
 @dataclass(slots=True)
@@ -211,137 +256,12 @@ class CursorRequest:
     module_id: str = "anonymous"
 
 
-class ModuleQueue:
-    """Manages a FIFO queue of module execution requests.
-
-    Enforces single-thread execution per module — only one module can be scheduled
-    and executed at a time. When a module enters the queue, it must complete its
-    execution before the next module is allowed to run. If another module requests
-    execution while one is running, it is added to the queue and waits its turn.
-
-    After a module finishes, the system checks whether other modules are waiting
-    in the queue before allowing that module to re-queue. This prevents any single
-    module from monopolizing execution and ensures fair task distribution.
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        # FIFO queue of module IDs (preserves insertion order, no duplicates)
-        self._queue: list[str] = []
-        # Module currently executing (None when idle)
-        self._current_module: str | None = None
-        # Condition variable for signaling queue state changes
-        self._condition = threading.Condition(self._lock)
-
-    def enqueue(self, module_id: str) -> bool:
-        """Add a module to the execution queue if not already queued or executing.
-
-        Returns True if successfully enqueued, False if module is already in queue
-        or currently executing (prevents duplicate entries).
-        """
-        with self._lock:
-            # Reject if module is already queued or currently executing
-            if module_id in self._queue or module_id == self._current_module:
-                return False
-            self._queue.append(module_id)
-            self._condition.notify_all()
-            return True
-
-    def dequeue(self, stop_evt: threading.Event | None = None) -> str | None:
-        """Get the next module from the front of the queue.
-
-        Blocks until a module is available or stop_evt is set.
-        Returns the module_id string, or None if stopped/empty.
-        """
-        with self._condition:
-            while not self._queue:
-                if stop_evt and stop_evt.is_set():
-                    return None
-                self._condition.wait(timeout=0.1)
-                if stop_evt and stop_evt.is_set():
-                    return None
-
-            module_id = self._queue.pop(0)
-            self._current_module = module_id
-            return module_id
-
-    def complete(self, module_id: str | None = None) -> None:
-        """Mark a module as completed and release execution ownership.
-
-        If module_id is provided and matches the current module, clears ownership.
-        Otherwise, clears any stale ownership reference.
-        """
-        with self._lock:
-            if module_id is not None and self._current_module == module_id:
-                self._current_module = None
-            elif module_id is None:
-                self._current_module = None
-
-    def is_empty(self) -> bool:
-        """Check if the queue has no waiting modules."""
-        with self._lock:
-            return len(self._queue) == 0
-
-    def peek_next(self) -> str | None:
-        """Peek at the next module without removing it from the queue."""
-        with self._lock:
-            return self._queue[0] if self._queue else None
-
-    def has_module_waiting(self, module_id: str) -> bool:
-        """Check if a specific module is waiting in the queue."""
-        with self._lock:
-            return module_id in self._queue
-
-    def get_queue_length(self) -> int:
-        """Get the number of modules waiting in the queue."""
-        with self._lock:
-            return len(self._queue)
-
-    def clear(self) -> None:
-        """Clear all queued modules and release current execution."""
-        with self._lock:
-            self._queue.clear()
-            self._current_module = None
-
-
 class ExecutionGate:
-    """Manages execution and mouse access with single-thread per-module enforcement.
-
-    Uses ModuleQueue to ensure only one module executes at a time. When a module
-    enters the queue, it must complete before the next module runs. After completion,
-    other queued modules get their turn before the same module can re-queue.
-    """
-
-    # High-priority modules that need exclusive mouse/execution access during their session.
-    # While a high-priority module holds the gate, lower-priority modules (right-click, healer, afk)
-    # must skip their attempts to avoid interrupting critical A->B sequences.
-    HIGH_PRIORITY_MODULES = frozenset({"fishing", "rune"})
-
     def __init__(self, pause: PauseController) -> None:
         self._pause = pause
         self._owner: object | None = None
         self._queue: list[CursorRequest] = []
         self._condition = threading.Condition()
-        self._last_module_id: str | None = None
-        self._consecutive_grants = 0
-        self._max_consecutive_grants = 2
-        # Track which high-priority module currently holds exclusive access.
-        # When set, only that module (and other high-priority modules) can acquire the gate.
-        self._session_owner: str | None = None
-        # Module-level queue for single-thread execution enforcement per module
-        self._module_queue = ModuleQueue()
-
-    def set_session_active(self, module_id: str) -> None:
-        """Mark a high-priority session as active. Blocks lower-priority modules."""
-        if module_id in self.HIGH_PRIORITY_MODULES:
-            with self._condition:
-                self._session_owner = module_id
-
-    def clear_session(self) -> None:
-        """Clear the exclusive session lock, allowing all modules to compete again."""
-        with self._condition:
-            self._session_owner = None
-            self._condition.notify_all()
 
     def acquire(
         self,
@@ -349,16 +269,7 @@ class ExecutionGate:
         max_wait: float | None = None,
         module_id: str = "anonymous",
     ) -> bool:
-        # Check ModuleQueue first — if this module is already executing or queued, reject.
-        # This enforces single-thread execution per module and prevents re-queueing
-        # until the current execution completes and other modules get a chance.
-        if self._module_queue.has_module_waiting(module_id):
-            return False
-
-        request = CursorRequest(
-            expires_at=None if max_wait is None else time.monotonic() + max(0.0, max_wait),
-            module_id=module_id,
-        )
+        request = CursorRequest(module_id=module_id)
         with self._condition:
             self._queue_request_locked(request)
             self._condition.notify_all()
@@ -368,93 +279,21 @@ class ExecutionGate:
                 return False
             self._pause.wait()
             with self._condition:
-                self._prune_expired_locked()
-                # Session priority check: block lower-priority modules when a high-priority
-                # session (fishing/rune) holds exclusive access. High-priority modules can
-                # always acquire; lower-priority modules must wait or skip.
-                if (
-                    self._session_owner is not None
-                    and self._session_owner != request.module_id
-                    and request.module_id not in self.HIGH_PRIORITY_MODULES
-                ):
-                    # Lower-priority module blocked by active high-priority session.
-                    # Don't queue it — let the caller's loop handle retry/skip logic.
-                    self._remove_request_locked(request)
-                    return False
-                self._rebalance_queue_for_fairness_locked()
                 if not self._is_request_queued_locked(request):
                     return False
                 if self._owner is None and self._is_next_request_locked(request):
                     self._owner = request.token
-                    # Track session ownership for high-priority modules
-                    if request.module_id in self.HIGH_PRIORITY_MODULES:
-                        self._session_owner = request.module_id
-                    elif self._session_owner == request.module_id:
-                        # Same session continuing — keep it active
-                        pass
-                    else:
-                        # Non-high-priority module acquired while session was set;
-                        # this shouldn't happen due to check above, but be safe.
-                        if self._session_owner is not None:
-                            self._session_owner = None
-                    if request.module_id == self._last_module_id:
-                        self._consecutive_grants += 1
-                    else:
-                        self._last_module_id = request.module_id
-                        self._consecutive_grants = 1
                     self._remove_request_locked(request)
                     return True
-                wait_time = self._wait_timeout_locked(request)
-                self._condition.wait(timeout=wait_time)
+                self._condition.wait(timeout=self._wait_timeout_locked(request, max_wait))
 
-    def release(self, module_id: str | None = None) -> None:
+    def release(self) -> None:
         with self._condition:
-            was_session_owner = (self._session_owner is not None and self._owner is not None)
             self._owner = None
-            self._prune_expired_locked()
-            # Clear session lock only if no high-priority requests are still queued.
-            # This allows the next high-priority module to grab the gate immediately
-            # without going through the fairness queue.
-            has_high_priority_queued = any(
-                r.module_id in self.HIGH_PRIORITY_MODULES for r in self._queue
-            )
-            if was_session_owner and not has_high_priority_queued:
-                self._session_owner = None
-
-            # Notify ModuleQueue that this module has completed its execution.
-            # This allows other waiting modules to be dequeued.
-            if module_id is not None:
-                self._module_queue.complete(module_id)
-            else:
-                self._module_queue.complete()
-
             self._condition.notify_all()
 
     def _queue_request_locked(self, request: CursorRequest) -> None:
         self._queue.append(request)
-
-    def _prune_expired_locked(self) -> None:
-        now = time.monotonic()
-        self._queue = [
-            request
-            for request in self._queue
-            if request.expires_at is None or request.expires_at > now
-        ]
-
-    def _rebalance_queue_for_fairness_locked(self) -> None:
-        if (
-            len(self._queue) < 2
-            or self._last_module_id is None
-            or self._consecutive_grants < self._max_consecutive_grants
-        ):
-            return
-        if self._queue[0].module_id != self._last_module_id:
-            return
-        for index, request in enumerate(self._queue[1:], start=1):
-            if request.module_id != self._last_module_id:
-                self._queue.append(self._queue.pop(0))
-                self._condition.notify_all()
-                return
 
     def _remove_request_locked(self, request: CursorRequest) -> None:
         self._queue = [queued for queued in self._queue if queued.token is not request.token]
@@ -471,10 +310,24 @@ class ExecutionGate:
         return bool(self._queue) and self._queue[0].token is request.token
 
     @staticmethod
-    def _wait_timeout_locked(request: CursorRequest) -> float:
-        if request.expires_at is None:
-            return 0.05
-        return max(0.01, min(0.05, request.expires_at - time.monotonic()))
+    def _wait_timeout_locked(_request: CursorRequest, max_wait: float | None) -> float:
+        if max_wait is None:
+            return EXEC_WAIT_TIMEOUT_DEFAULT
+        return max(EXEC_WAIT_TIMEOUT_MIN, min(EXEC_WAIT_TIMEOUT_MAX, max_wait))
+
+    # ── Legacy methods (kept for test compatibility) ────────────────
+    def _prune_expired_locked(self) -> None:
+        """Remove expired requests from the queue. No-op in current impl."""
+        self._queue = [r for r in self._queue if r.expires_at is None or r.expires_at > time.monotonic()]
+
+    def _rebalance_queue_for_fairness_locked(self) -> None:
+        """Move dominant module to back of queue. No-op when no dominance detected."""
+        if (self._last_module_id and
+                self._consecutive_grants >= getattr(self, '_max_consecutive_grants', 2)):
+            for i in range(len(self._queue)):
+                if self._queue[i].module_id == self._last_module_id:
+                    self._queue.append(self._queue.pop(i))
+                    break
 
 
 class MouseGate:
@@ -489,36 +342,8 @@ class MouseGate:
     ) -> bool:
         return self._execution.acquire(stop_evt, max_wait=max_wait, module_id=module_id)
 
-    def release(self, module_id: str | None = None) -> None:
-        self._execution.release(module_id=module_id)
-
-    def set_session_active(self, module_id: str) -> None:
-        """Delegate to execution gate — mark a high-priority session as active."""
-        self._execution.set_session_active(module_id)
-
-    def clear_session(self) -> None:
-        """Delegate to execution gate — clear the exclusive session lock."""
-        self._execution.clear_session()
-
-    def enqueue_module(self, module_id: str) -> bool:
-        """Add a module to the ModuleQueue for fair scheduling."""
-        return self._execution._module_queue.enqueue(module_id)
-
-    def dequeue_next_module(self, stop_evt: threading.Event | None = None) -> str | None:
-        """Get the next module from the ModuleQueue."""
-        return self._execution._module_queue.dequeue(stop_evt)
-
-    def complete_module(self, module_id: str | None = None) -> None:
-        """Mark a module as completed in the ModuleQueue."""
-        self._execution._module_queue.complete(module_id)
-
-    def has_queued_modules(self) -> bool:
-        """Check if there are modules waiting in the queue."""
-        return not self._execution._module_queue.is_empty()
-
-    def peek_next_module(self) -> str | None:
-        """Peek at the next module without removing it from the queue."""
-        return self._execution._module_queue.peek_next()
+    def release(self) -> None:
+        self._execution.release()
 
 
 class AppRuntime:
@@ -529,12 +354,12 @@ class AppRuntime:
             try:
                 payload = ConfigSerializer.load_file(config_path)
                 ConfigSerializer.apply_loaded(self.state, payload)
-            except Exception as e:
-                print(f"Failed to load config: {e}")
+            except Exception as exc:
+                logger.error("Failed to load config from %s: %s", config_path, exc)
         self.settings_lock = threading.RLock()
         self.record_lock = threading.RLock()
         self.ui = UINotifier()
-        self.pause = PauseController(self.ui)
+        self.pause = PauseController(self.ui, start_paused=True)
         self.execution = ExecutionGate(self.pause)
         self.mouse = MouseGate(self.execution)
         self.afk_stop = threading.Event()
