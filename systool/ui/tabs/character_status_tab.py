@@ -6,6 +6,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 
+from ...config import CHAR_STATUS_POLL_MS_MIN, NON_NEGATIVE_INT_MIN
 from ...theme import BLUE, BOLD, FG, GREEN, HEADER, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
 
 
@@ -171,9 +172,9 @@ class CharacterStatusTab:
         self.runtime.ui.log("ℹ️  Character status window reset")
 
     def poll_settings(self, state) -> None:
-        state.char_status_poll_ms = max(250, self.helpers["get_ui_ms"]("char_status_poll_var", state.char_status_poll_ms))
+        state.char_status_poll_ms = max(CHAR_STATUS_POLL_MS_MIN, self.helpers["get_ui_ms"]("char_status_poll_var", state.char_status_poll_ms))
         state.char_status_samples = max(1, self.helpers["get_ui_int"]("char_status_samples_var", state.char_status_samples))
-        state.char_status_sample_delay_ms = max(0, self.helpers["get_ui_ms"]("char_status_sample_delay_var", state.char_status_sample_delay_ms))
+        state.char_status_sample_delay_ms = max(NON_NEGATIVE_INT_MIN, self.helpers["get_ui_ms"]("char_status_sample_delay_var", state.char_status_sample_delay_ms))
         if "char_status_samples_var" not in self.ui_vars:
             state.char_status_samples = max(1, 2000 // state.char_status_poll_ms)
         if "char_status_tesseract_var" in self.ui_vars:

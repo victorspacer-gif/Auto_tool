@@ -13,6 +13,16 @@ from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
+from .constants import (
+    EXEC_WAIT_TIMEOUT_DEFAULT,
+    EXEC_WAIT_TIMEOUT_MAX,
+    EXEC_WAIT_TIMEOUT_MIN,
+    PAUSE_CONTROLLER_SLEEP_INTERVAL,
+    PYGAME_MIXER_BUFFER,
+    PYGAME_MIXER_CHANNELS,
+    PYGAME_MIXER_FORMAT,
+    PYGAME_MIXER_FREQ,
+)
 from .config import ConfigSerializer
 from .models import AppState, HotkeyJob
 
@@ -91,7 +101,12 @@ try:
         global _pygame_mixer_initialized
         if not _pygame_mixer_initialized:
             try:
-                pygame.mixer.pre_init(44100, -16, 2, 512)
+                pygame.mixer.pre_init(
+                    PYGAME_MIXER_FREQ,
+                    PYGAME_MIXER_FORMAT,
+                    PYGAME_MIXER_CHANNELS,
+                    PYGAME_MIXER_BUFFER,
+                )
                 pygame.mixer.init()
                 _pygame_mixer_initialized = True
             except Exception as exc:
@@ -228,7 +243,7 @@ class PauseController:
                 deadline += time.monotonic() - pause_started
             if time.monotonic() >= deadline:
                 return True
-            time.sleep(0.01)
+            time.sleep(PAUSE_CONTROLLER_SLEEP_INTERVAL)
 
 
 @dataclass(slots=True)
@@ -294,8 +309,8 @@ class ExecutionGate:
     @staticmethod
     def _wait_timeout_locked(_request: CursorRequest, max_wait: float | None) -> float:
         if max_wait is None:
-            return 0.05
-        return max(0.01, min(0.05, max_wait))
+            return EXEC_WAIT_TIMEOUT_DEFAULT
+        return max(EXEC_WAIT_TIMEOUT_MIN, min(EXEC_WAIT_TIMEOUT_MAX, max_wait))
 
     # ── Legacy methods (kept for test compatibility) ────────────────
     def _prune_expired_locked(self) -> None:

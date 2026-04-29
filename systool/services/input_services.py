@@ -36,6 +36,7 @@ from ..constants import (
     INPUT_RCCLICK_PAUSE_3,
     INPUT_RCCLICK_MAX_WAIT,
     INPUT_QUEUE_WINDOW,
+    RIGHT_CLICK_FOOD_BURST_COOLDOWN,
     AFK_CTRL_HOLD_MIN,
     AFK_CTRL_HOLD_MAX,
     AFK_DIR_PRESS_MIN,
@@ -531,7 +532,7 @@ class RightClickService:
                 state.stats["right_clicks"] += clicks_to_send
             if mode == "food":
                 self.runtime.ui.log(f"🖱️  Food burst at {target} ×{clicks_to_send}")
-                if not self.runtime.pause.wait_interruptible(1.5, self.runtime.rclick_stop):
+                if not self.runtime.pause.wait_interruptible(RIGHT_CLICK_FOOD_BURST_COOLDOWN, self.runtime.rclick_stop):
                     break
             else:
                 self.runtime.ui.log(f"🖱️  Right-click at {target}")

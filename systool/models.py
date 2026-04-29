@@ -6,6 +6,8 @@ import dataclasses
 import threading
 from typing import Any
 
+from . import config as app_config
+
 
 def _group_property(group_name: str, attr_name: str):
     def getter(self):
@@ -21,15 +23,15 @@ def _group_property(group_name: str, attr_name: str):
 class HotkeyJob:
     job_id: int
     key: str = "F1"
-    min_ms: int = 20_000
-    max_ms: int = 30_000
-    min_mana: int = 0
-    max_mana: int = 0
+    min_ms: int = app_config.HOTKEY_JOB_MIN_MS_DEFAULT
+    max_ms: int = app_config.HOTKEY_JOB_MAX_MS_DEFAULT
+    min_mana: int = app_config.HOTKEY_JOB_MIN_MANA_DEFAULT
+    max_mana: int = app_config.HOTKEY_JOB_MAX_MANA_DEFAULT
     burst_enabled: bool = False
-    burst_chance: float = 0.20
-    burst_cnt_min: int = 3
-    burst_cnt_max: int = 8
-    burst_int_ms: int = 80
+    burst_chance: float = app_config.HOTKEY_JOB_BURST_CHANCE_DEFAULT
+    burst_cnt_min: int = app_config.HOTKEY_JOB_BURST_COUNT_MIN_DEFAULT
+    burst_cnt_max: int = app_config.HOTKEY_JOB_BURST_COUNT_MAX_DEFAULT
+    burst_int_ms: int = app_config.HOTKEY_JOB_BURST_INTERVAL_MS_DEFAULT
     use_focus: bool = False
     window_name: str = ""
     restore_focus: bool = True
@@ -42,8 +44,8 @@ class HotkeyJob:
 class AlarmState:
     active: bool = False
     mp3: str = ""
-    threshold: float = 0.80
-    cooldown: int = 10
+    threshold: float = app_config.ALARM_THRESHOLD_RATIO_DEFAULT
+    cooldown: int = app_config.ALARM_COOLDOWN_SECONDS_DEFAULT
     region: tuple[int, int, int, int] | None = None
     auto_pause: bool = False
     hp_percent: int = 0
@@ -59,9 +61,9 @@ class CharStatusState:
     hp_region: tuple[int, int, int, int] | None = None
     mana_region: tuple[int, int, int, int] | None = None
     cap_region: tuple[int, int, int, int] | None = None
-    poll_ms: int = 800
-    samples: int = 3
-    sample_delay_ms: int = 100
+    poll_ms: int = app_config.CHAR_STATUS_POLL_MS_DEFAULT
+    samples: int = app_config.CHAR_STATUS_SAMPLES_DEFAULT
+    sample_delay_ms: int = app_config.CHAR_STATUS_SAMPLE_DELAY_MS_DEFAULT
     tesseract_path: str = ""
     level: int | None = None
     hp: int | None = None
@@ -83,41 +85,41 @@ class FishingState:
     active: bool = False
     rod_pos: tuple[int, int] = (0, 0)
     spots: list[tuple[int, int]] = dataclasses.field(default_factory=list)
-    cast_min_ms: int = 1_000
-    cast_max_ms: int = 2_000
-    wait_min_ms: int = 1_000
-    wait_max_ms: int = 2_000
-    rod_jitter: int = 5
-    spot_jitter: int = 15
-    session_minutes: int = 10
+    cast_min_ms: int = app_config.FISH_CAST_MIN_MS_DEFAULT
+    cast_max_ms: int = app_config.FISH_CAST_MAX_MS_DEFAULT
+    wait_min_ms: int = app_config.FISH_WAIT_MIN_MS_DEFAULT
+    wait_max_ms: int = app_config.FISH_WAIT_MAX_MS_DEFAULT
+    rod_jitter: int = app_config.FISH_ROD_JITTER_DEFAULT
+    spot_jitter: int = app_config.FISH_SPOT_JITTER_DEFAULT
+    session_minutes: int = app_config.FISH_SESSION_MINUTES_DEFAULT
     session_remaining_secs: int = 0
     session_deadline: float | None = None
     min_cap: int = 0
     auto_restart_enabled: bool = False
-    auto_restart_food_min_secs: int = 300
+    auto_restart_food_min_secs: int = app_config.FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT
 
 
 @dataclasses.dataclass
 class RuneState:
     active: bool = False
     spell_key: str = "f1"
-    cycle_delay_ms: int = 5_000
-    cycle_delay_variation_ms: int = 0
+    cycle_delay_ms: int = app_config.RUNE_CYCLE_DELAY_MS_DEFAULT
+    cycle_delay_variation_ms: int = app_config.RUNE_CYCLE_DELAY_VARIATION_MS_DEFAULT
     hand_pos: tuple[int, int] = (0, 0)
     storage_pos: tuple[int, int] = (0, 0)
     blank_pos: tuple[int, int] = (0, 0)
-    jitter: int = 6
-    cast_delay_ms: int = 900
-    post_cast_settle_ms: int = 600
+    jitter: int = app_config.RUNE_JITTER_DEFAULT
+    cast_delay_ms: int = app_config.RUNE_CAST_DELAY_MS_DEFAULT
+    post_cast_settle_ms: int = app_config.RUNE_POST_CAST_SETTLE_MS_DEFAULT
     min_mana: int = 0
     max_mana: int = 0
     available_blank_runes: int = 0
-    mouse_move_min_ms: int = 180
-    mouse_move_max_ms: int = 350
-    mouse_press_min_ms: int = 60
-    mouse_press_max_ms: int = 120
-    mouse_settle_min_ms: int = 100
-    mouse_settle_max_ms: int = 220
+    mouse_move_min_ms: int = app_config.RUNE_MOUSE_MOVE_MIN_MS_DEFAULT
+    mouse_move_max_ms: int = app_config.RUNE_MOUSE_MOVE_MAX_MS_DEFAULT
+    mouse_press_min_ms: int = app_config.RUNE_MOUSE_PRESS_MIN_MS_DEFAULT
+    mouse_press_max_ms: int = app_config.RUNE_MOUSE_PRESS_MAX_MS_DEFAULT
+    mouse_settle_min_ms: int = app_config.RUNE_MOUSE_SETTLE_MIN_MS_DEFAULT
+    mouse_settle_max_ms: int = app_config.RUNE_MOUSE_SETTLE_MAX_MS_DEFAULT
 
 
 @dataclasses.dataclass
@@ -126,14 +128,14 @@ class HealerState:
     mode: str = "spell"
     spell_key: str = "f1"
     use_percent: bool = True
-    hp_percent: int = 60
-    hp_value: int = 120
+    hp_percent: int = app_config.HEALER_HP_PERCENT_DEFAULT
+    hp_value: int = app_config.HEALER_HP_VALUE_DEFAULT
     min_mana: int = 0
     max_mana: int = 0
     character_pos: tuple[int, int] = (0, 0)
     rune_pos: tuple[int, int] = (0, 0)
-    mouse_speed: float = 1.0
-    rune_delay_ms: int = 250
+    mouse_speed: float = app_config.HEALER_MOUSE_SPEED_DEFAULT
+    rune_delay_ms: int = app_config.HEALER_RUNE_DELAY_MS_DEFAULT
 
 
 @dataclasses.dataclass
@@ -176,23 +178,23 @@ class AppState:
     rebind_target: str | None = None
 
     afk_active: bool = False
-    afk_min_ms: int = 70_000
-    afk_max_ms: int = 88_000
+    afk_min_ms: int = app_config.APP_AFK_MIN_MS_DEFAULT
+    afk_max_ms: int = app_config.APP_AFK_MAX_MS_DEFAULT
 
     rclick_active: bool = False
     rclick_pos: tuple[int, int] = (0, 0)
-    rclick_min_ms: int = 20_000
-    rclick_max_ms: int = 31_000
+    rclick_min_ms: int = app_config.APP_RCLICK_MIN_MS_DEFAULT
+    rclick_max_ms: int = app_config.APP_RCLICK_MAX_MS_DEFAULT
     rclick_mode: str = "timer"
     rclick_require_food: bool = False
-    rclick_food_min_minutes: int = 10
-    rclick_food_burst_count: int = 4
-    rclick_food_burst_count_min: int = 3
-    rclick_food_burst_count_max: int = 6
-    rclick_food_burst_interval_ms: int = 700
-    rclick_click_delay_min_ms: int = 150
-    rclick_click_delay_max_ms: int = 250
-    rclick_post_click_settle_ms: int = 300
+    rclick_food_min_minutes: int = app_config.APP_RCLICK_FOOD_MIN_MINUTES_DEFAULT
+    rclick_food_burst_count: int = app_config.APP_RCLICK_FOOD_BURST_COUNT_DEFAULT
+    rclick_food_burst_count_min: int = app_config.APP_RCLICK_FOOD_BURST_COUNT_MIN_DEFAULT
+    rclick_food_burst_count_max: int = app_config.APP_RCLICK_FOOD_BURST_COUNT_MAX_DEFAULT
+    rclick_food_burst_interval_ms: int = app_config.APP_RCLICK_FOOD_BURST_INTERVAL_MS_DEFAULT
+    rclick_click_delay_min_ms: int = app_config.APP_RCLICK_CLICK_DELAY_MIN_MS_DEFAULT
+    rclick_click_delay_max_ms: int = app_config.APP_RCLICK_CLICK_DELAY_MAX_MS_DEFAULT
+    rclick_post_click_settle_ms: int = app_config.APP_RCLICK_POST_CLICK_SETTLE_MS_DEFAULT
 
     alarm: AlarmState = dataclasses.field(default_factory=AlarmState)
     char_status: CharStatusState = dataclasses.field(default_factory=CharStatusState)
@@ -206,7 +208,7 @@ class AppState:
     light_freeze_enabled: bool = False
     light_freeze_color_value: int = 0
     light_freeze_intensity_value: int = 0
-    light_freeze_interval_ms: int = 1000
+    light_freeze_interval_ms: int = app_config.APP_LIGHT_FREEZE_INTERVAL_MS_DEFAULT
     light_last_mode: str = ""
     light_last_color_address_hex: str = ""
     light_last_intensity_address_hex: str = ""
@@ -328,4 +330,3 @@ class AppState:
     healer_rune_pos = _group_property("healer", "rune_pos")
     healer_mouse_speed = _group_property("healer", "mouse_speed")
     healer_rune_delay_ms = _group_property("healer", "rune_delay_ms")
-

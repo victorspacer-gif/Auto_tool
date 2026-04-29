@@ -50,7 +50,13 @@ from ..runtime import (
     resolve_tesseract_cmd,
 )
 from ..theme import GREEN, ORANGE, RED, TEAL
-from ..constants import LIGHT_FREEZE_MIN_INTERVAL_MS, MIN_POLL_MS, MONITOR_POLL_SLEEP, MONITOR_ERROR_RETRY_SLEEP
+from ..config import CHAR_STATUS_POLL_MS_MIN
+from ..constants import (
+    LIGHT_FREEZE_MIN_INTERVAL_MS,
+    MONITOR_ERROR_RETRY_SLEEP,
+    MONITOR_POLL_SLEEP,
+    PYGAME_DEFAULT_VOLUME,
+)
 
 class LightControlService:
     def __init__(self, runtime: AppRuntime) -> None:
@@ -578,7 +584,7 @@ class AlarmService:
                 if HAS_PYGAME:
                     # Lazy-init mixer only when an alert needs to play.
                     _init_pygame_mixer()
-                    pygame.mixer.music.set_volume(1.0)
+                    pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)
                     pygame.mixer.music.load(path)
                     pygame.mixer.music.play()
                     # Wait until the sound finishes playing, then quit mixer
@@ -807,7 +813,7 @@ class CharacterStatusService:
                         hp_region = state.char_status_hp_region
                         mana_region = state.char_status_mana_region
                         cap_region = state.char_status_cap_region
-                        poll_ms = max(MIN_POLL_MS, state.char_status_poll_ms)
+                        poll_ms = max(CHAR_STATUS_POLL_MS_MIN, state.char_status_poll_ms)
                     if not region and not all([hp_region, mana_region, cap_region]):
                         break
                     try:

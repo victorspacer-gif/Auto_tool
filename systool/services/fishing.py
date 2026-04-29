@@ -11,7 +11,18 @@ import time
 logger = logging.getLogger(__name__)
 
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_mouse
-from ..constants import FISHING_BONUS_MULTIPLIER, FISHING_MIN_BONUS_SECS, FISHING_CHUNK_MIN, FISHING_CYCLE_WINDOW_BASE, FISHING_CYCLE_WINDOW_ADDITION, FISHING_PAUSE_SHORT_MIN, FISHING_PAUSE_SHORT_MAX, FISHING_PAUSE_MEDIUM_MIN, FISHING_PAUSE_MEDIUM_MAX
+from ..constants import (
+    FISHING_AUTO_RESTART_DELAY,
+    FISHING_BONUS_MULTIPLIER,
+    FISHING_CHUNK_MIN,
+    FISHING_CYCLE_WINDOW_ADDITION,
+    FISHING_CYCLE_WINDOW_BASE,
+    FISHING_MIN_BONUS_SECS,
+    FISHING_PAUSE_MEDIUM_MAX,
+    FISHING_PAUSE_MEDIUM_MIN,
+    FISHING_PAUSE_SHORT_MAX,
+    FISHING_PAUSE_SHORT_MIN,
+)
 from ..theme import GREEN, ORANGE, RED
 from .input_services import HumanMouse
 
@@ -223,7 +234,7 @@ class FishingService:
             self.runtime.ui.log(
                 f"🔄 Auto-restart triggered — waiting 1s for cleanup, then starting fresh session"
             )
-            time.sleep(1.0)
+            time.sleep(FISHING_AUTO_RESTART_DELAY)
             self.start()
         else:
             self.runtime.ui.log(f"⏹ Fishing stopped — {state.stats['fish_casts']} casts")

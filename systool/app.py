@@ -13,6 +13,14 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+from .constants import (
+    APP_SETTINGS_POLL_INTERVAL_MS,
+    APP_STATS_POLL_INTERVAL_MS,
+    APP_TRAY_BOOTSTRAP_DELAY_MS,
+    APP_TRAY_POLL_INTERVAL_MS,
+    APP_WINDOW_MIN_HEIGHT,
+    APP_WINDOW_MIN_WIDTH,
+)
 from .config import ConfigSerializer
 from .container import ServiceContainer
 from .models import HotkeyJob
@@ -155,7 +163,7 @@ class SystemMonitorApp:
         self.root.title("SystemMonitor")
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
-        self.root.minsize(960, 720)
+        self.root.minsize(APP_WINDOW_MIN_WIDTH, APP_WINDOW_MIN_HEIGHT)
         self.root.bind("<Configure>", self._on_root_resize)
 
         self.runtime.ui.configure(
@@ -1547,7 +1555,7 @@ class SystemMonitorApp:
         if self.fishing_tab_ui:
             self.fishing_tab_ui.refresh_session_display()
         if schedule_next:
-            self.root.after(500, self._poll_settings)
+            self.root.after(APP_SETTINGS_POLL_INTERVAL_MS, self._poll_settings)
 
     def _get_ui_int(self, name: str, default: int) -> int:
         try:
@@ -1691,12 +1699,12 @@ class SystemMonitorApp:
                 self.var_last_update_label.config(text="Last update: —")
 
     def _start_stats_polling(self) -> None:
-        """Start background HP/MP/Cap pointer polling (100ms interval)."""
-        self._stats_poll_timer_id = 100
-        self.root.after(100, self._poll_stats_background)
+        """Start background HP/MP/Cap pointer polling."""
+        self._stats_poll_timer_id = APP_STATS_POLL_INTERVAL_MS
+        self.root.after(APP_STATS_POLL_INTERVAL_MS, self._poll_stats_background)
 
     def _poll_stats_background(self) -> None:
-        """Background poller: read HP/MP/Cap every 100ms, update UI only on change."""
+        """Background poller: read HP/MP/Cap on a fixed interval."""
         state = self.runtime.state
         old_hp, old_mp, old_cap = self._prev_stats_values
 
@@ -1732,7 +1740,7 @@ class SystemMonitorApp:
 
         # Schedule next poll (non-blocking via root.after)
         if self._stats_poll_timer_id is not None:
-            self.root.after(100, self._poll_stats_background)
+            self.root.after(APP_STATS_POLL_INTERVAL_MS, self._poll_stats_background)
 
     def _stop_stats_polling(self) -> None:
         """Stop background stats polling."""
@@ -1853,9 +1861,9 @@ class SystemMonitorApp:
         # Start periodic tray icon updates (every 500ms) to catch state changes
         def _poll_tray():
             self._update_tray_icon()
-            self.root.after(500, _poll_tray)
+            self.root.after(APP_TRAY_POLL_INTERVAL_MS, _poll_tray)
 
-        self.root.after(1000, _poll_tray)
+        self.root.after(APP_TRAY_BOOTSTRAP_DELAY_MS, _poll_tray)
 
     def show_window(self, *args) -> None:
         self.root.after(0, lambda: (self.root.deiconify(), self.root.lift(), self.root.focus_force()))

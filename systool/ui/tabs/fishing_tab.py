@@ -5,6 +5,12 @@ from __future__ import annotations
 import logging
 import tkinter as tk
 
+from ...config import (
+    FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT,
+    FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX,
+    FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN,
+    NON_NEGATIVE_INT_MIN,
+)
 from ...runtime import HAS_PYNPUT, pynput_kb, pynput_mouse
 from ...services import HotkeyService
 from ...theme import BG, BLUE, BOLD, FG, GREEN, MONO, MUTED, ORANGE, PANEL, RED, SMALL, SMALL_B, TEAL
@@ -188,12 +194,12 @@ class FishingTab:
         else:
             try:
                 val = int(food_secs_var.get())
-                if val < 30:
-                    food_secs_var.set("30")
-                elif val > 600:
-                    food_secs_var.set("600")
+                if val < FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN:
+                    food_secs_var.set(str(FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN))
+                elif val > FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX:
+                    food_secs_var.set(str(FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX))
             except (ValueError, TypeError):
-                food_secs_var.set("300")
+                food_secs_var.set(str(FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT))
 
     def record_rod_pos(self) -> None:
         def on_done(pos: tuple[int, int]) -> None:
@@ -297,7 +303,7 @@ class FishingTab:
         state.fish_cast_max_ms = self.helpers["get_ui_ms"]("fish_cast_max_var", state.fish_cast_max_ms)
         state.fish_wait_min_ms = self.helpers["get_ui_ms"]("fish_wait_min_var", state.fish_wait_min_ms)
         state.fish_wait_max_ms = self.helpers["get_ui_ms"]("fish_wait_max_var", state.fish_wait_max_ms)
-        state.fish_min_cap = max(0, self.helpers["get_ui_int"]("fish_min_cap_var", state.fish_min_cap))
+        state.fish_min_cap = max(NON_NEGATIVE_INT_MIN, self.helpers["get_ui_int"]("fish_min_cap_var", state.fish_min_cap))
         state.fish_rod_jitter = self.helpers["get_ui_int"]("fish_rod_jit_var", state.fish_rod_jitter)
         state.fish_spot_jitter = self.helpers["get_ui_int"]("fish_spot_jit_var", state.fish_spot_jitter)
         state.fish_session_minutes = max(1, min(60, self.helpers["get_ui_int"]("fish_session_var", state.fish_session_minutes)))
@@ -305,7 +311,7 @@ class FishingTab:
             state.fish_auto_restart_enabled = bool(self.ui_vars["fish_auto_restart_enabled_var"].get())
         if "fish_auto_restart_food_secs_var" in self.ui_vars:
             value = self.helpers["get_ui_int"]("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
-            state.fish_auto_restart_food_min_secs = max(30, min(600, value))
+            state.fish_auto_restart_food_min_secs = max(FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN, min(FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX, value))
 
     def refresh_session_display(self) -> None:
         if self.fish_session_value_label:
@@ -326,4 +332,3 @@ class FishingTab:
             for index, spot in enumerate(state.fish_spots, start=1):
                 self.spots_listbox.insert("end", f"#{index}  {spot[0]},{spot[1]}")
         self.refresh_session_display()
-

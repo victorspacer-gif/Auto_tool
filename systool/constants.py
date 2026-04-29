@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 # ─── Polling & Sampling ──────────────────────────────────────────────
-MIN_POLL_MS: int = 250          # Minimum char_status poll interval (ms)
 LIGHT_FREEZE_MIN_INTERVAL_MS: int = 30  # Minimum light freeze loop delay (ms)
 CHAR_STATUS_SAMPLE_DELAY_MS: float = 1.0  # Default sample delay between readings
+APP_SETTINGS_POLL_INTERVAL_MS: int = 500  # UI settings sync poll interval (ms)
+APP_STATS_POLL_INTERVAL_MS: int = 100  # Background stats polling interval (ms)
+APP_TRAY_POLL_INTERVAL_MS: int = 500  # Tray state poll interval (ms)
+APP_TRAY_BOOTSTRAP_DELAY_MS: int = 1000  # Initial tray poll delay (ms)
 
 # ─── Alarm / Thresholds ──────────────────────────────────────────────
 ALARM_COOLDOWN_DEFAULT: float = 5.0   # Default cooldown between alarm triggers (seconds)
@@ -84,6 +87,7 @@ AFK_DIR_PRESS_MIN: float = 0.03           # Direction key press min (s)
 AFK_DIR_PRESS_MAX: float = 0.06           # Direction key press max (s)
 AFK_DIR_RELEASE_MIN: float = 0.02         # Release pause min (s)
 AFK_DIR_RELEASE_MAX: float = 0.04         # Release pause max (s)
+RIGHT_CLICK_FOOD_BURST_COOLDOWN: float = 1.5  # Cooldown after a food burst (s)
 
 # ─── Healer Service ────────────────────────────────────────────────
 HEALER_CAST_HOLD_SECONDS: float = 0.03    # Spell tap hold duration (s)
@@ -97,17 +101,22 @@ HEALER_MIN_WAIT_TIMEOUT: float = 0.1      # Minimum wait timeout for healer acti
 # ─── Monitoring / Alarm Service ────────────────────────────────────
 MONITOR_POLL_SLEEP: float = 0.1           # Poll loop sleep interval (s)
 MONITOR_ERROR_RETRY_SLEEP: float = 0.5    # Error retry sleep interval (s)
+FISHING_AUTO_RESTART_DELAY: float = 1.0   # Delay before restarting fishing (s)
 
 # ─── PauseController / ExecutionGate ────────────────────────────────
 EXEC_WAIT_TIMEOUT_DEFAULT: float = 0.05    # Default wait timeout when max_wait is None
 EXEC_WAIT_TIMEOUT_MIN: float = 0.01        # Absolute minimum wait timeout (s)
 EXEC_WAIT_TIMEOUT_MAX: float = 0.05        # Absolute maximum wait timeout (s)
+PAUSE_CONTROLLER_SLEEP_INTERVAL: float = 0.01  # Poll interval while paused/waiting (s)
 
 # ─── Pygame Audio ────────────────────────────────────────────────────
 PYGAME_MIXER_FREQ: int = 44100    # Sample rate (Hz)
 PYGAME_MIXER_FORMAT: int = -16    # Bit depth
 PYGAME_MIXER_CHANNELS: int = 2    # Stereo
 PYGAME_MIXER_BUFFER: int = 512    # Buffer size
+PYGAME_DEFAULT_VOLUME: float = 1.0  # Default alarm playback volume
 
 # ─── UI / Layout ─────────────────────────────────────────────────────
 UI_THRESHOLD_WIDTH: int = 1180    # Responsive column threshold (px)
+APP_WINDOW_MIN_WIDTH: int = 960   # Main window minimum width
+APP_WINDOW_MIN_HEIGHT: int = 720  # Main window minimum height

@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from ...config import (
+    HEALER_HP_MIN,
+    HEALER_MOUSE_SPEED_MAX,
+    HEALER_MOUSE_SPEED_MIN,
+    HEALER_RUNE_DELAY_MS_MIN,
+    NON_NEGATIVE_INT_MIN,
+    PERCENT_VALUE_MAX,
+)
 from ...theme import BG, BLUE, BODY, BOLD, FG, GREEN, MONO, MUTED, PANEL, PURPLE, RED, SMALL, TEAL
 
 
@@ -118,15 +126,15 @@ class HealerTab:
             state.healer_spell_key = str(self.ui_vars["healer_spell_key_var"].get()).lower().strip()
         if "healer_use_percent_var" in self.ui_vars:
             state.healer_use_percent = bool(self.ui_vars["healer_use_percent_var"].get())
-        state.healer_hp_percent = max(1, min(100, self.helpers["get_ui_int"]("healer_hp_percent_var", state.healer_hp_percent)))
-        state.healer_hp_value = max(1, self.helpers["get_ui_int"]("healer_hp_value_var", state.healer_hp_value))
-        state.healer_min_mana = max(0, self.helpers["get_ui_int"]("healer_min_mana_var", state.healer_min_mana))
+        state.healer_hp_percent = max(HEALER_HP_MIN, min(PERCENT_VALUE_MAX, self.helpers["get_ui_int"]("healer_hp_percent_var", state.healer_hp_percent)))
+        state.healer_hp_value = max(HEALER_HP_MIN, self.helpers["get_ui_int"]("healer_hp_value_var", state.healer_hp_value))
+        state.healer_min_mana = max(NON_NEGATIVE_INT_MIN, self.helpers["get_ui_int"]("healer_min_mana_var", state.healer_min_mana))
         state.healer_max_mana = max(state.healer_min_mana, self.helpers["get_ui_int"]("healer_max_mana_var", state.healer_max_mana))
         try:
-            state.healer_mouse_speed = max(0.2, min(3.0, float(self.ui_vars["healer_mouse_speed_var"].get())))
+            state.healer_mouse_speed = max(HEALER_MOUSE_SPEED_MIN, min(HEALER_MOUSE_SPEED_MAX, float(self.ui_vars["healer_mouse_speed_var"].get())))
         except (KeyError, ValueError):
             pass
-        state.healer_rune_delay_ms = max(50, self.helpers["get_ui_ms"]("healer_rune_delay_var", state.healer_rune_delay_ms))
+        state.healer_rune_delay_ms = max(HEALER_RUNE_DELAY_MS_MIN, self.helpers["get_ui_ms"]("healer_rune_delay_var", state.healer_rune_delay_ms))
 
     def refresh_from_state(self) -> None:
         state = self.runtime.state
@@ -134,4 +142,3 @@ class HealerTab:
             self.healer_char_label.config(text=f"Character center: {state.healer_character_pos[0]}, {state.healer_character_pos[1]}")
         if self.healer_rune_label:
             self.healer_rune_label.config(text=f"Healing rune: {state.healer_rune_pos[0]}, {state.healer_rune_pos[1]}")
-

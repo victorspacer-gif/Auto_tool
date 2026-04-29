@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from ...config import (
+    NON_NEGATIVE_INT_MIN,
+    RUNE_MOUSE_MOVE_MS_MIN,
+    RUNE_MOUSE_PRESS_MS_MIN,
+    RUNE_MOUSE_SETTLE_MS_MIN,
+)
 from ...theme import BG, BLUE, BOLD, FG, GREEN, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
 
 
@@ -165,18 +171,18 @@ class RuneTab:
         if "rune_spell_key_var" in self.ui_vars:
             state.rune_spell_key = str(self.ui_vars["rune_spell_key_var"].get()).lower().strip()
         state.rune_cycle_delay_ms = self.helpers["get_ui_ms"]("rune_cycle_delay_var", state.rune_cycle_delay_ms)
-        state.rune_cycle_delay_variation_ms = max(0, self.helpers["get_ui_ms"]("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
+        state.rune_cycle_delay_variation_ms = max(NON_NEGATIVE_INT_MIN, self.helpers["get_ui_ms"]("rune_cycle_variation_var", state.rune_cycle_delay_variation_ms))
         state.rune_jitter = self.helpers["get_ui_int"]("rune_jitter_var", state.rune_jitter)
         state.rune_cast_delay_ms = self.helpers["get_ui_ms"]("rune_cast_delay_var", state.rune_cast_delay_ms)
         state.rune_post_cast_settle_ms = max(100, self.helpers["get_ui_ms"]("rune_post_cast_settle_var", state.rune_post_cast_settle_ms))
-        state.rune_min_mana = max(0, self.helpers["get_ui_int"]("rune_min_mana_var", state.rune_min_mana))
+        state.rune_min_mana = max(NON_NEGATIVE_INT_MIN, self.helpers["get_ui_int"]("rune_min_mana_var", state.rune_min_mana))
         state.rune_max_mana = max(state.rune_min_mana, self.helpers["get_ui_int"]("rune_max_mana_var", state.rune_max_mana))
-        state.rune_available_blank_runes = max(0, self.helpers["get_ui_int"]("rune_blank_cycles_var", state.rune_available_blank_runes))
-        state.rune_mouse_move_min_ms = max(20, self.helpers["get_ui_ms"]("rune_move_min_var", state.rune_mouse_move_min_ms))
+        state.rune_available_blank_runes = max(NON_NEGATIVE_INT_MIN, self.helpers["get_ui_int"]("rune_blank_cycles_var", state.rune_available_blank_runes))
+        state.rune_mouse_move_min_ms = max(RUNE_MOUSE_MOVE_MS_MIN, self.helpers["get_ui_ms"]("rune_move_min_var", state.rune_mouse_move_min_ms))
         state.rune_mouse_move_max_ms = max(state.rune_mouse_move_min_ms, self.helpers["get_ui_ms"]("rune_move_max_var", state.rune_mouse_move_max_ms))
-        state.rune_mouse_press_min_ms = max(10, self.helpers["get_ui_ms"]("rune_press_min_var", state.rune_mouse_press_min_ms))
+        state.rune_mouse_press_min_ms = max(RUNE_MOUSE_PRESS_MS_MIN, self.helpers["get_ui_ms"]("rune_press_min_var", state.rune_mouse_press_min_ms))
         state.rune_mouse_press_max_ms = max(state.rune_mouse_press_min_ms, self.helpers["get_ui_ms"]("rune_press_max_var", state.rune_mouse_press_max_ms))
-        state.rune_mouse_settle_min_ms = max(10, self.helpers["get_ui_ms"]("rune_settle_min_var", state.rune_mouse_settle_min_ms))
+        state.rune_mouse_settle_min_ms = max(RUNE_MOUSE_SETTLE_MS_MIN, self.helpers["get_ui_ms"]("rune_settle_min_var", state.rune_mouse_settle_min_ms))
         state.rune_mouse_settle_max_ms = max(state.rune_mouse_settle_min_ms, self.helpers["get_ui_ms"]("rune_settle_max_var", state.rune_mouse_settle_max_ms))
 
     def refresh_from_state(self) -> None:
@@ -187,4 +193,3 @@ class RuneTab:
             self.rune_storage_label.config(text=f"Finished storage pos: {state.rune_storage_pos[0]},{state.rune_storage_pos[1]}")
         if self.rune_blank_label:
             self.rune_blank_label.config(text=f"Blank rune backpack pos: {state.rune_blank_pos[0]},{state.rune_blank_pos[1]}")
-

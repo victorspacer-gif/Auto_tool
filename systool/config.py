@@ -5,11 +5,100 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, fields, is_dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .models import AppState, HotkeyJob
+if TYPE_CHECKING:
+    from .models import AppState
 
 logger = logging.getLogger(__name__)
+
+
+# Default user-facing numeric configuration values.
+HOTKEY_JOB_MIN_MS_DEFAULT: int = 20_000
+HOTKEY_JOB_MAX_MS_DEFAULT: int = 30_000
+HOTKEY_JOB_MIN_MANA_DEFAULT: int = 0
+HOTKEY_JOB_MAX_MANA_DEFAULT: int = 0
+HOTKEY_JOB_BURST_CHANCE_DEFAULT: float = 0.20
+HOTKEY_JOB_BURST_COUNT_MIN_DEFAULT: int = 3
+HOTKEY_JOB_BURST_COUNT_MAX_DEFAULT: int = 8
+HOTKEY_JOB_BURST_INTERVAL_MS_DEFAULT: int = 80
+
+ALARM_THRESHOLD_RATIO_DEFAULT: float = 0.80
+ALARM_COOLDOWN_SECONDS_DEFAULT: int = 10
+
+CHAR_STATUS_POLL_MS_DEFAULT: int = 800
+CHAR_STATUS_SAMPLES_DEFAULT: int = 3
+CHAR_STATUS_SAMPLE_DELAY_MS_DEFAULT: int = 100
+
+FISH_CAST_MIN_MS_DEFAULT: int = 1_000
+FISH_CAST_MAX_MS_DEFAULT: int = 2_000
+FISH_WAIT_MIN_MS_DEFAULT: int = 1_000
+FISH_WAIT_MAX_MS_DEFAULT: int = 2_000
+FISH_ROD_JITTER_DEFAULT: int = 5
+FISH_SPOT_JITTER_DEFAULT: int = 15
+FISH_SESSION_MINUTES_DEFAULT: int = 10
+FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT: int = 300
+
+RUNE_CYCLE_DELAY_MS_DEFAULT: int = 5_000
+RUNE_CYCLE_DELAY_VARIATION_MS_DEFAULT: int = 0
+RUNE_JITTER_DEFAULT: int = 6
+RUNE_CAST_DELAY_MS_DEFAULT: int = 900
+RUNE_POST_CAST_SETTLE_MS_DEFAULT: int = 600
+RUNE_MOUSE_MOVE_MIN_MS_DEFAULT: int = 180
+RUNE_MOUSE_MOVE_MAX_MS_DEFAULT: int = 350
+RUNE_MOUSE_PRESS_MIN_MS_DEFAULT: int = 60
+RUNE_MOUSE_PRESS_MAX_MS_DEFAULT: int = 120
+RUNE_MOUSE_SETTLE_MIN_MS_DEFAULT: int = 100
+RUNE_MOUSE_SETTLE_MAX_MS_DEFAULT: int = 220
+
+HEALER_HP_PERCENT_DEFAULT: int = 60
+HEALER_HP_VALUE_DEFAULT: int = 120
+HEALER_MOUSE_SPEED_DEFAULT: float = 1.0
+HEALER_RUNE_DELAY_MS_DEFAULT: int = 250
+
+APP_AFK_MIN_MS_DEFAULT: int = 70_000
+APP_AFK_MAX_MS_DEFAULT: int = 88_000
+APP_RCLICK_MIN_MS_DEFAULT: int = 20_000
+APP_RCLICK_MAX_MS_DEFAULT: int = 31_000
+APP_RCLICK_FOOD_MIN_MINUTES_DEFAULT: int = 10
+APP_RCLICK_FOOD_BURST_COUNT_DEFAULT: int = 4
+APP_RCLICK_FOOD_BURST_COUNT_MIN_DEFAULT: int = 3
+APP_RCLICK_FOOD_BURST_COUNT_MAX_DEFAULT: int = 6
+APP_RCLICK_FOOD_BURST_INTERVAL_MS_DEFAULT: int = 700
+APP_RCLICK_CLICK_DELAY_MIN_MS_DEFAULT: int = 150
+APP_RCLICK_CLICK_DELAY_MAX_MS_DEFAULT: int = 250
+APP_RCLICK_POST_CLICK_SETTLE_MS_DEFAULT: int = 300
+APP_LIGHT_FREEZE_INTERVAL_MS_DEFAULT: int = 1_000
+
+# Validation and clamping bounds for persisted/user-provided values.
+FOOD_TIMER_MIN_MINUTES_MIN: int = 1
+FOOD_TIMER_MIN_MINUTES_MAX: int = 40
+RCLICK_FOOD_BURST_COUNT_MIN: int = 1
+RCLICK_FOOD_BURST_INTERVAL_MS_MIN: int = 50
+RCLICK_CLICK_DELAY_MS_MIN: int = 100
+RCLICK_POST_CLICK_SETTLE_MS_MIN: int = 100
+PERCENT_VALUE_MIN: int = 0
+PERCENT_VALUE_MAX: int = 100
+CHAR_STATUS_POLL_MS_MIN: int = 250
+FISH_SESSION_MINUTES_MIN: int = 1
+FISH_SESSION_MINUTES_MAX: int = 40
+FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN: int = 30
+FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX: int = 600
+NON_NEGATIVE_INT_MIN: int = 0
+RUNE_MOUSE_MOVE_MS_MIN: int = 20
+RUNE_MOUSE_PRESS_MS_MIN: int = 10
+RUNE_MOUSE_SETTLE_MS_MIN: int = 10
+HEALER_HP_MIN: int = 1
+HEALER_MOUSE_SPEED_MIN: float = 0.2
+HEALER_MOUSE_SPEED_MAX: float = 3.0
+HEALER_RUNE_DELAY_MS_MIN: int = 50
+BYTE_VALUE_MIN: int = 0
+BYTE_VALUE_MAX: int = 255
+LIGHT_FREEZE_INTERVAL_MS_MIN: int = 30
+
+# Defaults used when reading legacy or incomplete saved job payloads.
+JOB_JSON_MIN_MS_DEFAULT: int = 1_000
+JOB_JSON_MAX_MS_DEFAULT: int = 3_000
 
 
 # Fields that need special handling during serialization (non-dataclass types).
@@ -173,6 +262,8 @@ class ConfigSerializer:
 
     @staticmethod
     def apply_loaded(state: AppState, payload: dict) -> None:
+        from .models import HotkeyJob
+
         cfg = payload["cfg"]
         jobs = payload["jobs"]
         spots = payload["spots"]
@@ -218,33 +309,33 @@ class ConfigSerializer:
         legacy_food_secs = get_int("rclick_food_min_secs", state.rclick_food_min_minutes * 60)
         food_minutes = get_int(
             "rclick_food_min_minutes",
-            max(1, round(legacy_food_secs / 60)),
+            max(FOOD_TIMER_MIN_MINUTES_MIN, round(legacy_food_secs / 60)),
         )
-        state.rclick_food_min_minutes = max(1, min(40, food_minutes))
+        state.rclick_food_min_minutes = max(FOOD_TIMER_MIN_MINUTES_MIN, min(FOOD_TIMER_MIN_MINUTES_MAX, food_minutes))
 
-        state.rclick_food_burst_count = max(1, get_int("rclick_food_burst_count", state.rclick_food_burst_count))
-        state.rclick_food_burst_count_min = max(1, get_int("rclick_food_burst_count_min", state.rclick_food_burst_count_min))
+        state.rclick_food_burst_count = max(RCLICK_FOOD_BURST_COUNT_MIN, get_int("rclick_food_burst_count", state.rclick_food_burst_count))
+        state.rclick_food_burst_count_min = max(RCLICK_FOOD_BURST_COUNT_MIN, get_int("rclick_food_burst_count_min", state.rclick_food_burst_count_min))
         state.rclick_food_burst_count_max = max(
             state.rclick_food_burst_count_min,
             get_int("rclick_food_burst_count_max", state.rclick_food_burst_count_max),
         )
-        state.rclick_food_burst_interval_ms = max(50, get_int("rclick_food_burst_interval_ms", state.rclick_food_burst_interval_ms))
-        state.rclick_click_delay_min_ms = max(100, get_int("rclick_click_delay_min_ms", state.rclick_click_delay_min_ms))
+        state.rclick_food_burst_interval_ms = max(RCLICK_FOOD_BURST_INTERVAL_MS_MIN, get_int("rclick_food_burst_interval_ms", state.rclick_food_burst_interval_ms))
+        state.rclick_click_delay_min_ms = max(RCLICK_CLICK_DELAY_MS_MIN, get_int("rclick_click_delay_min_ms", state.rclick_click_delay_min_ms))
         state.rclick_click_delay_max_ms = max(
             state.rclick_click_delay_min_ms,
             get_int("rclick_click_delay_max_ms", state.rclick_click_delay_max_ms),
         )
-        state.rclick_post_click_settle_ms = max(100, get_int("rclick_post_click_settle_ms", state.rclick_post_click_settle_ms))
+        state.rclick_post_click_settle_ms = max(RCLICK_POST_CLICK_SETTLE_MS_MIN, get_int("rclick_post_click_settle_ms", state.rclick_post_click_settle_ms))
 
         # ── Alarm ─────────────────────────────────────────────────────
         state.alarm.mp3 = get_str("alarm_mp3", state.alarm.mp3)
         state.alarm.threshold = get_float("alarm_threshold", state.alarm.threshold)
         state.alarm.cooldown = get_int("alarm_cooldown", state.alarm.cooldown)
         state.alarm.auto_pause = get_bool("alarm_auto_pause", state.alarm.auto_pause)
-        state.alarm.hp_percent = max(0, min(100, get_int("alarm_hp_percent", state.alarm.hp_percent)))
-        state.alarm.hp_value = max(0, get_int("alarm_hp_value", state.alarm_hp_value))
-        state.alarm.mp_value = max(0, get_int("alarm_mp_value", state.alarm_mp_value))
-        state.alarm.cap_value = max(0, get_int("alarm_cap_value", state.alarm_cap_value))
+        state.alarm.hp_percent = max(PERCENT_VALUE_MIN, min(PERCENT_VALUE_MAX, get_int("alarm_hp_percent", state.alarm.hp_percent)))
+        state.alarm.hp_value = max(NON_NEGATIVE_INT_MIN, get_int("alarm_hp_value", state.alarm_hp_value))
+        state.alarm.mp_value = max(NON_NEGATIVE_INT_MIN, get_int("alarm_mp_value", state.alarm_mp_value))
+        state.alarm.cap_value = max(NON_NEGATIVE_INT_MIN, get_int("alarm_cap_value", state.alarm_cap_value))
         state.alarm.region = alarm_region
 
         # ── Char-status ───────────────────────────────────────────────
@@ -252,7 +343,7 @@ class ConfigSerializer:
         state.char_status.hp_region = char_status_hp_region
         state.char_status.mana_region = char_status_mana_region
         state.char_status.cap_region = char_status_cap_region
-        state.char_status.poll_ms = max(250, get_int("char_status_poll_ms", state.char_status.poll_ms))
+        state.char_status.poll_ms = max(CHAR_STATUS_POLL_MS_MIN, get_int("char_status_poll_ms", state.char_status.poll_ms))
         state.char_status.tesseract_path = get_str("char_status_tesseract_path", state.char_status.tesseract_path)
 
         # ── Fishing ───────────────────────────────────────────────────
@@ -266,16 +357,16 @@ class ConfigSerializer:
         state.fishing.wait_max_ms = get_int("fish_wait_max_ms", state.fishing.wait_max_ms)
         state.fishing.rod_jitter = get_int("fish_rod_jitter", state.fishing.rod_jitter)
         state.fishing.spot_jitter = get_int("fish_spot_jitter", state.fishing.spot_jitter)
-        state.fishing.session_minutes = max(1, min(40, get_int("fish_session_minutes", state.fishing.session_minutes)))
-        state.fishing.min_cap = max(0, get_int("fish_min_cap", state.fishing.min_cap))
+        state.fishing.session_minutes = max(FISH_SESSION_MINUTES_MIN, min(FISH_SESSION_MINUTES_MAX, get_int("fish_session_minutes", state.fishing.session_minutes)))
+        state.fishing.min_cap = max(NON_NEGATIVE_INT_MIN, get_int("fish_min_cap", state.fishing.min_cap))
         state.fishing.auto_restart_enabled = bool(get_bool("fish_auto_restart_enabled", state.fishing.auto_restart_enabled))
-        state.fishing.auto_restart_food_min_secs = max(30, min(600, get_int("fish_auto_restart_food_min_secs", state.fishing.auto_restart_food_min_secs)))
+        state.fishing.auto_restart_food_min_secs = max(FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN, min(FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX, get_int("fish_auto_restart_food_min_secs", state.fishing.auto_restart_food_min_secs)))
         state.fish_spots = list(spots)
 
         # ── Rune ──────────────────────────────────────────────────────
         state.rune.spell_key = get_str("rune_spell_key", state.rune.spell_key)
         state.rune.cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune.cycle_delay_ms)
-        state.rune.cycle_delay_variation_ms = max(0, get_int("rune_cycle_delay_variation_ms", state.rune.cycle_delay_variation_ms))
+        state.rune.cycle_delay_variation_ms = max(NON_NEGATIVE_INT_MIN, get_int("rune_cycle_delay_variation_ms", state.rune.cycle_delay_variation_ms))
         state.rune.hand_pos = (
             get_int("rune_hand_x", state.rune.hand_pos[0]),
             get_int("rune_hand_y", state.rune.hand_pos[1]),
@@ -290,22 +381,22 @@ class ConfigSerializer:
         )
         state.rune.jitter = get_int("rune_jitter", state.rune.jitter)
         state.rune.cast_delay_ms = get_int("rune_cast_delay_ms", state.rune.cast_delay_ms)
-        state.rune.min_mana = max(0, get_int("rune_min_mana", state.rune.min_mana))
-        state.rune.available_blank_runes = max(0, get_int("rune_available_blank_runes", state.rune_available_blank_runes))
-        state.rune.mouse_move_min_ms = max(20, get_int("rune_mouse_move_min_ms", state.rune.mouse_move_min_ms))
+        state.rune.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("rune_min_mana", state.rune.min_mana))
+        state.rune.available_blank_runes = max(NON_NEGATIVE_INT_MIN, get_int("rune_available_blank_runes", state.rune_available_blank_runes))
+        state.rune.mouse_move_min_ms = max(RUNE_MOUSE_MOVE_MS_MIN, get_int("rune_mouse_move_min_ms", state.rune.mouse_move_min_ms))
         state.rune.mouse_move_max_ms = max(state.rune.mouse_move_min_ms, get_int("rune_mouse_move_max_ms", state.rune.mouse_move_max_ms))
-        state.rune.mouse_press_min_ms = max(10, get_int("rune_mouse_press_min_ms", state.rune.mouse_press_min_ms))
+        state.rune.mouse_press_min_ms = max(RUNE_MOUSE_PRESS_MS_MIN, get_int("rune_mouse_press_min_ms", state.rune.mouse_press_min_ms))
         state.rune.mouse_press_max_ms = max(state.rune.mouse_press_min_ms, get_int("rune_mouse_press_max_ms", state.rune.mouse_press_max_ms))
-        state.rune.mouse_settle_min_ms = max(10, get_int("rune_mouse_settle_min_ms", state.rune.mouse_settle_min_ms))
+        state.rune.mouse_settle_min_ms = max(RUNE_MOUSE_SETTLE_MS_MIN, get_int("rune_mouse_settle_min_ms", state.rune.mouse_settle_min_ms))
         state.rune.mouse_settle_max_ms = max(state.rune.mouse_settle_min_ms, get_int("rune_mouse_settle_max_ms", state.rune.mouse_settle_max_ms))
 
         # ── Healer ────────────────────────────────────────────────────
         state.healer.mode = get_str("healer_mode", state.healer.mode)
         state.healer.spell_key = get_str("healer_spell_key", state.healer.spell_key)
         state.healer.use_percent = get_bool("healer_use_percent", state.healer.use_percent)
-        state.healer.hp_percent = max(1, min(100, get_int("healer_hp_percent", state.healer.hp_percent)))
-        state.healer.hp_value = max(1, get_int("healer_hp_value", state.healer_hp_value))
-        state.healer.min_mana = max(0, get_int("healer_min_mana", state.healer.min_mana))
+        state.healer.hp_percent = max(HEALER_HP_MIN, min(PERCENT_VALUE_MAX, get_int("healer_hp_percent", state.healer.hp_percent)))
+        state.healer.hp_value = max(HEALER_HP_MIN, get_int("healer_hp_value", state.healer_hp_value))
+        state.healer.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("healer_min_mana", state.healer.min_mana))
         state.healer.max_mana = max(state.healer.min_mana, get_int("healer_max_mana", state.healer_max_mana))
         state.healer.character_pos = (
             get_int("healer_character_x", state.healer.character_pos[0]),
@@ -315,8 +406,8 @@ class ConfigSerializer:
             get_int("healer_rune_x", state.healer.rune_pos[0]),
             get_int("healer_rune_y", state.healer.rune_pos[1]),
         )
-        state.healer.mouse_speed = max(0.2, min(3.0, get_float("healer_mouse_speed", state.healer.mouse_speed)))
-        state.healer.rune_delay_ms = max(50, get_int("healer_rune_delay_ms", state.healer.rune_delay_ms))
+        state.healer.mouse_speed = max(HEALER_MOUSE_SPEED_MIN, min(HEALER_MOUSE_SPEED_MAX, get_float("healer_mouse_speed", state.healer.mouse_speed)))
+        state.healer.rune_delay_ms = max(HEALER_RUNE_DELAY_MS_MIN, get_int("healer_rune_delay_ms", state.healer.rune_delay_ms))
 
         # ── Light ─────────────────────────────────────────────────────
         state.light_process_name = get_str("light_process_name", state.light_process_name)
@@ -328,17 +419,17 @@ class ConfigSerializer:
         state.sandbox.drop_admin = get_bool("sandbox_drop_admin", state.sandbox.drop_admin)
         state.sandbox.spoof_env = get_bool("sandbox_spoof_env", state.sandbox.spoof_env)
         state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
-        state.light_freeze_color_value = max(0, min(255, get_int("light_freeze_color_value", state.light_freeze_color_value)))
-        state.light_freeze_intensity_value = max(0, min(255, get_int("light_freeze_intensity_value", state.light_freeze_intensity_value)))
-        state.light_freeze_interval_ms = max(30, get_int("light_freeze_interval_ms", state.light_freeze_interval_ms))
+        state.light_freeze_color_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_freeze_color_value", state.light_freeze_color_value)))
+        state.light_freeze_intensity_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_freeze_intensity_value", state.light_freeze_intensity_value)))
+        state.light_freeze_interval_ms = max(LIGHT_FREEZE_INTERVAL_MS_MIN, get_int("light_freeze_interval_ms", state.light_freeze_interval_ms))
         state.light_last_mode = get_str("light_last_mode", state.light_last_mode)
         state.light_last_color_address_hex = get_str("light_last_color_address_hex", state.light_last_color_address_hex)
         state.light_last_intensity_address_hex = get_str("light_last_intensity_address_hex", state.light_last_intensity_address_hex)
 
         raw_original_color = cfg.get("light_original_color_value")
         raw_original_intensity = cfg.get("light_original_intensity_value")
-        state.light_original_color_value = None if raw_original_color in (None, "", "None") else max(0, min(255, get_int("light_original_color_value", 0)))
-        state.light_original_intensity_value = None if raw_original_intensity in (None, "", "None") else max(0, min(255, get_int("light_original_intensity_value", 0)))
+        state.light_original_color_value = None if raw_original_color in (None, "", "None") else max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_original_color_value", 0)))
+        state.light_original_intensity_value = None if raw_original_intensity in (None, "", "None") else max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_original_intensity_value", 0)))
 
         # ── Hotkeys & jobs ────────────────────────────────────────────
         for action, binding in hotkeys.items():
@@ -351,18 +442,17 @@ class ConfigSerializer:
             job = HotkeyJob(
                 job_id=int(float(job_data.get("job_id", 0) or 0)) or len(state.jobs) + 1,
                 key=job_data.get("key", "F1"),
-                min_ms=int(float(job_data.get("min_ms", 1000))),
-                max_ms=int(float(job_data.get("max_ms", 3000))),
-                min_mana=int(float(job_data.get("min_mana", 0) or 0)),
+                min_ms=int(float(job_data.get("min_ms", JOB_JSON_MIN_MS_DEFAULT))),
+                max_ms=int(float(job_data.get("max_ms", JOB_JSON_MAX_MS_DEFAULT))),
+                min_mana=int(float(job_data.get("min_mana", HOTKEY_JOB_MIN_MANA_DEFAULT) or 0)),
                 burst_enabled=str(job_data.get("burst", "false")).lower() == "true",
-                burst_chance=float(job_data.get("burst_chance", 0.2)),
-                burst_cnt_min=int(job_data.get("burst_cnt_min", 3)),
-                burst_cnt_max=int(job_data.get("burst_cnt_max", 8)),
-                burst_int_ms=int(job_data.get("burst_int_ms", 80)),
+                burst_chance=float(job_data.get("burst_chance", HOTKEY_JOB_BURST_CHANCE_DEFAULT)),
+                burst_cnt_min=int(job_data.get("burst_cnt_min", HOTKEY_JOB_BURST_COUNT_MIN_DEFAULT)),
+                burst_cnt_max=int(job_data.get("burst_cnt_max", HOTKEY_JOB_BURST_COUNT_MAX_DEFAULT)),
+                burst_int_ms=int(job_data.get("burst_int_ms", HOTKEY_JOB_BURST_INTERVAL_MS_DEFAULT)),
                 use_focus=str(job_data.get("use_focus", "false")).lower() == "true",
                 window_name=job_data.get("window_name", ""),
                 restore_focus=str(job_data.get("restore_focus", "true")).lower() == "true",
             )
             state.jobs.append(job)
             state.job_counter = max(state.job_counter, job.job_id)
-
