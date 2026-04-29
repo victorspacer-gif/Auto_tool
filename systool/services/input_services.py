@@ -234,8 +234,23 @@ class HumanMouse:
                     easing_mode="correction",
                 )
 
-        # --- Final snap to true target ---
-        mouse.position = (int(ex), int(ey))
+        # --- Smooth settle to true target (no hard snap) ---
+        cur_x, cur_y = mouse.position
+        settle_dist = math.hypot(ex - cur_x, ey - cur_y)
+        if settle_dist < 1:
+            return
+
+        # Use a fraction of the remaining correction budget for a gentle final approach
+        settle_duration = max(0.03, (duration - ballistic_duration) * random.uniform(0.5, 0.8))
+        _curve_move(
+            mouse,
+            start=(cur_x, cur_y),
+            end=(int(ex), int(ey)),
+            duration=settle_duration,
+            noise_scale=random.uniform(0.1, 0.25),
+            smooth=True,
+            easing_mode="correction",
+        )
 
     @staticmethod
     def drag(
