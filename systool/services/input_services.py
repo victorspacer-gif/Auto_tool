@@ -61,6 +61,7 @@ def _curve_move(
     smooth: bool = False,
     control_scale_override: float | None = None,
     easing_mode: str = "ballistic",
+    settle_mode: bool = False,
 ) -> None:
     """Execute a single Bézier-curve mouse movement from *start* to *end*.
 
@@ -77,6 +78,10 @@ def _curve_move(
     easing_mode : str
         "ballistic" → original cubic ease-out (t²·(3−2t))
         "correction" → quadratic ease-in (t²) for slower, deliberate motion
+    settle_mode : bool
+        When True, applies extra jitter suppression throughout the entire move.
+        Uses a steeper fade curve so even the first steps are near-silent —
+        prevents the "heavy wiggle before clicking" look on final approach.
     """
     sx, sy = start
     ex, ey = end
@@ -123,8 +128,13 @@ def _curve_move(
         x_pos = (1 - eased) ** 2 * sx + 2 * (1 - eased) * eased * cx + eased**2 * ex
         y_pos = (1 - eased) ** 2 * sy + 2 * (1 - eased) * eased * cy + eased**2 * ey
 
-        # Fading jitter — less noise near the end of movement
-        fade = 1.0 - t_value
+        # Fading jitter — less noise near the end of movement.
+        # In settle_mode, use a quadratic fade so even early steps are near-silent;
+        # this prevents the "heavy wiggle before clicking" look on final approach.
+        if settle_mode:
+            fade = max(0.0, (1.0 - t_value) ** 2) * 0.5  # Quadratic + 50% reduction
+        else:
+            fade = 1.0 - t_value
         x_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade * noise_scale
         y_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade * noise_scale
 
@@ -258,17 +268,19 @@ class HumanMouse:
         if settle_dist < 1:
             return
 
-        # Gentle final approach — slow and deliberate, using a fraction of the
-        # original duration so it never feels rushed.
-        # Min 50ms; takes 10–20% of total duration for smooth deceleration
-        settle_duration = max(0.05, duration * random.uniform(0.10, 0.20))
+        # Gentle final approach — near-silent movement with minimal wobble.
+        # Uses a very low noise floor and an extra fade multiplier so jitter
+        # stays imperceptible throughout the entire settle (not just at the end).
+        # Min 40ms; takes 8–15% of total duration for smooth deceleration
+        settle_duration = max(0.04, duration * random.uniform(0.08, 0.15))
         _curve_move(
             mouse,
             start=(cur_x, cur_y),
             end=(int(ex), int(ey)),
             duration=settle_duration,
-            noise_scale=random.uniform(0.08, 0.18),  # Lowest noise (8-18%) for final approach
+            noise_scale=random.uniform(0.02, 0.05),  # Ultra-low noise (2-5%) — barely perceptible
             smooth=True,
+            settle_mode=True,  # Extra jitter suppression for final approach
         )
 
     @staticmethod
