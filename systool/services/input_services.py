@@ -148,16 +148,16 @@ def _apply_target_error(
 
     roll = random.random()
 
-    if roll < 0.20:
-        # Overshoot: 20-35% probability overall
-        factor = 1.02 + (distance / 500) * 0.06  # scales with distance, capped ~1.08
+    if roll < 0.10:
+        # Overshoot: ~10% probability overall — reduced frequency
+        factor = 1.01 + (distance / 500) * 0.03  # scales with distance, capped ~1.04
         tx = sx + (ex - sx) * factor
         ty = sy + (ey - sy) * factor
         return (tx, ty, "overshoot")
 
-    if roll < 0.35:
-        # Undershoot: 10-20% probability overall
-        factor = 0.92 + random.random() * 0.06  # ~0.92–0.98
+    if roll < 0.18:
+        # Undershoot: ~8% probability overall — reduced frequency and magnitude
+        factor = 0.96 + random.random() * 0.02  # ~0.96–0.98 (was 0.92–0.98)
         tx = sx + (ex - sx) * factor
         ty = sy + (ey - sy) * factor
         return (tx, ty, "undershoot")
