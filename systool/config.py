@@ -149,6 +149,22 @@ class ConfigSerializer:
     # ── Deserialization ─────────────────────────────────────────────
 
     @staticmethod
+    def _resolve_region(raw: dict, flat_key: str) -> tuple | None:
+        """Resolve a region value from both old flat keys and new dot-notation keys.
+
+        Old format: raw["alarm_region"] = [x, y, w, h]
+        New format: raw["alarm.region"] = [x, y, w, h]
+        """
+        if flat_key in raw:
+            val = raw[flat_key]
+            return tuple(val) if isinstance(val, (list, tuple)) else None
+        dot_key = flat_key.replace("_", ".", 1)
+        if dot_key in raw:
+            val = raw[dot_key]
+            return tuple(val) if isinstance(val, (list, tuple)) else None
+        return None
+
+    @staticmethod
     def load_file(path: str) -> dict:
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
@@ -163,11 +179,11 @@ class ConfigSerializer:
             "cfg": cfg,
             "jobs": raw.get("jobs", []),
             "spots": [tuple(item) for item in raw.get("fish_spots", [])],
-            "alarm_region": tuple(raw["alarm_region"]) if raw.get("alarm_region") else None,
-            "char_status_region": tuple(raw["char_status_region"]) if raw.get("char_status_region") else None,
-            "char_status_hp_region": tuple(raw["char_status_hp_region"]) if raw.get("char_status_hp_region") else None,
-            "char_status_mana_region": tuple(raw["char_status_mana_region"]) if raw.get("char_status_mana_region") else None,
-            "char_status_cap_region": tuple(raw["char_status_cap_region"]) if raw.get("char_status_cap_region") else None,
+            "alarm_region": ConfigSerializer._resolve_region(raw, "alarm_region"),
+            "char_status_region": ConfigSerializer._resolve_region(raw, "char_status_region"),
+            "char_status_hp_region": ConfigSerializer._resolve_region(raw, "char_status_hp_region"),
+            "char_status_mana_region": ConfigSerializer._resolve_region(raw, "char_status_mana_region"),
+            "char_status_cap_region": ConfigSerializer._resolve_region(raw, "char_status_cap_region"),
             "hotkeys": raw.get("hotkey_bindings", {}),
         }
 
