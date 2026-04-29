@@ -83,16 +83,18 @@ def _curve_move(
     dx, dy = ex - sx, ey - sy
     distance = math.hypot(dx, dy)
 
+    # Skip movement if target is within 1px — no-op threshold
     if distance < 1:
         mouse.position = (int(ex), int(ey))
         return
 
+    # Minimum 10 steps for smooth curves; ~1 step per 7px for reasonable pacing
     steps = max(10, int(distance / 7))
     step_duration = duration / steps
 
     # Control point — perpendicular offset from midpoint
     if smooth:
-        # Reduced randomness for smoother curves
+        # Reduced randomness for smoother curves (scale to 45% of full range)
         raw_scale = random.uniform(*INPUT_CONTROL_SCALE_RANGE) * 0.45
     else:
         raw_scale = (
@@ -110,7 +112,7 @@ def _curve_move(
         def _easing(t):
             return t * t
     else:
-        # Original cubic ease-out
+        # Original cubic ease-out (t²·(3−2t)) — polynomial coefficients for smooth accel/decel
         def _easing(t):
             return t * t * (3.0 - 2.0 * t)
 
@@ -141,24 +143,26 @@ def _apply_target_error(
     Short distances (< 50 px) are strongly biased toward no error so that
     tiny movements remain clean and direct.
     """
-    # Bias toward "none" for short distances
+    # Bias toward "none" for short distances (< 50px threshold)
     if distance < 50:
+        # none_chance ramps from 0.7 (at 0px) to 0.84 (at 50px), capped at 0.92 max
         none_chance = min(0.92, 0.7 + (distance / 50) * 0.14)
     else:
+        # Base no-error probability for distances >= 50px is 60%
         none_chance = 0.6
 
     roll = random.random()
 
     if roll < 0.10:
-        # Overshoot: ~10% probability overall — reduced frequency
-        factor = 1.01 + (distance / 500) * 0.03  # scales with distance, capped ~1.04
+        # Overshoot: ~10% probability (roll threshold) — factor starts at 1.01, scales +0.03 per 500px distance
+        factor = 1.01 + (distance / 500) * 0.03  # capped ~1.04 max overshoot
         tx = sx + (ex - sx) * factor
         ty = sy + (ey - sy) * factor
         return (tx, ty, "overshoot")
 
     if roll < 0.18:
-        # Undershoot: ~8% probability overall — reduced frequency and magnitude
-        factor = 0.96 + random.random() * 0.02  # ~0.96–0.98 (was 0.92–0.98)
+        # Undershoot: ~8% exclusive probability (cumulative threshold at 18%) — factor ~0.96–0.98
+        factor = 0.96 + random.random() * 0.02  # base 0.96, random up to +0.02
         tx = sx + (ex - sx) * factor
         ty = sy + (ey - sy) * factor
         return (tx, ty, "undershoot")
@@ -190,8 +194,8 @@ class HumanMouse:
             mouse.position = (int(ex), int(ey))
             return
 
-        # --- Phase 0 — Optional reaction delay (20–120 ms) ---
-        time.sleep(random.uniform(0.020, 0.120))
+        # --- Phase 0 — Optional reaction delay (20–120 ms human response time) ---
+        time.sleep(random.uniform(0.020, 0.120))  # 20ms min to 120ms max reaction delay
 
         if duration is None:
             duration = max(INPUT_MOUSE_DURATION_MIN, min(INPUT_MOUSE_DURATION_MAX, distance / random.uniform(INPUT_MOUSE_SPEED_DIVISOR_MIN, INPUT_MOUSE_SPEED_DIVISOR_MAX)))
@@ -199,13 +203,14 @@ class HumanMouse:
         # --- Phase 1 — Ballistic movement with possible target error ---
         err_ex, err_ey, error_type = _apply_target_error(sx, sy, ex, ey, distance)
 
+        # Ballistic phase takes 75–90% of total duration (leaves budget for corrections)
         ballistic_duration = duration * random.uniform(0.75, 0.90)
         _curve_move(
             mouse,
             start=(sx, sy),
             end=(int(err_ex), int(err_ey)),
             duration=ballistic_duration,
-            noise_scale=1.0,
+            noise_scale=1.0,  # Full noise during ballistic phase (no reduction)
             smooth=False,
             easing_mode="ballistic",
         )
@@ -215,9 +220,10 @@ class HumanMouse:
             # Allocate a dedicated correction budget: 30–50% of total duration.
             # This is separate from the ballistic time so corrections feel deliberate,
             # not rushed into whatever milliseconds are left over.
-            correction_budget = duration * random.uniform(0.30, 0.50)
+            correction_budget = duration * random.uniform(0.30, 0.50)  # 30-50% budget fraction
 
-            correction_count = random.randint(1, 2)  # fewer corrections, longer each
+            # Correction count: 1–2 attempts (fewer corrections, longer each)
+            correction_count = random.randint(1, 2)
             for _ci in range(correction_count):
                 cur_x, cur_y = mouse.position
                 corr_dist = math.hypot(ex - cur_x, ey - cur_y)
@@ -226,21 +232,23 @@ class HumanMouse:
 
                 # Each correction gets a generous slice of the dedicated budget.
                 # First correction takes more (it's bigger), subsequent ones taper off.
+                # First share: 55–75% of budget; subsequent shares: 30–50%
                 share = random.uniform(0.55, 0.75) if _ci == 0 else random.uniform(0.30, 0.50)
+                # Minimum correction duration is 60ms to prevent instant snaps
                 corr_dur = max(0.06, correction_budget * share)
                 correction_budget -= corr_dur
 
                 # Micro-pause between corrections — humans don't correct instantly;
                 # there's a brief processing delay (~15–40 ms) before the next adjustment.
                 if _ci > 0:
-                    time.sleep(random.uniform(0.015, 0.040))
+                    time.sleep(random.uniform(0.015, 0.040))  # 15ms to 40ms inter-correction pause
 
                 _curve_move(
                     mouse,
                     start=(cur_x, cur_y),
                     end=(int(ex), int(ey)),
                     duration=corr_dur,
-                    noise_scale=random.uniform(0.15, 0.30),
+                    noise_scale=random.uniform(0.15, 0.30),  # Reduced noise (15-30%) for correction phase
                     smooth=True,
                 )
 
@@ -252,13 +260,14 @@ class HumanMouse:
 
         # Gentle final approach — slow and deliberate, using a fraction of the
         # original duration so it never feels rushed.
+        # Min 50ms; takes 10–20% of total duration for smooth deceleration
         settle_duration = max(0.05, duration * random.uniform(0.10, 0.20))
         _curve_move(
             mouse,
             start=(cur_x, cur_y),
             end=(int(ex), int(ey)),
             duration=settle_duration,
-            noise_scale=random.uniform(0.08, 0.18),
+            noise_scale=random.uniform(0.08, 0.18),  # Lowest noise (8-18%) for final approach
             smooth=True,
         )
 
@@ -459,12 +468,14 @@ class RightClickService:
 
     @staticmethod
     def food_timer_meets_threshold(food_seconds: int | None, threshold_minutes: int) -> bool:
+        # Minimum 1-minute threshold enforced; convert minutes to seconds (×60)
         return food_seconds is not None and food_seconds >= max(1, threshold_minutes) * 60
 
     @staticmethod
     def _format_food_timer_debug(food_seconds: int | None) -> str:
         if food_seconds is None:
             return "unavailable"
+        # Time conversion constants: 3600s/hour, 60s/minute
         hours = food_seconds // 3600
         minutes = (food_seconds % 3600) // 60
         return f"{hours}:{minutes:02d}"
@@ -522,9 +533,11 @@ class RightClickService:
                 clicks_to_send = random.randint(burst_count_min, burst_count_max)
                 queue_window = max(
                     RCCLICK_QUEUE_WINDOW_MIN,
+                    # Convert ms to seconds (/1000); calculate total queue window for food burst
                     clicks_to_send * (click_delay_max_ms / 1000.0) + max(0, clicks_to_send - 1) * max(click_delay_min_ms / 1000.0, burst_interval_ms / 1000.0),
                 )
             else:
+                # Convert ms to seconds (/1000); wait between non-food right-clicks
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
                     break
                 clicks_to_send = 1
@@ -537,10 +550,12 @@ class RightClickService:
                 HumanMouse.move(mouse, target)
                 for click_index in range(clicks_to_send):
                     # Add slight random variation between clicks for natural rhythm
+                    # Convert burst_interval_ms to seconds (/1000); add jitter on top
                     inter_click = max(RCCLICK_INTER_CLICK_MIN, burst_interval_ms / 1000.0 + random.uniform(*RCCLICK_INTER_CLICK_JITTER))
                     time.sleep(inter_click)
                     mouse.click(pynput_mouse.Button.right, 1)
                 # Settle after all clicks — lets the game register and adds human-like pause
+                # Convert post_settle_ms to seconds (/1000)
                 time.sleep(post_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ R-click: {exc}")
