@@ -402,6 +402,7 @@ class MagicNumberEditor(tk.Tk):
         self.change_vars: dict[tuple[str, str], tk.StringVar] = {}
         self.original_values: dict[tuple[str, str], str] = {}
         self.value_types: dict[tuple[str, str], type[int] | type[float]] = {}
+        self._search_after_id: str | None = None
 
         self._build()
         self.reload()
@@ -412,7 +413,7 @@ class MagicNumberEditor(tk.Tk):
         tk.Label(toolbar, text="Search").pack(side="left")
         entry = tk.Entry(toolbar, textvariable=self.filter_var, width=44)
         entry.pack(side="left", padx=(8, 12))
-        entry.bind("<KeyRelease>", lambda _event: self._refresh_views())
+        entry.bind("<KeyRelease>", lambda _event: self._schedule_filter_refresh())
         tk.Checkbutton(
             toolbar,
             text="Load unsafe editable values",
@@ -476,7 +477,6 @@ class MagicNumberEditor(tk.Tk):
             key = (item.file_key, item.symbol)
             self.original_values[key] = str(item.value)
             self.change_vars[key] = tk.StringVar(value=str(item.value))
-            self.change_vars[key].trace_add("write", lambda *_args: self._refresh_views())
             self.value_types[key] = item.value_type
         self._refresh_views()
         summary = scan_summary(self.findings)
@@ -503,6 +503,15 @@ class MagicNumberEditor(tk.Tk):
             return True
         haystack = " ".join(str(part) for part in parts).lower()
         return query in haystack
+
+    def _schedule_filter_refresh(self) -> None:
+        if self._search_after_id is not None:
+            self.after_cancel(self._search_after_id)
+        self._search_after_id = self.after(120, self._apply_filter_refresh)
+
+    def _apply_filter_refresh(self) -> None:
+        self._search_after_id = None
+        self._refresh_views()
 
     def _refresh_views(self) -> None:
         self.render_rows()
