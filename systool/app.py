@@ -1842,18 +1842,21 @@ class SystemMonitorApp:
         Priority (highest → lowest):
             1. Stopped (Red)     — no modules running at all
             2. Paused   (Yellow) — paused overrides everything except stopped
-            3. Fishing  (Blue)   — fishing active while running
-            4. Running  (Green)  — any other module running
+            3. Rune     (Purple) — rune session active while running
+            4. Fishing  (Blue)   — fishing active while running
+            5. Running  (Green)  — any other module running
 
         Rules:
             - If state == stopped → ALWAYS red (override everything)
             - Else if paused     → ALWAYS yellow (override everything except stopped)
+            - Else if rune       → purple
             - Else if fishing    → blue
             - Else               → green
         """
         state = self.runtime.state
         paused = self.runtime.pause.paused
         fishing_active = state.fish_active
+        rune_active = state.rune_active
 
         # Priority 1: Stopped — no modules running at all
         has_any_module = self._has_running_modules()
@@ -1862,17 +1865,21 @@ class SystemMonitorApp:
         # Priority 2: Paused overrides everything except stopped
         elif paused:
             color = (255, 191, 0)   # Yellow — paused
-        # Priority 3: Fishing active while running → blue
+        # Priority 3: Rune active while running → purple
+        elif rune_active:
+            color = (191, 90, 242)  # Purple — rune session active
+        # Priority 4: Fishing active while running → blue
         elif fishing_active:
             color = (10, 132, 255)  # Blue — fishing active
-        # Priority 4: Running with other modules → green
+        # Priority 5: Running with other modules → green
         else:
             color = (48, 209, 88)   # Green — running
 
         logger.debug(
-            "Tray icon resolved → state=%s paused=%s fish_active=%s has_modules=%s → RGB%s",
+            "Tray icon resolved → state=%s paused=%s rune_active=%s fish_active=%s has_modules=%s → RGB%s",
             "running" if has_any_module else "idle",
             paused,
+            rune_active,
             fishing_active,
             has_any_module,
             color,
