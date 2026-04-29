@@ -100,8 +100,21 @@ class TestFoodTimerParsing:
     def test_parse_food_timer_h_mm(self):
         assert CharacterStatusService._parse_food_seconds("1:05") == 3900
 
+    def test_parse_food_timer_plain_minutes(self):
+        assert CharacterStatusService._parse_food_seconds("15") == 900
+
     def test_parse_food_timer_rejects_invalid_minutes(self):
         assert CharacterStatusService._parse_food_seconds("1:75") is None
+
+    def test_food_mode_decision_blocks_when_food_missing(self):
+        allowed, message = RightClickService._food_mode_decision("", None, 10)
+        assert allowed is False
+        assert "decision=blocked" in message
+
+    def test_food_mode_decision_allows_when_threshold_met(self):
+        allowed, message = RightClickService._food_mode_decision("15", 15 * 60, 10)
+        assert allowed is True
+        assert "decision=allowed" in message
 
     def test_food_threshold_requires_available_timer(self):
         assert RightClickService.food_timer_meets_threshold(None, 10) is False
@@ -180,10 +193,12 @@ class TestFoodTimerParsing:
 class TestPauseController:
     """Test PauseController toggle and wait behavior."""
 
-    def test_initial_state_not_paused(self):
-        ui = MagicMock()
-        controller = type("FakeUI", (), {"log": lambda *a: None, "set_pause_label": lambda *a: None})( )
-        # Can't easily construct without the real UI class, so let's use a simpler approach
+    def test_initial_state_paused(self):
+        controller = type("FakeUI", (), {"log": lambda *a: None, "set_pause_label": lambda *a: None})()
+        from systool.runtime import PauseController
+        pause = PauseController(controller)
+        assert pause.paused
+        assert not pause._event.is_set()
 
     def test_toggle_changes_state(self):
         """Toggle should flip paused state."""
@@ -191,7 +206,7 @@ class TestPauseController:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController
-        controller = PauseController(ui)
+        controller = PauseController(ui, start_paused=False)
         assert not controller.paused
         controller.toggle()
         assert controller.paused
@@ -204,7 +219,7 @@ class TestPauseController:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController
-        controller = PauseController(ui)
+        controller = PauseController(ui, start_paused=False)
         assert controller._event.is_set()
         controller.toggle()
         assert not controller._event.is_set()
@@ -216,7 +231,6 @@ class TestPauseController:
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController
         controller = PauseController(ui)
-        controller.toggle()  # pause
         assert not controller._event.is_set()
         controller.toggle()  # resume
         assert controller._event.is_set()
@@ -227,7 +241,7 @@ class TestPauseController:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController
-        controller = PauseController(ui)
+        controller = PauseController(ui, start_paused=False)
         start = time.monotonic()
         controller.wait()
         elapsed = time.monotonic() - start
@@ -240,7 +254,6 @@ class TestPauseController:
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController
         controller = PauseController(ui)
-        controller.toggle()  # pause
 
         def resume_after_delay():
             time.sleep(0.15)
@@ -263,7 +276,7 @@ class TestExecutionGate:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController, ExecutionGate
-        pause = PauseController(ui)
+        pause = PauseController(ui, start_paused=False)
         gate = ExecutionGate(pause)
         stop_evt = threading.Event()
         result = gate.acquire(stop_evt, max_wait=0.1, module_id="test")
@@ -275,7 +288,7 @@ class TestExecutionGate:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController, ExecutionGate
-        pause = PauseController(ui)
+        pause = PauseController(ui, start_paused=False)
         gate = ExecutionGate(pause)
         stop_evt = threading.Event()
         gate.acquire(stop_evt, max_wait=0.1, module_id="test")
@@ -288,7 +301,7 @@ class TestExecutionGate:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController, ExecutionGate, CursorRequest
-        pause = PauseController(ui)
+        pause = PauseController(ui, start_paused=False)
         gate = ExecutionGate(pause)
 
         # Manually add an expired request
@@ -304,7 +317,7 @@ class TestExecutionGate:
         ui.log = MagicMock()
         ui.set_pause_label = MagicMock()
         from systool.runtime import PauseController, ExecutionGate, CursorRequest
-        pause = PauseController(ui)
+        pause = PauseController(ui, start_paused=False)
         gate = ExecutionGate(pause)
 
         # Set up: last_module_id is "test", consecutive_grants >= max

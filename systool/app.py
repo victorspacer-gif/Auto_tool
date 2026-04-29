@@ -129,6 +129,9 @@ class SystemMonitorApp:
         self.hotkey_vars: dict[str, tk.StringVar] = {}
         self.log_history: list[str] = []
         self.module_indicators: dict[str, tk.Label] = {}
+        self.rclick_food_mode_container: tk.Frame | None = None
+        self.rclick_food_mode_rows: list[tk.Widget] = []
+        self.rclick_food_mode_anchor: tk.Widget | None = None
 
         # Background stats polling (HP/MP/Cap pointer reads)
         self._stats_poll_timer_id: int | None = None
@@ -178,6 +181,7 @@ class SystemMonitorApp:
 
         self.sandbox_sbie_info = find_installation() if HAS_SANDBOX_LAUNCHER and find_installation else None
         self._build_header()
+        self._sync_pause_state(self.runtime.pause.paused)
         self._build_notebook()
         self._start_global_hotkeys()
         self._poll_settings()
@@ -409,7 +413,6 @@ class SystemMonitorApp:
         self._label_entry(panel, f"Timer Min ({unit}):", min_var)
         self._label_entry(panel, f"Timer Max ({unit}):", max_var)
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
-        rclick_require_food = tk.BooleanVar(value=self.runtime.state.rclick_require_food)
         rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_minutes))
         rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
         rclick_food_burst_count_max = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_max))
@@ -418,7 +421,6 @@ class SystemMonitorApp:
         click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
         post_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_post_click_settle_ms)))
         self.ui_vars["rclick_mode_var"] = rclick_mode
-        self.ui_vars["rclick_require_food_var"] = rclick_require_food
         self.ui_vars["rclick_food_min_var"] = rclick_food_min
         self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
         self.ui_vars["rclick_food_burst_count_max_var"] = rclick_food_burst_count_max
@@ -433,18 +435,38 @@ class SystemMonitorApp:
         mode_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
         mode_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
         mode_menu.pack(side="left", padx=4)
-        tk.Checkbutton(panel, text="Timer checks food threshold first", variable=rclick_require_food, font=BOLD, fg=FG, bg=PANEL, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w", pady=(2, 2))
-        self._label_entry(panel, "Min food timer (minutes):", rclick_food_min, width=6)
-        self._label_entry(panel, f"Burst clicks min:", rclick_food_burst_count_min, width=6)
-        self._label_entry(panel, f"Burst clicks max:", rclick_food_burst_count_max, width=6)
-        self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
-        self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
+        self.rclick_food_mode_container = tk.Frame(panel, bg=PANEL)
+        self.rclick_food_mode_container.pack(fill="x")
+        self.rclick_food_mode_rows = [
+            self._label_entry(self.rclick_food_mode_container, "Min food timer (minutes):", rclick_food_min, width=6),
+            self._label_entry(self.rclick_food_mode_container, "Burst clicks min:", rclick_food_burst_count_min, width=6),
+            self._label_entry(self.rclick_food_mode_container, "Burst clicks max:", rclick_food_burst_count_max, width=6),
+            self._label_entry(self.rclick_food_mode_container, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6),
+        ]
+        self.rclick_food_mode_anchor = self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
         self._label_entry(panel, f"Click delay max ({unit}):", click_delay_max, width=6)
         self._label_entry(panel, f"Post-click settle ({unit}):", post_settle, width=6)
+        rclick_mode.trace_add("write", self._update_rclick_mode_controls)
+        self._update_rclick_mode_controls()
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
         self._btn(buttons, "⏹ Stop", self.rclick_service.stop, RED).pack(side="left", expand=True, fill="x", padx=2)
+
+    def _update_rclick_mode_controls(self, *_args) -> None:
+        mode_var = self.ui_vars.get("rclick_mode_var")
+        mode = str(mode_var.get()).strip().lower() if mode_var is not None else "timer"
+        show_food_controls = mode == "food"
+        if self.rclick_food_mode_container is None:
+            return
+        if show_food_controls:
+            if not self.rclick_food_mode_container.winfo_manager():
+                if self.rclick_food_mode_anchor is not None:
+                    self.rclick_food_mode_container.pack(fill="x", before=self.rclick_food_mode_anchor)
+                else:
+                    self.rclick_food_mode_container.pack(fill="x")
+        elif self.rclick_food_mode_container.winfo_manager():
+            self.rclick_food_mode_container.pack_forget()
 
     def _build_alarm_tab(self, parent: tk.Frame) -> None:
         wrapper = self._create_scrollable_content(parent, padx=16, pady=10)
@@ -936,9 +958,10 @@ class SystemMonitorApp:
         row = tk.Frame(parent, bg=PANEL)
         row.pack(fill="x", pady=(0, 6))
         tk.Label(row, text="Status", font=SMALL_B, fg=MUTED, bg=PANEL).pack(side="left")
-        indicator = tk.Label(row, text="●", font=BOLD, fg=GREEN if running else MUTED, bg=PANEL)
+        indicator_color, indicator_text = self._get_module_indicator_state(running)
+        indicator = tk.Label(row, text="●", font=BOLD, fg=indicator_color, bg=PANEL)
         indicator.pack(side="left", padx=(8, 4))
-        text = tk.Label(row, text="Running" if running else "Stopped", font=SMALL, fg=FG, bg=PANEL)
+        text = tk.Label(row, text=indicator_text, font=SMALL, fg=FG, bg=PANEL)
         text.pack(side="left")
         indicator._state_text = text
         self.module_indicators[module_id] = indicator
@@ -1037,6 +1060,8 @@ class SystemMonitorApp:
             self._set_status("▶  Resumed", GREEN)
             if self.pause_label:
                 self.pause_label.config(text="Running", fg=GREEN)
+        self._refresh_all_module_indicators_from_state()
+        self._update_tray_icon()
 
     def _refresh_stats(self) -> None:
         if not self.stats_label:
@@ -1054,16 +1079,24 @@ class SystemMonitorApp:
     def _refresh_job_indicator(self, job: HotkeyJob) -> None:
         indicator = getattr(job.row_frame, "_indicator", None)
         if indicator:
-            indicator.config(fg=GREEN if job.running else MUTED)
+            indicator.config(fg=GREEN if job.running else RED)
+
+    def _get_module_indicator_state(self, running: bool) -> tuple[str, str]:
+        if running and self.runtime.pause.paused:
+            return ORANGE, "Paused"
+        if running:
+            return GREEN, "Running"
+        return RED, "Stopped"
 
     def _refresh_module_indicator(self, module_id: str, running: bool) -> None:
         indicator = self.module_indicators.get(module_id)
         if not indicator:
             return
-        indicator.config(fg=GREEN if running else MUTED)
+        indicator_color, indicator_text = self._get_module_indicator_state(running)
+        indicator.config(fg=indicator_color)
         state_text = getattr(indicator, "_state_text", None)
         if state_text:
-            state_text.config(text="Running" if running else "Stopped")
+            state_text.config(text=indicator_text)
 
     def record_rclick_pos(self) -> None:
         def on_done(pos: tuple[int, int]) -> None:
@@ -1478,7 +1511,6 @@ class SystemMonitorApp:
             "fish_auto_restart_food_secs_var": str(state.fish_auto_restart_food_min_secs),
             "rclick_mode_var": state.rclick_mode,
             "rclick_food_min_var": state.rclick_food_min_minutes,
-            "rclick_require_food_var": state.rclick_require_food,
             "rclick_food_burst_count_min_var": state.rclick_food_burst_count_min,
             "rclick_food_burst_count_max_var": state.rclick_food_burst_count_max,
             "rune_spell_key_var": state.rune_spell_key,
@@ -1526,6 +1558,7 @@ class SystemMonitorApp:
         self._refresh_variables_display()
         if self.fishing_tab_ui:
             self.fishing_tab_ui.refresh_from_state()
+        self._update_rclick_mode_controls()
         for child in list(self.jobs_frame.winfo_children()):
             child.destroy()
         for job in self.runtime.state.jobs:
@@ -1576,10 +1609,12 @@ class SystemMonitorApp:
         state.rclick_max_ms = self._get_ui_ms("rclick_max_var", state.rclick_max_ms)
         if "rclick_mode_var" in self.ui_vars:
             state.rclick_mode = str(self.ui_vars["rclick_mode_var"].get()).strip().lower() or "timer"
-        raw_food_minutes = self.ui_vars["rclick_food_min_var"].get() if "rclick_food_min_var" in self.ui_vars else state.rclick_food_min_minutes
-        state.rclick_food_min_minutes = self._normalize_food_threshold_minutes(raw_food_minutes, state.rclick_food_min_minutes)
-        if "rclick_food_min_var" in self.ui_vars:
-            self.ui_vars["rclick_food_min_var"].set(str(state.rclick_food_min_minutes))
+        state.rclick_require_food = False
+        if state.rclick_mode == "food":
+            raw_food_minutes = self.ui_vars["rclick_food_min_var"].get() if "rclick_food_min_var" in self.ui_vars else state.rclick_food_min_minutes
+            state.rclick_food_min_minutes = self._normalize_food_threshold_minutes(raw_food_minutes, state.rclick_food_min_minutes)
+            if "rclick_food_min_var" in self.ui_vars:
+                self.ui_vars["rclick_food_min_var"].set(str(state.rclick_food_min_minutes))
         state.rclick_food_burst_count_min = max(1, self._get_ui_int("rclick_food_burst_count_min_var", state.rclick_food_burst_count_min))
         state.rclick_food_burst_count_max = max(state.rclick_food_burst_count_min, self._get_ui_int("rclick_food_burst_count_max_var", state.rclick_food_burst_count_max))
         state.rclick_food_burst_interval_ms = max(50, self._get_ui_ms("rclick_food_burst_interval_var", state.rclick_food_burst_interval_ms))
@@ -1788,28 +1823,25 @@ class SystemMonitorApp:
         draw.rectangle([28, 20, 36, 44], fill=(255, 255, 255))
         return image
 
-    def _get_tray_color(self) -> tuple[int, int, int]:
-        """Determine the tray icon color based on current application state.
-
-        Returns:
-            RGB tuple for the circle fill color.
-        """
+    def _has_running_modules(self) -> bool:
         state = self.runtime.state
+        return any((
+            state.afk_active,
+            state.rclick_active,
+            state.alarm_active,
+            state.char_status_active,
+            state.fish_active,
+            state.healer_active,
+            state.rune_active,
+            state.light_freeze_enabled,
+        ))
 
-        # Blue when fishing is active (highest priority)
-        if state.fish_active:
-            return (59, 130, 246)
-
-        # Yellow when paused
+    def _get_tray_color(self) -> tuple[int, int, int]:
+        """Determine the tray icon color based on current application state."""
         if self.runtime.pause.paused:
             return (255, 191, 0)
-
-        # Green when any service is running
-        if (state.afk_active or state.rclick_active or
-                state.alarm_active or state.rune_active):
+        if self._has_running_modules():
             return (48, 209, 88)
-
-        # Red when stopped (no services active and not paused)
         return (239, 68, 68)
 
     def _update_tray_icon(self) -> None:
@@ -1855,7 +1887,7 @@ class SystemMonitorApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", self.exit_app),
         )
-        self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image((239, 68, 68)), "SystemMonitor", menu)
+        self.tray_icon = pystray.Icon("SystemMonitor", self._make_tray_image(self._get_tray_color()), "SystemMonitor", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
         # Start periodic tray icon updates (every 500ms) to catch state changes

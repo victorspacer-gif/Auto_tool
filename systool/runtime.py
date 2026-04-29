@@ -209,11 +209,14 @@ class UINotifier:
 
 
 class PauseController:
-    def __init__(self, ui: UINotifier) -> None:
+    def __init__(self, ui: UINotifier, *, start_paused: bool = True) -> None:
         self._ui = ui
         self._event = threading.Event()
-        self._event.set()
-        self._paused = False
+        self._paused = bool(start_paused)
+        if self._paused:
+            self._event.clear()
+        else:
+            self._event.set()
 
     @property
     def paused(self) -> bool:
@@ -356,7 +359,7 @@ class AppRuntime:
         self.settings_lock = threading.RLock()
         self.record_lock = threading.RLock()
         self.ui = UINotifier()
-        self.pause = PauseController(self.ui)
+        self.pause = PauseController(self.ui, start_paused=True)
         self.execution = ExecutionGate(self.pause)
         self.mouse = MouseGate(self.execution)
         self.afk_stop = threading.Event()

@@ -258,7 +258,7 @@ class FishingTab:
             self.record_spot_btn.config(text="+ Start Recording", bg=BLUE)
         count = len(self.runtime.state.fish_spots)
         self.runtime.ui.log(f"🎣 Fishing spot recording stopped. {count} positions saved.")
-        self.runtime.ui.set_status(f"Recording stopped: {count} spots", BLUE)
+        self.runtime.ui.set_status(f"Recording stopped: {count} spots", RED)
 
     def _add_fish_spot(self, pos: tuple[int, int] | None = None) -> None:
         def on_done(captured_pos: tuple[int, int]) -> None:

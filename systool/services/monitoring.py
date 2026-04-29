@@ -987,7 +987,7 @@ class CharacterStatusService:
             "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],
             "mana": [r"mana\s+(\d+)"],
             "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],
-            "food": [r"food\s+(\d{1,2}:\d{2})"],
+            "food": [r"food\s+(\d{1,2}:\d{2}|\d{1,3})"],
         }
         for image_variant in variants:
             text = pytesseract.image_to_string(image_variant, config="--psm 6")
@@ -1012,14 +1012,20 @@ class CharacterStatusService:
 
     @staticmethod
     def _parse_food_seconds(text: str) -> int | None:
-        match = re.match(r"(\d{1,2}):(\d{2})", text.strip())
-        if not match:
+        normalized = text.strip()
+        if not normalized:
             return None
-        hours = int(match.group(1))
-        minutes = int(match.group(2))
-        if minutes >= 60:
-            return None
-        return hours * 3600 + minutes * 60
+        colon_match = re.fullmatch(r"(\d{1,2}):(\d{2})", normalized)
+        if colon_match:
+            hours = int(colon_match.group(1))
+            minutes = int(colon_match.group(2))
+            if minutes >= 60:
+                return None
+            return hours * 3600 + minutes * 60
+        minute_match = re.fullmatch(r"(\d{1,3})", normalized)
+        if minute_match:
+            return int(minute_match.group(1)) * 60
+        return None
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
         base_w, base_h = self.BASE_SIZE

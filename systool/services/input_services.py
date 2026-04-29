@@ -461,6 +461,31 @@ class RightClickService:
     def food_timer_meets_threshold(food_seconds: int | None, threshold_minutes: int) -> bool:
         return food_seconds is not None and food_seconds >= max(1, threshold_minutes) * 60
 
+    @staticmethod
+    def _format_food_timer_debug(food_seconds: int | None) -> str:
+        if food_seconds is None:
+            return "unavailable"
+        hours = food_seconds // 3600
+        minutes = (food_seconds % 3600) // 60
+        return f"{hours}:{minutes:02d}"
+
+    @classmethod
+    def _food_mode_decision(
+        cls,
+        food_text: str,
+        food_seconds: int | None,
+        threshold_minutes: int,
+    ) -> tuple[bool, str]:
+        allowed = cls.food_timer_meets_threshold(food_seconds, threshold_minutes)
+        raw_value = food_text.strip() or "—"
+        parsed_value = cls._format_food_timer_debug(food_seconds)
+        threshold_display = f"{max(1, threshold_minutes)}:00"
+        decision = "allowed" if allowed else "blocked"
+        return allowed, (
+            f"🍖 R-click food gate — raw='{raw_value}' parsed={parsed_value} "
+            f"threshold={threshold_display} decision={decision}"
+        )
+
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log("▶ Right-click macro start")
@@ -478,7 +503,7 @@ class RightClickService:
                 max_ms = state.rclick_max_ms
                 target = state.rclick_pos
                 mode = state.rclick_mode
-                require_food = state.rclick_require_food
+                food_text = state.char_status_food_text
                 food_seconds = state.char_status_food_seconds
                 food_min_minutes = state.rclick_food_min_minutes
                 burst_count_min = state.rclick_food_burst_count_min
@@ -487,9 +512,10 @@ class RightClickService:
                 click_delay_min_ms = state.rclick_click_delay_min_ms
                 click_delay_max_ms = state.rclick_click_delay_max_ms
                 post_settle_ms = state.rclick_post_click_settle_ms
-            food_ok = self.food_timer_meets_threshold(food_seconds, food_min_minutes)
             if mode == "food":
-                if food_ok:
+                allowed, debug_message = self._food_mode_decision(food_text, food_seconds, food_min_minutes)
+                self.runtime.ui.log(debug_message)
+                if not allowed:
                     if not self.runtime.pause.wait_interruptible(RCCLICK_WAIT_INTERRUPTIBLE, self.runtime.rclick_stop):
                         break
                     continue
@@ -501,14 +527,6 @@ class RightClickService:
             else:
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
                     break
-                if require_food and not food_ok:
-                    if food_seconds is None:
-                        self.runtime.ui.log("🍖 Timer click blocked — food timer unavailable")
-                    else:
-                        self.runtime.ui.log(
-                            f"🍖 Timer click blocked — food {food_seconds // 60}:{food_seconds % 60:02d} below {food_min_minutes}:00"
-                        )
-                    continue
                 clicks_to_send = 1
                 queue_window = INPUT_QUEUE_WINDOW
             if not self.runtime.mouse.acquire(self.runtime.rclick_stop, max_wait=queue_window, module_id="right_click"):
