@@ -21,17 +21,17 @@ class ChainScore:
     errors: int = 0
 
     def final_score(self) -> float:
-        if self.attempts <= 0:
+        if self.attempts <= 0:  # Guard: no samples means score is meaningless
             return 0.0
         repeatability = self.resolves / self.attempts
         readability = self.value_reads / self.attempts
         expected_hit_ratio = self.expected_value_hits / self.attempts
         sig_ratio = self.signature_hits / self.attempts
-        depth_penalty = max(0, len(self.chain) - 4) * 0.03
-        error_penalty = (self.errors / self.attempts) * 0.30
-        score = 0.45 * repeatability + 0.25 * readability + 0.15 * expected_hit_ratio + 0.15 * sig_ratio
+        depth_penalty = max(0, len(self.chain) - 4) * 0.03  # 3% penalty per hop beyond 4 (deeper chains are less reliable)
+        error_penalty = (self.errors / self.attempts) * 0.30  # Up to 30% score reduction for resolution errors
+        score = 0.45 * repeatability + 0.25 * readability + 0.15 * expected_hit_ratio + 0.15 * sig_ratio  # Weighted scoring formula
         score = score - depth_penalty - error_penalty
-        return max(0.0, min(1.0, score))
+        return max(0.0, min(1.0, score))  # Clamp final score to [0.0, 1.0] range
 
 
 def _parse_expected_values(raw: str) -> set[int]:

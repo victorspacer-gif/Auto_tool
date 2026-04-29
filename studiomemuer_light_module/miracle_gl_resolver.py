@@ -40,18 +40,18 @@ from typing import Optional
 
 TARGET_PROCESS   = "miracle_gl.exe"
 TARGET_MODULE    = "miracle_gl.exe"
-VALUE_OFFSET     = 0xAD       # [EAX + 0xAD] = light byte
-TORCH_ON_VALUE   = 0x07
-TORCH_BOOST      = 0x11       # optional boosted value
+VALUE_OFFSET     = 0xAD       # Offset from resolved base (EAX) to the light byte field
+TORCH_ON_VALUE   = 0x07      # Byte value written to enable torch/light mode
+TORCH_BOOST      = 0x11      # Optional boosted/brighter torch intensity value
 
 # Known signature at structure base (± search window)
-SIGNATURE_WINDOW = 0x300      # bytes to scan around resolved base
+SIGNATURE_WINDOW = 0x300     # Bytes to scan around resolved base for signature match
 SIGNATURES = [
-    (b"Deprived",            0.50, "ASCII:Deprived"),
-    (b"\xCE\x07\x00\x00",   0.30, "Pattern:CE07"),
-    (b"\x00\x00\x80\x3F",   0.20, "FloatBlock:1.0f"),   # needs >= 4 occurrences
+    (b"Deprived",            0.50, "ASCII:Deprived"),  # Weight 50% — strong ASCII marker
+    (b"\xCE\x07\x00\x00",   0.30, "Pattern:CE07"),     # Weight 30% — known pattern in struct
+    (b"\x00\x00\x80\x3F",   0.20, "FloatBlock:1.0f"),  # Weight 20% — float literal 1.0f
 ]
-FLOAT_BLOCK_MIN_COUNT = 4
+FLOAT_BLOCK_MIN_COUNT = 4  # Minimum occurrences of 0x3F800000 pattern to confirm struct base
 
 # Pointer chains: (module_offset, [hop_offsets], score_weight)
 # Ranked best → worst from previous analysis.

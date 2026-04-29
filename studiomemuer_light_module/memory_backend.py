@@ -125,7 +125,7 @@ class LightMemoryController:
                     return module.lpBaseOfDll
 
             if modules:
-                return modules[0].lpBaseOfDll
+                return modules[0].lpBaseOfDll  # Fallback: use first module (usually main executable) when no substring match found
 
             raise ProcessNotFoundError(f"Module not found: {module_substr}")
 
@@ -136,8 +136,8 @@ class LightMemoryController:
             if not offsets:
                 raise AddressResolveError("Pointer chain is empty.")
 
-            cursor = module_base + offsets[0]
-            if len(offsets) == 1:
+            cursor = module_base + offsets[0]  # First offset is relative to module base (not a pointer hop)
+            if len(offsets) == 1:  # Single-element chain: direct address from module base, no indirection
                 return cursor
 
             for index, offset in enumerate(offsets[1:], start=1):

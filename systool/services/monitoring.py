@@ -51,11 +51,11 @@ from ..runtime import (
 )
 from ..theme import GREEN, ORANGE, RED, TEAL
 from ..config import CHAR_STATUS_POLL_MS_MIN
-from ..constants import (
-    LIGHT_FREEZE_MIN_INTERVAL_MS,
-    MONITOR_ERROR_RETRY_SLEEP,
-    MONITOR_POLL_SLEEP,
-    PYGAME_DEFAULT_VOLUME,
+from ..constants import (  # Monitoring timing and audio volume constants
+    LIGHT_FREEZE_MIN_INTERVAL_MS,  # Light freeze poll interval (milliseconds)
+    MONITOR_ERROR_RETRY_SLEEP,  # Error retry sleep interval (seconds)
+    MONITOR_POLL_SLEEP,  # Monitor poll sleep interval (seconds)
+    PYGAME_DEFAULT_VOLUME,  # Pygame default volume level (0-100 scale)
 )
 
 class LightControlService:
@@ -192,6 +192,7 @@ class LightControlService:
                 intensity_value=self.runtime.state.light_freeze_intensity_value,
                 remember_original=False,
             )
+            # Convert ms interval to seconds for Event.wait() timeout (seconds)
             delay = LIGHT_FREEZE_MIN_INTERVAL_MS / 1000.0
             if self._freeze_stop.wait(delay):
                 break
@@ -584,13 +585,14 @@ class AlarmService:
                 if HAS_PYGAME:
                     # Lazy-init mixer only when an alert needs to play.
                     _init_pygame_mixer()
-                    pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)
+                    pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)  # Pygame default volume level (0-100 scale)
                     pygame.mixer.music.load(path)
                     pygame.mixer.music.play()
                     # Wait until the sound finishes playing, then quit mixer
                     # to release the audio device and prevent white noise.
+                    # Poll every 100ms while waiting for audio playback to finish (seconds)
                     while pygame.mixer.get_busy():
-                        time.sleep(0.1)
+                        time.sleep(0.1)  # 100ms poll interval for audio busy check
                     _quit_pygame_mixer()
                 else:
                     os.startfile(path)
@@ -611,8 +613,14 @@ class AlarmService:
                 with self.runtime.settings_lock:
                     region = state.alarm_region
                 if region:
-                    return {"top": region[1], "left": region[0], "width": region[2], "height": region[3], "mon": 1}
-                size = 200
+                    return {
+                        "top": region[1],  # y-coordinate (index 1)
+                        "left": region[0],  # x-coordinate (index 0)
+                        "width": region[2],  # width (index 2)
+                        "height": region[3],  # height (index 3)
+                        "mon": 1,  # Monitor index: primary display
+                    }
+                size = 200  # Default alarm region side length in pixels (200x200 square)
                 return {"top": screen_h // 2 - size // 2, "left": screen_w // 2 - size // 2, "width": size, "height": size, "mon": 1}
 
             last_frame = None
@@ -718,6 +726,7 @@ class AlarmService:
                 if last_frame is not None and last_frame.shape == frame.shape:
                     if now >= cooldown_until:
                         diff = np.abs(frame.astype(np.int16) - last_frame.astype(np.int16))
+                        # Pixel-level difference: sum channels, then count pixels where diff > 30 (threshold)
                         changed = float(np.mean(diff.sum(axis=2) > 30))
                         if changed >= threshold:
                             cooldown_until = now + state.alarm_cooldown
@@ -736,11 +745,23 @@ class AlarmService:
         self.runtime.ui.log("⏹ Screen watch end")
 
 class CharacterStatusService:
+    # Base dimensions of the full character status window in pixels (width, height)
     BASE_SIZE = (170, 203)
+    # ROI (Region of Interest) coordinates for stat extraction — each tuple is (left, top, right, bottom)
+    # Coordinates are relative to BASE_SIZE and scaled dynamically per actual frame size.
     ROI_MAP = {
-        "hp": [(132, 1, 169, 19), (124, 0, 169, 21)],
-        "mana": [(136, 21, 169, 39), (128, 20, 169, 41)],
-        "cap": [(0, 180, 42, 203), (0, 164, 44, 203)],
+        "hp": [
+            (132, 1, 169, 19),   # HP box A: left=132, top=1, right=169, bottom=19
+            (124, 0, 169, 21),   # HP box B (fallback): left=124, top=0, right=169, bottom=21
+        ],
+        "mana": [
+            (136, 21, 169, 39),  # Mana box A: left=136, top=21, right=169, bottom=39
+            (128, 20, 169, 41),  # Mana box B (fallback): left=128, top=20, right=169, bottom=41
+        ],
+        "cap": [
+            (0, 180, 42, 203),   # Cap box A: left=0, top=180, right=42, bottom=203
+            (0, 164, 44, 203),   # Cap box B (fallback): left=0, top=164, right=44, bottom=203
+        ],
     }
 
     def __init__(self, runtime: AppRuntime) -> None:
@@ -822,11 +843,11 @@ class CharacterStatusService:
                             parsed_sample: dict[str, int | None] = {}
                             if region:
                                 monitor = {
-                                    "left": region[0],
-                                    "top": region[1],
-                                    "width": region[2],
-                                    "height": region[3],
-                                    "mon": 1,
+                                    "left": region[0],  # x-coordinate (index 0)
+                                    "top": region[1],   # y-coordinate (index 1)
+                                    "width": region[2], # width (index 2)
+                                    "height": region[3],# height (index 3)
+                                    "mon": 1,           # Monitor index: primary display
                                 }
                                 frame = np.array(sct.grab(monitor))[:, :, :3]
                                 parsed_sample = self._extract_values(frame)
@@ -843,6 +864,7 @@ class CharacterStatusService:
                                 )
                             samples.append(parsed_sample)
                             if _ < state.char_status_samples - 1:
+                                # Convert ms sample delay to seconds for time.sleep() (seconds)
                                 time.sleep(state.char_status_sample_delay_ms / 1000.0)
                         parsed = self._aggregate_samples(samples)
                     except pytesseract.TesseractNotFoundError:
@@ -875,6 +897,7 @@ class CharacterStatusService:
                             state.char_status_failures += 1
                             state.char_status_last_error = "No digits recognized"
                     if self.runtime.char_status_stop.wait(poll_ms / 1000.0):
+                        # Convert ms poll interval to seconds for Event.wait() timeout (seconds)
                         break
         finally:
             state.char_status_active = False
@@ -898,11 +921,11 @@ class CharacterStatusService:
         values: dict[str, int | None] = {}
         for key, region in regions.items():
             monitor = {
-                "left": region[0],
-                "top": region[1],
-                "width": region[2],
-                "height": region[3],
-                "mon": 1,
+                "left": region[0],  # x-coordinate (index 0)
+                "top": region[1],   # y-coordinate (index 1)
+                "width": region[2], # width (index 2)
+                "height": region[3],# height (index 3)
+                "mon": 1,           # Monitor index: primary display
             }
             frame = np.array(sct.grab(monitor))[:, :, :3]
             values[key] = self._ocr_digits(frame, key)
@@ -921,6 +944,7 @@ class CharacterStatusService:
         history = self._regen_history[key]
         if not history or history[-1][1] != value:
             history.append((now, value))
+        # Trim history older than 3 minutes — keeps a rolling 180-second window for regen rate calc (seconds)
         cutoff = now - 180.0
         while len(history) > 1 and history[0][0] < cutoff:
             history.pop(0)
@@ -949,11 +973,11 @@ class CharacterStatusService:
             if not values:
                 continue
             if key in {"level", "hp", "mana", "cap", "food_seconds"}:
-                # For numeric, take median
+                # Numeric fields use median aggregation to reject OCR outliers
                 numeric_values = [v for v in values if isinstance(v, int)]
                 if numeric_values:
                     sorted_vals = sorted(numeric_values)
-                    mid = len(sorted_vals) // 2
+                    mid = len(sorted_vals) // 2  # Median index (integer division)
                     aggregated[key] = sorted_vals[mid]
             elif key == "food_text":
                 # For text, most common
@@ -972,25 +996,30 @@ class CharacterStatusService:
             "food_seconds": None,
             "food_text": "",
         }
+        # Enlarge frame 3x to improve OCR accuracy on small text regions
         enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+        # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
         variants = []
+        # OTSU threshold: auto-computes optimal binarization; output max value is 255
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         variants.append(binary)
         variants.append(cv2.bitwise_not(binary))
+        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
         adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
         variants.append(adaptive)
         variants.append(cv2.bitwise_not(adaptive))
+        # Regex patterns for extracting stat values from OCR text output (field → list of patterns)
         field_patterns = {
-            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],
-            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],
-            "mana": [r"mana\s+(\d+)"],
-            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],
-            "food": [r"food\s+(\d{1,2}:\d{2}|\d{1,3})"],
+            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],  # English or localized "level/levele/l evel"
+            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],  # "hit points" with optional plural
+            "mana": [r"mana\s+(\d+)"],  # Simple "mana <number>" pattern
+            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],  # "capacity/capacity" variants
+            "food": [r"food\s+(\d{1,2}:\d{2}|\d{1,3})"],  # "food HH:MM" or "food M" (minutes)
         }
         for image_variant in variants:
-            text = pytesseract.image_to_string(image_variant, config="--psm 6")
+            text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
             normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
             for key, patterns in field_patterns.items():
                 if key == "food" and values["food_seconds"] is not None:
@@ -1015,39 +1044,47 @@ class CharacterStatusService:
         normalized = text.strip()
         if not normalized:
             return None
+        # Regex for HH:MM format — 1-2 digit hours, exactly 2-digit minutes
         colon_match = re.fullmatch(r"(\d{1,2}):(\d{2})", normalized)
         if colon_match:
             hours = int(colon_match.group(1))
             minutes = int(colon_match.group(2))
+            # Minutes must be < 60 (valid time format validation)
             if minutes >= 60:
                 return None
+            # Convert to total seconds: hours * 3600 + minutes * 60
             return hours * 3600 + minutes * 60
+        # Regex for plain minute count — 1-3 digit number (e.g., "45" = 45 minutes)
         minute_match = re.fullmatch(r"(\d{1,3})", normalized)
         if minute_match:
             return int(minute_match.group(1)) * 60
         return None
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
-        base_w, base_h = self.BASE_SIZE
+        base_w, base_h = self.BASE_SIZE  # Base resolution (800x600) for coordinate scaling
         frame_h, frame_w = frame.shape[:2]
-        x1 = max(0, int(round(box[0] / base_w * frame_w)))
-        y1 = max(0, int(round(box[1] / base_h * frame_h)))
-        x2 = min(frame_w, int(round(box[2] / base_w * frame_w)))
-        y2 = min(frame_h, int(round(box[3] / base_h * frame_h)))
+        x1 = max(0, int(round(box[0] / base_w * frame_w)))  # Left edge from box index 0
+        y1 = max(0, int(round(box[1] / base_h * frame_h)))  # Top edge from box index 1
+        x2 = min(frame_w, int(round(box[2] / base_w * frame_w)))  # Right edge from box index 2
+        y2 = min(frame_h, int(round(box[3] / base_h * frame_h)))  # Bottom edge from box index 3
         return frame[y1:y2, x1:x2]
 
     @staticmethod
     def _ocr_digits(crop, key: str) -> int | None:
-        if crop is None or crop.size == 0:
+        if crop is None or crop.size == 0:  # Empty frame check (OpenCV array size = 0)
             return None
+        # Cap digits are smaller — use 7x scale; HP/Mana use 6x scale
         scale = 7 if key == "cap" else 6
         enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+        # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
         variants = []
+        # OTSU threshold: auto-computes optimal binarization; output max value is 255
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         variants.append(binary)
         variants.append(cv2.bitwise_not(binary))
+        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
         adaptive = cv2.adaptiveThreshold(
             gray,
             255,
@@ -1058,8 +1095,10 @@ class CharacterStatusService:
         )
         variants.append(adaptive)
         variants.append(cv2.bitwise_not(adaptive))
+        # Morphology closing kernel: 2x2 to connect nearby pixel fragments (odd not required for MORPH_CLOSE)
         kernel = np.ones((2, 2), np.uint8)
         variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
+        # HP/Mana use PSM 7+8 (single column); Cap adds PSM 6 (uniform digits) for broader coverage
         psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6", "8"]
         best_digits = ""
         for image_variant in variants:
@@ -1067,6 +1106,7 @@ class CharacterStatusService:
                 config = f"--psm {psm} -c tessedit_char_whitelist=0123456789"
                 text = pytesseract.image_to_string(image_variant, config=config)
                 groups = [group for group in re.findall(r"\d+", text) if group]
+                # HP/Mana require ≥2 digits (single-digit is noise); Cap accepts ≥1 digit
                 if groups:
                     candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
                     if len(candidate) > len(best_digits):

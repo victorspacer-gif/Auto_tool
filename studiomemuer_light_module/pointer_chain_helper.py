@@ -67,17 +67,17 @@ def score_structure_bytes(data: bytes) -> tuple[float, list[str]]:
     score = 0.0
     matches: list[str] = []
 
-    if b"Deprived" in data:
+    if b"Deprived" in data:  # ASCII string "Deprived" is a strong marker for the light struct
         score += 0.5
         matches.append("ASCII:Deprived")
 
-    if b"\xCE\x07" in data:
+    if b"\xCE\x07" in data:  # Known byte pattern at struct base (from CE pointer analysis)
         score += 0.3
         matches.append("Pattern:CE07")
 
-    # float 1.0 pattern (00 00 80 3F)
+    # float 1.0 pattern (0x3F800000 in little-endian IEEE 754)
     float_count = data.count(b"\x00\x00\x80\x3F")
-    if float_count >= 4:
+    if float_count >= 4:  # Need at least 4 occurrences for confidence (reduces false positives)
         score += 0.2
         matches.append("FloatBlock")
 
