@@ -596,10 +596,6 @@ class AlarmService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log("▶ Screen watch start")
-        # ── Region validation (debug logging for OCR regression fix) ────
-        with self.runtime.settings_lock:
-            alarm_region = state.alarm_region
-        logger.info("Alarm region=%s", alarm_region)
         with mss.mss() as sct:
             monitor = sct.monitors[1]
             screen_w = monitor["width"]
@@ -803,16 +799,6 @@ class CharacterStatusService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log("▶ Character status watcher start")
-        # ── Region validation (debug logging for OCR regression fix) ────
-        with self.runtime.settings_lock:
-            region = state.char_status_region
-            hp_region = state.char_status_hp_region
-            mana_region = state.char_status_mana_region
-            cap_region = state.char_status_cap_region
-        logger.info(
-            "OCR regions — window=%s, HP=%s, Mana=%s, Cap=%s",
-            region, hp_region, mana_region, cap_region,
-        )
         try:
             with mss.mss() as sct:
                 while not self.runtime.char_status_stop.is_set():
@@ -1041,10 +1027,6 @@ class CharacterStatusService:
     @staticmethod
     def _ocr_digits(crop, key: str) -> int | None:
         if crop is None or crop.size == 0:
-            return None
-        h, w = crop.shape[:2]
-        if w == 0 or h == 0:
-            logger.warning("OCR crop '%s' has zero dimensions — skipping", key)
             return None
         scale = 7 if key == "cap" else 6
         enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
