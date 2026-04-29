@@ -90,3 +90,4 @@ vendor/tesseract/tessdata/tessconfigs/matdemo
 vendor/tesseract/tessdata/tessconfigs/msdemo
 vendor/tesseract/tessdata/tessconfigs/nobatch
 vendor/tesseract/tessdata/tessconfigs/segdemo
+*.bak

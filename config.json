@@ -55,7 +55,7 @@
   "rune_blank_y": 0,
   "rune_jitter": 6,
   "rune_cast_delay_ms": 900,
-  "rune_min_mana": 0,
+  "rune_min_mana": 60,
   "rune_available_blank_runes": 0,
   "rune_mouse_move_min_ms": 200,
   "rune_mouse_move_max_ms": 400,
