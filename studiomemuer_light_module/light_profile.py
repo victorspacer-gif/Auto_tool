@@ -10,8 +10,8 @@ class LightProfile:
     signature_pattern: str | None = None
     signature_offset_to_base: int = 0
     color_enabled_value: int = 215
-    default_intensity_value: int = 7
-    boosted_intensity_value: int = 8
+    default_intensity_value: int = 8
+    boosted_intensity_value: int = 11
     description: str = ""
 
 

@@ -94,7 +94,7 @@ class FishingState:
     session_minutes: int = app_config.FISH_SESSION_MINUTES_DEFAULT
     session_remaining_secs: int = 0
     session_deadline: float | None = None
-    min_cap: int = 0
+    min_cap: int = 10
     auto_restart_enabled: bool = False
     auto_restart_food_min_secs: int = app_config.FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT
 
@@ -130,7 +130,7 @@ class HealerState:
     use_percent: bool = True
     hp_percent: int = app_config.HEALER_HP_PERCENT_DEFAULT
     hp_value: int = app_config.HEALER_HP_VALUE_DEFAULT
-    min_mana: int = 0
+    min_mana: int = 20
     max_mana: int = 0
     character_pos: tuple[int, int] = (0, 0)
     rune_pos: tuple[int, int] = (0, 0)
