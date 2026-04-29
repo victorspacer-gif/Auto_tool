@@ -389,6 +389,15 @@ def configure_tesseract_runtime(tesseract_cmd: str) -> None:
     tessdata_dir = os.path.join(tesseract_dir, "tessdata")
     if os.path.isdir(tessdata_dir):
         os.environ["TESSDATA_PREFIX"] = tesseract_dir
+    # Fallback: always prefer bundled vendor/tesseract/tessdata so that even
+    # when a system-installed tesseract.exe is found via PATH/ProgramFiles,
+    # the correct eng.traineddata from our bundle is used.
+    app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bundled_tessdata = os.path.join(app_root, "vendor", "tesseract", "tessdata")
+    if os.path.isdir(bundled_tessdata):
+        eng_path = os.path.join(bundled_tessdata, "eng.traineddata")
+        if os.path.isfile(eng_path):
+            os.environ["TESSDATA_PREFIX"] = os.path.dirname(bundled_tessdata)
     path_entries = os.environ.get("PATH", "").split(os.pathsep)
     if tesseract_dir not in path_entries:
         os.environ["PATH"] = tesseract_dir + os.pathsep + os.environ.get("PATH", "")
