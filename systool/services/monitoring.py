@@ -39,6 +39,8 @@ from ..runtime import (
     MSS_IMPORT_ERROR,
     NUMPY_IMPORT_ERROR,
     TESSERACT_IMPORT_ERROR,
+    _init_pygame_mixer,
+    _quit_pygame_mixer,
     cv2,
     configure_tesseract_runtime,
     mss,
@@ -574,9 +576,16 @@ class AlarmService:
         def play() -> None:
             try:
                 if HAS_PYGAME:
+                    # Lazy-init mixer only when an alert needs to play.
+                    _init_pygame_mixer()
                     pygame.mixer.music.set_volume(1.0)
                     pygame.mixer.music.load(path)
                     pygame.mixer.music.play()
+                    # Wait until the sound finishes playing, then quit mixer
+                    # to release the audio device and prevent white noise.
+                    while pygame.mixer.get_busy():
+                        time.sleep(0.1)
+                    _quit_pygame_mixer()
                 else:
                     os.startfile(path)
             except Exception as exc:
