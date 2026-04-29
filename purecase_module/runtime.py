@@ -72,7 +72,7 @@ class PureCaseInstallation:
 
 
 def sanitize_box_name(name: str) -> str:
-    clean = re.sub(r"[^A-Za-z0-9]", "", name or "")[:32]
+    clean = re.sub(r"[^A-Za-z0-9]", "", name or "")[:32]  # MAX_SANITIZED_NAME_LEN=32 — cap box names to avoid Windows path/registry limits
     return clean or "PureCaseBox"
 
 
@@ -100,6 +100,7 @@ def find_installation(
     for path in _DEFAULT_SEARCH_PATHS:
         candidates.append((path, "installed", _has_portable_ini(path)))
 
+    # RUNTIME_ORDERED_CANDIDATES_IF_PREFER_PORTABLE_ELSE — sort key item[2] (portable bool) to prefer portable installs when prefer_portable=True; else keep insertion order
     ordered = candidates if prefer_portable else sorted(candidates, key=lambda item: item[2])
     seen: set[Path] = set()
 
@@ -137,7 +138,7 @@ def configure_box(
         "HideProcessName": ",".join(_merge_hide_names(hide_process_names)),
         "DropAdminRights": "y",
         "FakeAdminRights": "y",
-        "CopyLimitKb": "524288",
+        "CopyLimitKb": "524288",  # COPY_LIMIT_KB=524288 — Sandboxie copy limit: 512 MB (KB) for file duplication into sandbox
     }
     if extra_settings:
         settings.update(extra_settings)
@@ -148,7 +149,7 @@ def configure_box(
                 [str(installation.sbieini), "set", box_name, key, value],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=10,  # RUNTIME_TIMEOUT — SbieIni.exe 'set' command timeout: 10 seconds (allows for disk I/O on first config)
             )
             if result.returncode != 0:
                 _log(
@@ -168,7 +169,7 @@ def reload_configuration(
     *,
     log_callback: LogCallback | None = None,
 ) -> None:
-    subprocess.run([str(installation.start), "/reload"], capture_output=True, timeout=8)
+    subprocess.run([str(installation.start), "/reload"], capture_output=True, timeout=8)  # RUNTIME_SUBPROCESS_RUN_STR_INSTALLATION_START_RELOAD — /reload command timeout: 8 seconds (fast in-memory reload)
     _log(log_callback, "PureCase configuration reloaded")
 
 
@@ -240,7 +241,7 @@ def launch_in_box(
         command,
         cwd=str(cwd) if cwd else str(Path(executable).parent),
         env=env,
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),  # CREATE_NEW_PROCESS_GROUP — Win32 flag (0x00000200): creates process in new group for Ctrl+C handling / taskkill propagation
     )
 
 
@@ -252,14 +253,14 @@ def list_box_pids(
         [str(installation.start), f"/box:{sanitize_box_name(box_name)}", "/listpids"],
         capture_output=True,
         text=True,
-        timeout=8,
+        timeout=8,  # RUNTIME_TIMEOUT — /listpids command timeout: 8 seconds (quick query)
     )
     pids: list[int] = []
     for line in result.stdout.splitlines():
         value = line.strip()
         if value.isdigit():
             pids.append(int(value))
-    return pids[1:] if len(pids) > 1 else pids
+    return pids[1:] if len(pids) > 1 else pids  # Skip first PID entry which is the Start.exe process itself
 
 
 def terminate_box(
@@ -272,7 +273,7 @@ def terminate_box(
         [str(installation.start), f"/box:{sanitize_box_name(box_name)}", "/terminate"],
         capture_output=True,
         text=True,
-        timeout=8,
+        timeout=8,  # RUNTIME_TIMEOUT — /terminate command timeout: 8 seconds (graceful shutdown)
     )
     _log(log_callback, f"PureCase box [{sanitize_box_name(box_name)}] terminated")
     return result
@@ -287,7 +288,7 @@ def create_job_object() -> object | None:
         return None
     try:
         job = win32job.CreateJobObject(None, "SandboxJob")
-        
+
         # UI restrictions (handles excluded for normal file/folder access)
         ui_info = win32job.QueryInformationJobObject(
             job, win32job.JobObjectBasicUIRestrictions
@@ -331,9 +332,9 @@ def get_safer_token() -> object | None:
         advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-        SAFER_SCOPEID_USER = 1
-        SAFER_LEVELID_NORMALUSER = 0x20000
-        SAFER_LEVEL_OPEN = 1
+        SAFER_SCOPEID_USER = 1  # SAFER_SCOPEID_USER — Win32 SAFER scope: user-level (not machine/global)
+        SAFER_LEVELID_NORMALUSER = 0x20000  # SAFER_LEVELID_NORMALUSER — Win32 SAFER level: normal user (de-elevated from admin)
+        SAFER_LEVEL_OPEN = 1  # SAFER_LEVEL_OPEN — Win32 SAFER flag: open/create a new level handle
 
         h_level = ctypes.c_void_p()
         if not advapi32.SaferCreateLevel(
@@ -344,7 +345,7 @@ def get_safer_token() -> object | None:
 
         raw_token = ctypes.wintypes.HANDLE()
         ok = advapi32.SaferComputeTokenFromLevel(
-            h_level, None, ctypes.byref(raw_token), 0, None
+            h_level, None, ctypes.byref(raw_token), 0, None  # dwOptions=0 — no special options for token conversion
         )
         advapi32.SaferCloseLevel(h_level)
 
@@ -354,7 +355,7 @@ def get_safer_token() -> object | None:
         # Duplicate raw token into PyHANDLE
         cur = win32api.GetCurrentProcess()
         py_token = win32api.DuplicateHandle(
-            cur, raw_token.value, cur, 0, False,
+            cur, raw_token.value, cur, 0, False,  # DUPLICATE_SAME_ACCESS — duplicate with same access rights as source handle
             win32con.DUPLICATE_SAME_ACCESS
         )
         kernel32.CloseHandle(raw_token)
@@ -368,7 +369,7 @@ def build_spoofed_env(extra_vars: dict | None = None) -> dict[str, str]:
     Build environment dict with sandbox detection cues removed and plausible user profile.
     """
     env = os.environ.copy()
-    
+
     # Remove debugging/profiling detection
     for key in [
         "_DEBUGGER_IS_PRESENT", "COR_ENABLE_PROFILING",
@@ -408,7 +409,7 @@ def launch_with_job_object(
 ) -> subprocess.Popen:
     """
     Launch executable inside a Job Object sandbox.
-    
+
     Parameters
     ----------
     executable  : Full path to the executable.
@@ -420,10 +421,10 @@ def launch_with_job_object(
     log_callback: Callable for logging.
     """
     env = build_spoofed_env(extra_env) if spoof_env else os.environ.copy()
-    
+
     cmd = [str(executable)]
     cmd.extend(_normalize_args(args))
-    
+
     _log(log_callback, f"[{_ts()}] Command  : {' '.join(cmd)}")
     _log(log_callback, f"[{_ts()}] Drop admin: {drop_admin}")
 
@@ -433,12 +434,12 @@ def launch_with_job_object(
             cmd,
             env=env,
             cwd=str(cwd) if cwd else str(Path(executable).parent),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # CREATE_NEW_PROCESS_GROUP — Win32 flag (0x00000200): new process group for Ctrl+C / taskkill propagation
         )
 
     job = create_job_object()
     start_flags = (
-        win32process.CREATE_SUSPENDED |
+        win32process.CREATE_SUSPENDED |  # CREATE_SUSPENDED — child starts suspended; ResumeThread called after Job Object assignment to prevent race condition
         win32process.CREATE_NEW_PROCESS_GROUP
     )
 
@@ -453,16 +454,16 @@ def launch_with_job_object(
             if not token_handle:
                 _log(log_callback, f"[{_ts()}] Token    : failed, proceeding without de-elevation")
                 si = win32process.STARTUPINFO()
-                si.dwFlags = win32process.STARTF_USESHOWWINDOW
-                si.wShowWindow = win32con.SW_SHOWNORMAL
+                si.dwFlags = win32process.STARTF_USESHOWWINDOW  # STARTF_USESHOWWINDOW — tell CreateProcess to use wShowWindow field
+                si.wShowWindow = win32con.SW_SHOWNORMAL  # SW_SHOWNORMAL — ShowWindow flag: normal window (not minimized/maximized)
                 hProcess, hThread, pid, tid = win32process.CreateProcess(
                     str(executable), cmdline, None, None, False,
                     start_flags, env_dict, cwd_str, si,
                 )
             else:
                 si = win32process.STARTUPINFO()
-                si.dwFlags = win32process.STARTF_USESHOWWINDOW
-                si.wShowWindow = win32con.SW_SHOWNORMAL
+                si.dwFlags = win32process.STARTF_USESHOWWINDOW  # STARTF_USESHOWWINDOW — tell CreateProcess to use wShowWindow field
+                si.wShowWindow = win32con.SW_SHOWNORMAL  # SW_SHOWNORMAL — ShowWindow flag: normal window (not minimized/maximized)
                 hProcess, hThread, pid, tid = win32process.CreateProcessAsUser(
                     token_handle, str(executable), cmdline, None, None, False,
                     start_flags, env_dict, cwd_str, si,
@@ -470,8 +471,8 @@ def launch_with_job_object(
                 del token_handle
         else:
             si = win32process.STARTUPINFO()
-            si.dwFlags = win32process.STARTF_USESHOWWINDOW
-            si.wShowWindow = win32con.SW_SHOWNORMAL
+            si.dwFlags = win32process.STARTF_USESHOWWINDOW  # STARTF_USESHOWWINDOW — tell CreateProcess to use wShowWindow field
+            si.wShowWindow = win32con.SW_SHOWNORMAL  # SW_SHOWNORMAL — ShowWindow flag: normal window (not minimized/maximized)
             hProcess, hThread, pid, tid = win32process.CreateProcess(
                 str(executable), cmdline, None, None, False,
                 start_flags, env_dict, cwd_str, si,
@@ -507,7 +508,7 @@ class _Win32ProcWrapper:
         if WIN32_AVAILABLE:
             try:
                 import win32event
-                win32event.WaitForSingleObject(self._hProcess, win32event.INFINITE)
+                win32event.WaitForSingleObject(self._hProcess, win32event.INFINITE)  # INFINITE — block indefinitely until process exits
             except Exception:
                 pass
         return 0
@@ -517,8 +518,8 @@ class _Win32ProcWrapper:
             return None
         try:
             import win32event
-            rc = win32event.WaitForSingleObject(self._hProcess, 0)
-            return None if rc == win32event.WAIT_TIMEOUT else 0
+            rc = win32event.WaitForSingleObject(self._hProcess, 0)  # RUNTIME_RC_WIN32EVENT_WAITFORSINGLEOBJECT_SELF_HPROCESS — poll with 0ms timeout (non-blocking check); returns WAIT_TIMEOUT if still running
+            return None if rc == win32event.WAIT_TIMEOUT else 0  # RUNTIME_RETURN_NONE_IF_RC_WIN32EVENT_WAIT — return None on timeout, 0 on exit (mirrors subprocess.Popen.poll contract)
         except Exception:
             return None
 
@@ -526,17 +527,17 @@ class _Win32ProcWrapper:
         """Kill process and all children in Job Object, with taskkill fallback."""
         if self._job:
             try:
-                win32job.TerminateJobObject(self._job, 1)
+                win32job.TerminateJobObject(self._job, 1)  # EXIT_CODE=1 — standard termination exit code for Job Object kill
             except Exception:
                 pass
         try:
-            win32api.TerminateProcess(self._hProcess, 1)
+            win32api.TerminateProcess(self._hProcess, 1)  # EXIT_CODE=1 — standard termination exit code for direct process kill
         except Exception:
             pass
         try:
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(self.pid)],
-                capture_output=True, timeout=5
+                capture_output=True, timeout=5  # RUNTIME_CAPTURE_OUTPUT_TRUE_TIMEOUT — taskkill fallback timeout: 5 seconds (last-resort kill)
             )
         except Exception:
             pass
@@ -599,11 +600,12 @@ def _write_ini_section(path: Path, section: str, values: dict[str, str]) -> None
         return
 
     existing: dict[str, int] = {}
+    # RUNTIME_FOR_INDEX_IN_RANGE_START_INDEX — start scanning from index+1 (skip the header line itself)
     for index in range(start_index + 1, end_index):
         line = lines[index]
         if "=" not in line:
             continue
-        key = line.split("=", 1)[0].strip().lower()
+        key = line.split("=", 1)[0].strip().lower()  # RUNTIME_KEY_LINE_SPLIT_STRIP_LOWER — maxsplit=1 to preserve values containing '=' characters
         existing[key] = index
 
     for key, value in values.items():

@@ -57,11 +57,11 @@ class CodeGenerator:
         params = {}
         if 'fibonacci' in description_lower:
             # Look for number in description
-            numbers = re.findall(r'\d+', description)
+            numbers = re.findall(r'\d+', description)  # CODE_AGENT_PARAMS_N_INT_NUMBERS — regex \d+ extracts all digit sequences from user input; first match used as sequence length
             if numbers:
                 params['n'] = int(numbers[0])
             else:
-                params['n'] = 10  # default
+                params['n'] = 10  # DEFAULT_FIBONACCI_TERMS=10 — fallback Fibonacci sequence length when no number specified in description
 
         return code_type, params
 
@@ -448,12 +448,12 @@ def main():
     processor = DataProcessor()
 
     # Test with sample text
-    sample_text = "This is a sample text.\\nIt has multiple lines.\\nAnd several words."
+    sample_text = "This is a sample text.\nIt has multiple lines.\nAnd several words."  # CODE_AGENT_SAMPLE_TEXT — multi-line test string with literal \n for process_text() demo
     result = processor.process_text(sample_text)
     print("Text processing result:")
     print(json.dumps(result, indent=2))
 
-    print(f"\\nTotal processed items: {len(processor.get_processed_data())}")
+    print(f"\\nTotal processed items: {len(processor.get_processed_data())}")  # CODE_AGENT_PRINT_NEWLINE_LF — literal \n in f-string produces newline character
 
 
 if __name__ == "__main__":
@@ -534,7 +534,7 @@ class Calculator:
         try:
             # Simple expression parser for basic operations
             parts = expression.split()
-            if len(parts) != 3:
+            if len(parts) != 3:  # EXPRESSION_PARSER_MIN_PARTS=3 — simple space-split parser requires exactly "num op num" format (3 tokens)
                 raise ValueError("Expression must be in format: number operator number")
 
             num1 = float(parts[0])
