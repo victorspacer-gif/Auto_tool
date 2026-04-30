@@ -266,3 +266,98 @@ class TestToJsonCompleteness:
         assert j["key"] == "F2"
         assert j["min_ms"] == 5000
         assert j["max_ms"] == 10000
+
+
+# ── Fishing mouse speed serialization ───────────────────────────────
+
+
+class TestFishMouseSpeedConfig:
+    """Tests for fish_mouse_speed config field in ConfigSerializer."""
+
+    def test_to_dict_includes_fish_mouse_speed(self, state):
+        """to_dict should include the fishing.mouse_speed field."""
+        d = ConfigSerializer.to_dict(state)
+        assert "fishing.mouse_speed" in d
+        from systool.config import FISH_MOUSE_SPEED_DEFAULT
+        assert d["fishing.mouse_speed"] == FISH_MOUSE_SPEED_DEFAULT
+
+    def test_apply_loaded_reads_fish_mouse_speed(self, state):
+        """apply_loaded should read fishing.mouse_speed from payload."""
+        payload = {
+            "cfg": {"fishing.mouse_speed": "2.5"},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert state.fishing.mouse_speed == 2.5
+
+    def test_apply_loaded_clamps_fish_mouse_speed_to_max(self, state):
+        """Values above max should be clamped to FISH_MOUSE_SPEED_MAX."""
+        from systool.config import FISH_MOUSE_SPEED_MAX
+        payload = {
+            "cfg": {"fishing.mouse_speed": "9.0"},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert state.fishing.mouse_speed == FISH_MOUSE_SPEED_MAX
+
+    def test_apply_loaded_clamps_fish_mouse_speed_to_min(self, state):
+        """Values below min should be clamped to FISH_MOUSE_SPEED_MIN."""
+        from systool.config import FISH_MOUSE_SPEED_MIN
+        payload = {
+            "cfg": {"fishing.mouse_speed": "0.1"},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert state.fishing.mouse_speed == FISH_MOUSE_SPEED_MIN
+
+    def test_apply_loaded_defaults_to_1_when_missing(self, state):
+        """Missing fishing.mouse_speed should keep the default (1.0)."""
+        from systool.config import FISH_MOUSE_SPEED_DEFAULT
+        payload = {
+            "cfg": {},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert state.fishing.mouse_speed == FISH_MOUSE_SPEED_DEFAULT
+
+    def test_apply_loaded_handles_invalid_string(self, state):
+        """Non-numeric fishing.mouse_speed should fall back to current value."""
+        original = 1.5
+        state.fishing.mouse_speed = original
+        payload = {
+            "cfg": {"fishing.mouse_speed": "not_a_number"},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert state.fishing.mouse_speed == original
+
+    def test_json_round_trip_preserves_fish_mouse_speed(self, state):
+        """Full JSON save/load should preserve fishing.mouse_speed value."""
+        from systool.config import FISH_MOUSE_SPEED_DEFAULT
+        state.fishing.mouse_speed = 2.0
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fh:
+            path = fh.name
+
+        try:
+            ConfigSerializer.save_json(path, state)
+            payload = ConfigSerializer.load_file(path)
+            restored = AppState()
+            ConfigSerializer.apply_loaded(restored, payload)
+            assert restored.fishing.mouse_speed == 2.0
+        finally:
+            os.unlink(path)

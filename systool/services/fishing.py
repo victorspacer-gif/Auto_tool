@@ -18,6 +18,8 @@ from ..constants import (
     FISHING_CYCLE_WINDOW_ADDITION,
     FISHING_CYCLE_WINDOW_BASE,
     FISHING_MIN_BONUS_SECS,
+    FISHING_MIN_MOVE_DURATION,
+    FISHING_MOVE_BASE_DURATION,
     FISHING_PAUSE_MEDIUM_MAX,
     FISHING_PAUSE_MEDIUM_MIN,
     FISHING_PAUSE_SHORT_MAX,
@@ -140,6 +142,8 @@ class FishingService:
                 food_seconds = state.char_status_food_seconds
                 auto_restart_enabled = state.fish_auto_restart_enabled
                 auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
+                # Mouse speed multiplier — higher values produce faster movement.
+                mouse_speed = max(0.5, min(state.fishing.mouse_speed, 3.0))
                 # Use pointer-based Cap first, fall back to OCR
                 current_cap = None
                 if self.runtime.cap_service is not None:
@@ -184,7 +188,8 @@ class FishingService:
                         break
                     continue
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
-                HumanMouse.move(mouse, rod_target)
+                # Duration scales inversely with mouse_speed: higher speed → shorter duration.
+                HumanMouse.move(mouse, rod_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / max(mouse_speed, 0.5)))
                 time.sleep(random.uniform(FISHING_PAUSE_SHORT_MIN, FISHING_PAUSE_SHORT_MAX))
                 mouse.click(pynput_mouse.Button.right, 1)
                 self.runtime.ui.log(f"🎣 Rod clicked at {rod_target}")
@@ -194,7 +199,8 @@ class FishingService:
                     index = 0
                 spot_target = HumanMouse.jitter(deck[index], spot_jitter)
                 index += 1
-                HumanMouse.move(mouse, spot_target)
+                # Duration scales inversely with mouse_speed: higher speed → shorter duration.
+                HumanMouse.move(mouse, spot_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / max(mouse_speed, 0.5)))
                 time.sleep(random.uniform(FISHING_PAUSE_MEDIUM_MIN, FISHING_PAUSE_MEDIUM_MAX))
                 mouse.click(pynput_mouse.Button.left, 1)
                 with self.runtime.record_lock:

@@ -38,6 +38,7 @@ FISH_ROD_JITTER_DEFAULT: int = 5
 FISH_SPOT_JITTER_DEFAULT: int = 15
 FISH_SESSION_MINUTES_DEFAULT: int = 10
 FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT: int = 300
+FISH_MOUSE_SPEED_DEFAULT: float = 1.0
 
 RUNE_CYCLE_DELAY_MS_DEFAULT: int = 70000
 RUNE_CYCLE_DELAY_VARIATION_MS_DEFAULT: int = 2000
@@ -91,6 +92,8 @@ RUNE_MOUSE_SETTLE_MS_MIN: int = 10
 HEALER_HP_MIN: int = 1
 HEALER_MOUSE_SPEED_MIN: float = 0.2
 HEALER_MOUSE_SPEED_MAX: float = 3.0
+FISH_MOUSE_SPEED_MIN: float = 0.5
+FISH_MOUSE_SPEED_MAX: float = 3.0
 HEALER_RUNE_DELAY_MS_MIN: int = 50
 BYTE_VALUE_MIN: int = 0
 BYTE_VALUE_MAX: int = 255
@@ -347,20 +350,27 @@ class ConfigSerializer:
         state.char_status.tesseract_path = get_str("char_status_tesseract_path", state.char_status.tesseract_path)
 
         # ── Fishing ───────────────────────────────────────────────────
-        state.fishing.rod_pos = (
-            get_int("fish_rod_x", state.fishing.rod_pos[0]),
-            get_int("fish_rod_y", state.fishing.rod_pos[1]),
-        )
-        state.fishing.cast_min_ms = get_int("fish_cast_min_ms", state.fishing.cast_min_ms)
-        state.fishing.cast_max_ms = get_int("fish_cast_max_ms", state.fishing.cast_max_ms)
-        state.fishing.wait_min_ms = get_int("fish_wait_min_ms", state.fishing.wait_min_ms)
-        state.fishing.wait_max_ms = get_int("fish_wait_max_ms", state.fishing.wait_max_ms)
-        state.fishing.rod_jitter = get_int("fish_rod_jitter", state.fishing.rod_jitter)
-        state.fishing.spot_jitter = get_int("fish_spot_jitter", state.fishing.spot_jitter)
-        state.fishing.session_minutes = max(FISH_SESSION_MINUTES_MIN, min(FISH_SESSION_MINUTES_MAX, get_int("fish_session_minutes", state.fishing.session_minutes)))
-        state.fishing.min_cap = max(NON_NEGATIVE_INT_MIN, get_int("fish_min_cap", state.fishing.min_cap))
-        state.fishing.auto_restart_enabled = bool(get_bool("fish_auto_restart_enabled", state.fishing.auto_restart_enabled))
-        state.fishing.auto_restart_food_min_secs = max(FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN, min(FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX, get_int("fish_auto_restart_food_min_secs", state.fishing.auto_restart_food_min_secs)))
+        # All keys use dot-notation (e.g., "fishing.cast_min_ms") to match _flatten output.
+        rod_pos_str = cfg.get("fishing.rod_pos", "[0, 0]")
+        try:
+            rod_list = json.loads(rod_pos_str) if isinstance(rod_pos_str, str) else list(rod_pos_str)
+            state.fishing.rod_pos = (int(rod_list[0]), int(rod_list[1]))
+        except (TypeError, ValueError):
+            pass  # keep current value
+
+        state.fishing.cast_min_ms = get_int("fishing.cast_min_ms", state.fishing.cast_min_ms)
+        state.fishing.cast_max_ms = get_int("fishing.cast_max_ms", state.fishing.cast_max_ms)
+        state.fishing.wait_min_ms = get_int("fishing.wait_min_ms", state.fishing.wait_min_ms)
+        state.fishing.wait_max_ms = get_int("fishing.wait_max_ms", state.fishing.wait_max_ms)
+        state.fishing.rod_jitter = get_int("fishing.rod_jitter", state.fishing.rod_jitter)
+        state.fishing.spot_jitter = get_int("fishing.spot_jitter", state.fishing.spot_jitter)
+        state.fishing.session_minutes = max(FISH_SESSION_MINUTES_MIN, min(FISH_SESSION_MINUTES_MAX, get_int("fishing.session_minutes", state.fishing.session_minutes)))
+        state.fishing.min_cap = max(NON_NEGATIVE_INT_MIN, get_int("fishing.min_cap", state.fishing.min_cap))
+        state.fishing.auto_restart_enabled = bool(get_bool("fishing.auto_restart_enabled", state.fishing.auto_restart_enabled))
+        state.fishing.auto_restart_food_min_secs = max(FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN, min(FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX, get_int("fishing.auto_restart_food_min_secs", state.fishing.auto_restart_food_min_secs)))
+        # Mouse speed multiplier — higher = faster movement (duration divided by this value).
+        # Mirrors the same formula used in HealerState.mouse_speed.
+        state.fishing.mouse_speed = max(FISH_MOUSE_SPEED_MIN, min(FISH_MOUSE_SPEED_MAX, get_float("fishing.mouse_speed", state.fishing.mouse_speed)))
         state.fish_spots = list(spots)
 
         # ── Rune ──────────────────────────────────────────────────────

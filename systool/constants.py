@@ -61,6 +61,8 @@ FISHING_PAUSE_SHORT_MIN: float = 0.07    # Short pause min (s)
 FISHING_PAUSE_SHORT_MAX: float = 0.17    # Short pause max (s)
 FISHING_PAUSE_MEDIUM_MIN: float = 0.10   # Medium pause min (s)
 FISHING_PAUSE_MEDIUM_MAX: float = 0.26   # Medium pause max (s)
+FISHING_MOVE_BASE_DURATION: float = 0.25  # Base mouse move duration for fishing (s)
+FISHING_MIN_MOVE_DURATION: float = 0.10   # Min mouse move duration for fishing (s)
 
 # ─── Input Services / Mouse ────────────────────────────────────────
 INPUT_MOUSE_DURATION_MIN: float = 0.12    # Min mouse move duration (s)

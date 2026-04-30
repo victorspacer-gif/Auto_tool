@@ -118,6 +118,9 @@ class TestAppStateDefaults:
         assert state.fish_rod_pos == (0, 0)
         assert state.fish_session_minutes == 10
         assert state.fish_min_cap == 10
+        # Mouse speed multiplier defaults to 1.0 (neutral — no speed change).
+        from systool.config import FISH_MOUSE_SPEED_DEFAULT
+        assert state.fishing.mouse_speed == FISH_MOUSE_SPEED_DEFAULT
 
     def test_rune_defaults(self):
         state = AppState()

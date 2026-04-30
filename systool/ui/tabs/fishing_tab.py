@@ -9,6 +9,9 @@ from ...config import (
     FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT,
     FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX,
     FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN,
+    FISH_MOUSE_SPEED_DEFAULT,
+    FISH_MOUSE_SPEED_MAX,
+    FISH_MOUSE_SPEED_MIN,
     NON_NEGATIVE_INT_MIN,
 )
 from ...runtime import HAS_PYNPUT, pynput_kb, pynput_mouse
@@ -121,6 +124,21 @@ class FishingTab:
         tk.Label(ar_frame, text="Auto-restart session when food drops below:", font=BOLD, fg=FG, bg=PANEL).pack(side="left", padx=(8, 4))
         self.helpers["entry"](ar_frame, fish_auto_restart_food_secs, width=5).pack(side="left")
         tk.Label(ar_frame, text="sec", font=BOLD, fg=TEAL, bg=PANEL).pack(side="left", padx=(2, 0))
+
+        # ── Mouse speed multiplier (0.5–3.0) — higher = faster movement ──
+        fish_mouse_speed_var = tk.StringVar(value=str(self.runtime.state.fish_mouse_speed))
+        self.ui_vars["fish_mouse_speed_var"] = fish_mouse_speed_var
+        ms_frame = tk.Frame(timing_panel, bg=PANEL)
+        ms_frame.pack(fill="x", pady=2)
+        tk.Label(ms_frame, text="Mouse Speed (×):", font=BOLD, fg=FG, bg=PANEL).pack(side="left")
+        self.helpers["entry"](ms_frame, fish_mouse_speed_var, width=5).pack(side="left", padx=(8, 4))
+        tk.Label(
+            ms_frame,
+            text=f"(range: {FISH_MOUSE_SPEED_MIN}–{FISH_MOUSE_SPEED_MAX})",
+            font=BOLD,
+            fg=MUTED,
+            bg=PANEL,
+        ).pack(side="left", padx=(2, 0))
 
         session_panel = tk.LabelFrame(right, text=" ⏲️  Fishing Session ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         session_panel.pack(fill="x", pady=(0, 8))
@@ -312,6 +330,13 @@ class FishingTab:
         if "fish_auto_restart_food_secs_var" in self.ui_vars:
             value = self.helpers["get_ui_int"]("fish_auto_restart_food_secs_var", state.fish_auto_restart_food_min_secs)
             state.fish_auto_restart_food_min_secs = max(FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN, min(FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX, value))
+        # Mouse speed multiplier — stored as raw float in UI, clamped to valid range.
+        if "fish_mouse_speed_var" in self.ui_vars:
+            try:
+                ui_val = float(self.ui_vars["fish_mouse_speed_var"].get())
+            except (ValueError, TypeError):
+                ui_val = state.fishing.mouse_speed
+            state.fishing.mouse_speed = max(FISH_MOUSE_SPEED_MIN, min(FISH_MOUSE_SPEED_MAX, ui_val))
 
     def refresh_session_display(self) -> None:
         if self.fish_session_value_label:
@@ -331,4 +356,13 @@ class FishingTab:
             self.spots_listbox.delete(0, "end")
             for index, spot in enumerate(state.fish_spots, start=1):
                 self.spots_listbox.insert("end", f"#{index}  {spot[0]},{spot[1]}")
+        # Sync mouse speed input field back from state (in case config changed externally).
+        if "fish_mouse_speed_var" in self.ui_vars:
+            try:
+                current = float(self.ui_vars["fish_mouse_speed_var"].get())
+            except (ValueError, TypeError):
+                current = state.fishing.mouse_speed
+            # Only update if the values differ significantly (>0.1) to avoid flicker.
+            if abs(current - state.fishing.mouse_speed) > 0.1:
+                self.ui_vars["fish_mouse_speed_var"].set(str(round(state.fishing.mouse_speed, 1)))
         self.refresh_session_display()

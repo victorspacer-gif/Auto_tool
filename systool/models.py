@@ -97,6 +97,10 @@ class FishingState:
     min_cap: int = 10
     auto_restart_enabled: bool = False
     auto_restart_food_min_secs: int = app_config.FISH_AUTO_RESTART_FOOD_MIN_SECS_DEFAULT
+    # Mouse speed multiplier for HumanMouse.move() duration calculation.
+    # Higher values produce faster movement (duration is divided by this value).
+    # Mirrors the same approach used in HealerState.mouse_speed.
+    mouse_speed: float = app_config.FISH_MOUSE_SPEED_DEFAULT
 
 
 @dataclasses.dataclass
@@ -297,6 +301,7 @@ class AppState:
     fish_min_cap = _group_property("fishing", "min_cap")
     fish_auto_restart_enabled = _group_property("fishing", "auto_restart_enabled")
     fish_auto_restart_food_min_secs = _group_property("fishing", "auto_restart_food_min_secs")
+    fish_mouse_speed = _group_property("fishing", "mouse_speed")
 
     rune_active = _group_property("rune", "active")
     rune_spell_key = _group_property("rune", "spell_key")
