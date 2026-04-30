@@ -25,6 +25,7 @@ from ..constants import (
     FISHING_PAUSE_SHORT_MAX,
     FISHING_PAUSE_SHORT_MIN,
 )
+from ..config import FISH_MOUSE_SPEED_MIN, FISH_MOUSE_SPEED_MAX
 from ..theme import GREEN, ORANGE, RED
 from .input_services import HumanMouse
 
@@ -143,7 +144,7 @@ class FishingService:
                 auto_restart_enabled = state.fish_auto_restart_enabled
                 auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
                 # Mouse speed multiplier — higher values produce faster movement.
-                mouse_speed = max(0.5, min(state.fishing.mouse_speed, 3.0))
+                mouse_speed = max(FISH_MOUSE_SPEED_MIN, min(state.fishing.mouse_speed, FISH_MOUSE_SPEED_MAX))
                 # Use pointer-based Cap first, fall back to OCR
                 current_cap = None
                 if self.runtime.cap_service is not None:
@@ -189,10 +190,12 @@ class FishingService:
                     continue
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
                 # Duration scales inversely with mouse_speed: higher speed → shorter duration.
-                HumanMouse.move(mouse, rod_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / max(mouse_speed, 0.5)))
+                HumanMouse.move(mouse, rod_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / mouse_speed))
                 time.sleep(random.uniform(FISHING_PAUSE_SHORT_MIN, FISHING_PAUSE_SHORT_MAX))
                 mouse.click(pynput_mouse.Button.right, 1)
                 self.runtime.ui.log(f"🎣 Rod clicked at {rod_target}")
+                # Configurable delay between rod-click and casting to spot.
+                time.sleep(random.uniform(cast_min, cast_max) / 1000.0)
                 if index >= len(deck):
                     deck = list(state.fish_spots)
                     random.shuffle(deck)
@@ -200,7 +203,7 @@ class FishingService:
                 spot_target = HumanMouse.jitter(deck[index], spot_jitter)
                 index += 1
                 # Duration scales inversely with mouse_speed: higher speed → shorter duration.
-                HumanMouse.move(mouse, spot_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / max(mouse_speed, 0.5)))
+                HumanMouse.move(mouse, spot_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / mouse_speed))
                 time.sleep(random.uniform(FISHING_PAUSE_MEDIUM_MIN, FISHING_PAUSE_MEDIUM_MAX))
                 mouse.click(pynput_mouse.Button.left, 1)
                 with self.runtime.record_lock:
