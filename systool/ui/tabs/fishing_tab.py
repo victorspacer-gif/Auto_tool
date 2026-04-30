@@ -10,7 +10,6 @@ from ...config import (
     FISH_AUTO_RESTART_FOOD_MIN_SECS_MAX,
     FISH_AUTO_RESTART_FOOD_MIN_SECS_MIN,
     FISH_MOUSE_SPEED_DEFAULT,
-    FISH_MOUSE_SPEED_DISPLAY_MIN,
     FISH_MOUSE_SPEED_MAX,
     FISH_MOUSE_SPEED_MIN,
     NON_NEGATIVE_INT_MIN,
@@ -135,7 +134,7 @@ class FishingTab:
         self.helpers["entry"](ms_frame, fish_mouse_speed_var, width=5).pack(side="left", padx=(8, 4))
         tk.Label(
             ms_frame,
-            text=f"(range: {FISH_MOUSE_SPEED_DISPLAY_MIN}–{FISH_MOUSE_SPEED_MAX})",
+            text=f"(range: {FISH_MOUSE_SPEED_MIN}–{FISH_MOUSE_SPEED_MAX})",
             font=BOLD,
             fg=MUTED,
             bg=PANEL,
