@@ -169,6 +169,14 @@
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_cap_module/cap_profile.py",
+    "class_name": "CapProfile",
+    "variable_name": "structure_value_offset",
+    "value": 0,
+    "type": "int",
+    "line_number": 14
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_cap_module/cap_profile.py",
     "class_name": "module_level",
     "variable_name": "CAP_PROFILE_0X00A783E0_0X4B8_CHAIN_MODULE_BASE_0X00A783E0",
     "value": 10978272,
@@ -182,6 +190,54 @@
     "value": 1208,
     "type": "int",
     "line_number": 22
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_hp_module/hp_profile.py",
+    "class_name": "HPProfile",
+    "variable_name": "structure_value_offset",
+    "value": 0,
+    "type": "int",
+    "line_number": 14
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "class_name": "LightProfile",
+    "variable_name": "structure_value_offset",
+    "value": 0,
+    "type": "int",
+    "line_number": 9
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "class_name": "LightProfile",
+    "variable_name": "signature_offset_to_base",
+    "value": 0,
+    "type": "int",
+    "line_number": 11
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "class_name": "LightProfile",
+    "variable_name": "color_enabled_value",
+    "value": 215,
+    "type": "int",
+    "line_number": 12
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "class_name": "LightProfile",
+    "variable_name": "default_intensity_value",
+    "value": 8,
+    "type": "int",
+    "line_number": 13
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/light_profile.py",
+    "class_name": "LightProfile",
+    "variable_name": "boosted_intensity_value",
+    "value": 11,
+    "type": "int",
+    "line_number": 14
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/memory_backend.py",
@@ -198,6 +254,70 @@
     "value": 0,
     "type": "int",
     "line_number": 139
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "ChainResult",
+    "variable_name": "sig_score",
+    "value": 0.0,
+    "type": "float",
+    "line_number": 106
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "ChainResult",
+    "variable_name": "prior_score",
+    "value": 1.0,
+    "type": "float",
+    "line_number": 108
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "ChainResult",
+    "variable_name": "final_score",
+    "value": 0.0,
+    "type": "float",
+    "line_number": 109
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "module_level",
+    "variable_name": "VALUE_OFFSET",
+    "value": 173,
+    "type": "int",
+    "line_number": 43
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "module_level",
+    "variable_name": "TORCH_ON_VALUE",
+    "value": 7,
+    "type": "int",
+    "line_number": 44
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "module_level",
+    "variable_name": "TORCH_BOOST",
+    "value": 17,
+    "type": "int",
+    "line_number": 45
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "module_level",
+    "variable_name": "SIGNATURE_WINDOW",
+    "value": 768,
+    "type": "int",
+    "line_number": 48
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
+    "class_name": "module_level",
+    "variable_name": "FLOAT_BLOCK_MIN_COUNT",
+    "value": 4,
+    "type": "int",
+    "line_number": 54
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/miracle_gl_resolver.py",
@@ -234,6 +354,54 @@
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
     "class_name": "ChainScore",
+    "variable_name": "attempts",
+    "value": 0,
+    "type": "int",
+    "line_number": 16
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "class_name": "ChainScore",
+    "variable_name": "resolves",
+    "value": 0,
+    "type": "int",
+    "line_number": 17
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "class_name": "ChainScore",
+    "variable_name": "value_reads",
+    "value": 0,
+    "type": "int",
+    "line_number": 18
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "class_name": "ChainScore",
+    "variable_name": "expected_value_hits",
+    "value": 0,
+    "type": "int",
+    "line_number": 19
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "class_name": "ChainScore",
+    "variable_name": "signature_hits",
+    "value": 0,
+    "type": "int",
+    "line_number": 20
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "class_name": "ChainScore",
+    "variable_name": "errors",
+    "value": 0,
+    "type": "int",
+    "line_number": 21
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_light_module/pointer_chain_ranker.py",
+    "class_name": "ChainScore",
     "variable_name": "POINTER_CHAIN_RANKER_IF_SELF_ATTEMPTS_GUARD_NO_SAMPLES",
     "value": 0,
     "type": "int",
@@ -254,6 +422,14 @@
     "value": 1,
     "type": "int",
     "line_number": 115
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/studiomemuer_mp_module/mp_profile.py",
+    "class_name": "MPProfile",
+    "variable_name": "structure_value_offset",
+    "value": 0,
+    "type": "int",
+    "line_number": 14
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/app.py",
@@ -1411,7 +1587,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "HOTKEY_JOB_MIN_MANA_DEFAULT",
-    "value": 0,
+    "value": 20,
     "type": "int",
     "line_number": 19
   },
@@ -1419,7 +1595,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "HOTKEY_JOB_MAX_MANA_DEFAULT",
-    "value": 0,
+    "value": 35,
     "type": "int",
     "line_number": 20
   },
@@ -1563,7 +1739,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "RUNE_CYCLE_DELAY_MS_DEFAULT",
-    "value": 18000,
+    "value": 70000,
     "type": "int",
     "line_number": 42
   },
@@ -1595,7 +1771,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "RUNE_POST_CAST_SETTLE_MS_DEFAULT",
-    "value": 600,
+    "value": 2000,
     "type": "int",
     "line_number": 46
   },
@@ -1699,7 +1875,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "APP_RCLICK_MIN_MS_DEFAULT",
-    "value": 20000,
+    "value": 160000,
     "type": "int",
     "line_number": 61
   },
@@ -1707,7 +1883,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "APP_RCLICK_MAX_MS_DEFAULT",
-    "value": 31000,
+    "value": 90000,
     "type": "int",
     "line_number": 62
   },
@@ -1731,7 +1907,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "APP_RCLICK_FOOD_BURST_COUNT_MIN_DEFAULT",
-    "value": 3,
+    "value": 2,
     "type": "int",
     "line_number": 65
   },
@@ -1747,7 +1923,7 @@
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/config.py",
     "class_name": "module_level",
     "variable_name": "APP_RCLICK_FOOD_BURST_INTERVAL_MS_DEFAULT",
-    "value": 300,
+    "value": 200,
     "type": "int",
     "line_number": 67
   },
@@ -2713,6 +2889,38 @@
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AlarmState",
+    "variable_name": "hp_percent",
+    "value": 0,
+    "type": "int",
+    "line_number": 51
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AlarmState",
+    "variable_name": "hp_value",
+    "value": 0,
+    "type": "int",
+    "line_number": 52
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AlarmState",
+    "variable_name": "mp_value",
+    "value": 0,
+    "type": "int",
+    "line_number": 53
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AlarmState",
+    "variable_name": "cap_value",
+    "value": 0,
+    "type": "int",
+    "line_number": 54
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
     "class_name": "AppState",
     "variable_name": "MODELS_RCLICK_POS_TUPLE_INT_INT",
     "value": 0,
@@ -2726,6 +2934,22 @@
     "value": 0,
     "type": "int",
     "line_number": 185
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AppState",
+    "variable_name": "light_freeze_color_value",
+    "value": 0,
+    "type": "int",
+    "line_number": 209
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AppState",
+    "variable_name": "light_freeze_intensity_value",
+    "value": 0,
+    "type": "int",
+    "line_number": 210
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
@@ -2753,6 +2977,86 @@
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "AppState",
+    "variable_name": "job_counter",
+    "value": 0,
+    "type": "int",
+    "line_number": 249
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "CharStatusState",
+    "variable_name": "hp_peak",
+    "value": 0,
+    "type": "int",
+    "line_number": 74
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "CharStatusState",
+    "variable_name": "hp_regen_per_min",
+    "value": 0.0,
+    "type": "float",
+    "line_number": 75
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "CharStatusState",
+    "variable_name": "mana_regen_per_min",
+    "value": 0.0,
+    "type": "float",
+    "line_number": 76
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "CharStatusState",
+    "variable_name": "reads",
+    "value": 0,
+    "type": "int",
+    "line_number": 77
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "CharStatusState",
+    "variable_name": "failures",
+    "value": 0,
+    "type": "int",
+    "line_number": 78
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "FishingState",
+    "variable_name": "session_remaining_secs",
+    "value": 0,
+    "type": "int",
+    "line_number": 95
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "FishingState",
+    "variable_name": "min_cap",
+    "value": 10,
+    "type": "int",
+    "line_number": 97
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "HealerState",
+    "variable_name": "min_mana",
+    "value": 20,
+    "type": "int",
+    "line_number": 133
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "HealerState",
+    "variable_name": "max_mana",
+    "value": 0,
+    "type": "int",
+    "line_number": 134
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
     "class_name": "HealerState",
     "variable_name": "MODELS_RUNE_POS_TUPLE_INT_INT",
     "value": 0,
@@ -2766,6 +3070,30 @@
     "value": 0,
     "type": "int",
     "line_number": 136
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "RuneState",
+    "variable_name": "min_mana",
+    "value": 60,
+    "type": "int",
+    "line_number": 114
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "RuneState",
+    "variable_name": "max_mana",
+    "value": 80,
+    "type": "int",
+    "line_number": 115
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/models.py",
+    "class_name": "RuneState",
+    "variable_name": "available_blank_runes",
+    "value": 0,
+    "type": "int",
+    "line_number": 116
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/runtime.py",
@@ -3053,7 +3381,7 @@
     "variable_name": "INPUT_SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
     "value": 1000.0,
     "type": "float",
-    "line_number": 414
+    "line_number": 426
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3061,7 +3389,7 @@
     "variable_name": "INPUT_SERVICES_POS_RANDOM_RANDINT_AMOUNT_AMOUNT",
     "value": 0,
     "type": "int",
-    "line_number": 182
+    "line_number": 192
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3069,7 +3397,7 @@
     "variable_name": "INPUT_SERVICES_POS_RANDOM_RANDINT_AMOUNT_AMOUNT",
     "value": 1,
     "type": "int",
-    "line_number": 183
+    "line_number": 193
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3077,7 +3405,7 @@
     "variable_name": "INPUT_SERVICES_TIME_SLEEP_RANDOM_UNIFORM_20MS_MIN",
     "value": 0.02,
     "type": "float",
-    "line_number": 198
+    "line_number": 208
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3085,7 +3413,7 @@
     "variable_name": "INPUT_SERVICES_TIME_SLEEP_RANDOM_UNIFORM_20MS_MIN",
     "value": 0.12,
     "type": "float",
-    "line_number": 198
+    "line_number": 208
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3093,7 +3421,7 @@
     "variable_name": "INPUT_SERVICES_BALLISTIC_DURATION_DURATION_RANDOM_UNIFORM",
     "value": 0.75,
     "type": "float",
-    "line_number": 207
+    "line_number": 217
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3101,7 +3429,7 @@
     "variable_name": "INPUT_SERVICES_BALLISTIC_DURATION_DURATION_RANDOM_UNIFORM",
     "value": 0.9,
     "type": "float",
-    "line_number": 207
+    "line_number": 217
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3109,7 +3437,7 @@
     "variable_name": "INPUT_SERVICES_NOISE_SCALE_FULL_NOISE_DURING_BALLISTIC",
     "value": 1.0,
     "type": "float",
-    "line_number": 213
+    "line_number": 223
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3117,7 +3445,7 @@
     "variable_name": "INPUT_SERVICES_CORRECTION_BUDGET_DURATION_RANDOM_UNIFORM_BUDGET",
     "value": 0.3,
     "type": "float",
-    "line_number": 223
+    "line_number": 233
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3125,7 +3453,7 @@
     "variable_name": "INPUT_SERVICES_CORRECTION_BUDGET_DURATION_RANDOM_UNIFORM_BUDGET",
     "value": 0.5,
     "type": "float",
-    "line_number": 223
+    "line_number": 233
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3133,7 +3461,7 @@
     "variable_name": "INPUT_SERVICES_CORRECTION_COUNT_RANDOM_RANDINT",
     "value": 1,
     "type": "int",
-    "line_number": 226
+    "line_number": 236
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3141,7 +3469,7 @@
     "variable_name": "INPUT_SERVICES_CORRECTION_COUNT_RANDOM_RANDINT",
     "value": 2,
     "type": "int",
-    "line_number": 226
+    "line_number": 236
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3149,7 +3477,7 @@
     "variable_name": "INPUT_SERVICES_SHARE_RANDOM_UNIFORM_IF_CI_ELSE",
     "value": 0.55,
     "type": "float",
-    "line_number": 236
+    "line_number": 246
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3157,7 +3485,7 @@
     "variable_name": "INPUT_SERVICES_SHARE_RANDOM_UNIFORM_IF_CI_ELSE",
     "value": 0.75,
     "type": "float",
-    "line_number": 236
+    "line_number": 246
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3165,7 +3493,7 @@
     "variable_name": "INPUT_SERVICES_SHARE_RANDOM_UNIFORM_IF_CI_ELSE",
     "value": 0.3,
     "type": "float",
-    "line_number": 236
+    "line_number": 246
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3173,7 +3501,7 @@
     "variable_name": "INPUT_SERVICES_SHARE_RANDOM_UNIFORM_IF_CI_ELSE",
     "value": 0.5,
     "type": "float",
-    "line_number": 236
+    "line_number": 246
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3181,7 +3509,7 @@
     "variable_name": "INPUT_SERVICES_TIME_SLEEP_RANDOM_UNIFORM_15MS_TO",
     "value": 0.015,
     "type": "float",
-    "line_number": 244
+    "line_number": 254
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3189,7 +3517,7 @@
     "variable_name": "INPUT_SERVICES_TIME_SLEEP_RANDOM_UNIFORM_15MS_TO",
     "value": 0.04,
     "type": "float",
-    "line_number": 244
+    "line_number": 254
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3197,7 +3525,7 @@
     "variable_name": "INPUT_SERVICES_NOISE_SCALE_RANDOM_UNIFORM_REDUCED_NOISE",
     "value": 0.15,
     "type": "float",
-    "line_number": 251
+    "line_number": 261
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3205,7 +3533,7 @@
     "variable_name": "INPUT_SERVICES_NOISE_SCALE_RANDOM_UNIFORM_REDUCED_NOISE",
     "value": 0.3,
     "type": "float",
-    "line_number": 251
+    "line_number": 261
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3213,47 +3541,47 @@
     "variable_name": "INPUT_SERVICES_IF_SETTLE_DIST",
     "value": 1,
     "type": "int",
-    "line_number": 258
+    "line_number": 268
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
     "class_name": "HumanMouse",
     "variable_name": "INPUT_SERVICES_SETTLE_DURATION_MAX_DURATION_RANDOM_UNIFORM",
-    "value": 0.05,
+    "value": 0.04,
     "type": "float",
-    "line_number": 264
+    "line_number": 275
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
     "class_name": "HumanMouse",
     "variable_name": "INPUT_SERVICES_SETTLE_DURATION_MAX_DURATION_RANDOM_UNIFORM",
-    "value": 0.1,
-    "type": "float",
-    "line_number": 264
-  },
-  {
-    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
-    "class_name": "HumanMouse",
-    "variable_name": "INPUT_SERVICES_SETTLE_DURATION_MAX_DURATION_RANDOM_UNIFORM",
-    "value": 0.2,
-    "type": "float",
-    "line_number": 264
-  },
-  {
-    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
-    "class_name": "HumanMouse",
-    "variable_name": "INPUT_SERVICES_NOISE_SCALE_RANDOM_UNIFORM_LOWEST_NOISE",
     "value": 0.08,
     "type": "float",
-    "line_number": 270
+    "line_number": 275
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
     "class_name": "HumanMouse",
-    "variable_name": "INPUT_SERVICES_NOISE_SCALE_RANDOM_UNIFORM_LOWEST_NOISE",
-    "value": 0.18,
+    "variable_name": "INPUT_SERVICES_SETTLE_DURATION_MAX_DURATION_RANDOM_UNIFORM",
+    "value": 0.15,
     "type": "float",
-    "line_number": 270
+    "line_number": 275
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
+    "class_name": "HumanMouse",
+    "variable_name": "INPUT_SERVICES_NOISE_SCALE_RANDOM_UNIFORM_ULTRA_LOW",
+    "value": 0.02,
+    "type": "float",
+    "line_number": 281
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
+    "class_name": "HumanMouse",
+    "variable_name": "INPUT_SERVICES_NOISE_SCALE_RANDOM_UNIFORM_ULTRA_LOW",
+    "value": 0.05,
+    "type": "float",
+    "line_number": 281
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3261,7 +3589,7 @@
     "variable_name": "INPUT_SERVICES_IF_STATE_RCLICK_POS",
     "value": 0,
     "type": "int",
-    "line_number": 450
+    "line_number": 462
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3269,7 +3597,7 @@
     "variable_name": "INPUT_SERVICES_IF_STATE_RCLICK_POS",
     "value": 0,
     "type": "int",
-    "line_number": 450
+    "line_number": 462
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3277,7 +3605,7 @@
     "variable_name": "INPUT_SERVICES_RETURN_FOOD_SECONDS_IS_NOT_NONE",
     "value": 1,
     "type": "int",
-    "line_number": 472
+    "line_number": 484
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3285,7 +3613,7 @@
     "variable_name": "INPUT_SERVICES_RETURN_FOOD_SECONDS_IS_NOT_NONE",
     "value": 60,
     "type": "int",
-    "line_number": 472
+    "line_number": 484
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3293,7 +3621,7 @@
     "variable_name": "INPUT_SERVICES_HOURS_FOOD_SECONDS",
     "value": 3600,
     "type": "int",
-    "line_number": 479
+    "line_number": 491
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3301,7 +3629,7 @@
     "variable_name": "INPUT_SERVICES_MINUTES_FOOD_SECONDS",
     "value": 3600,
     "type": "int",
-    "line_number": 480
+    "line_number": 492
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3309,7 +3637,7 @@
     "variable_name": "INPUT_SERVICES_MINUTES_FOOD_SECONDS",
     "value": 60,
     "type": "int",
-    "line_number": 480
+    "line_number": 492
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3317,7 +3645,7 @@
     "variable_name": "INPUT_SERVICES_THRESHOLD_DISPLAY_F_MAX_THRESHOLD_MINUTES",
     "value": 1,
     "type": "int",
-    "line_number": 493
+    "line_number": 505
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3325,7 +3653,7 @@
     "variable_name": "INPUT_SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
     "value": 1000.0,
     "type": "float",
-    "line_number": 537
+    "line_number": 549
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3333,7 +3661,7 @@
     "variable_name": "INPUT_SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
     "value": 0,
     "type": "int",
-    "line_number": 537
+    "line_number": 549
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3341,7 +3669,7 @@
     "variable_name": "INPUT_SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
     "value": 1,
     "type": "int",
-    "line_number": 537
+    "line_number": 549
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3349,7 +3677,7 @@
     "variable_name": "INPUT_SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
     "value": 1000.0,
     "type": "float",
-    "line_number": 537
+    "line_number": 549
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3357,7 +3685,7 @@
     "variable_name": "INPUT_SERVICES_CLICKS_TO_SEND_CLICK_DELAY_MAX",
     "value": 1000.0,
     "type": "float",
-    "line_number": 537
+    "line_number": 549
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3365,7 +3693,7 @@
     "variable_name": "INPUT_SERVICES_IF_NOT_SELF_RUNTIME_PAUSE_WAIT",
     "value": 1000.0,
     "type": "float",
-    "line_number": 541
+    "line_number": 553
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3373,7 +3701,7 @@
     "variable_name": "INPUT_SERVICES_INTER_CLICK_MAX_RCCLICK_INTER_CLICK",
     "value": 1000.0,
     "type": "float",
-    "line_number": 554
+    "line_number": 566
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3381,7 +3709,7 @@
     "variable_name": "INPUT_SERVICES_MOUSE_CLICK_PYNPUT_MOUSE_BUTTON_RIGHT",
     "value": 1,
     "type": "int",
-    "line_number": 556
+    "line_number": 568
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3389,7 +3717,7 @@
     "variable_name": "INPUT_SERVICES_TIME_SLEEP_POST_SETTLE_MS",
     "value": 1000.0,
     "type": "float",
-    "line_number": 559
+    "line_number": 571
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3397,36 +3725,12 @@
     "variable_name": "INPUT_SERVICES_FOR_INDEX_IN_RANGE_LEN_SELF",
     "value": 1,
     "type": "int",
-    "line_number": 311
+    "line_number": 323
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
     "class_name": "WindowService",
     "variable_name": "INPUT_SERVICES_IF_FOUND",
-    "value": 0,
-    "type": "int",
-    "line_number": 341
-  },
-  {
-    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
-    "class_name": "WindowService",
-    "variable_name": "INPUT_SERVICES_FOUND_HWND",
-    "value": 0,
-    "type": "int",
-    "line_number": 346
-  },
-  {
-    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
-    "class_name": "WindowService",
-    "variable_name": "INPUT_SERVICES_IF_FOUND",
-    "value": 0,
-    "type": "int",
-    "line_number": 352
-  },
-  {
-    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
-    "class_name": "WindowService",
-    "variable_name": "INPUT_SERVICES_WIN32GUI_SHOWWINDOW_FOUND_WIN32CON_SW_RESTORE",
     "value": 0,
     "type": "int",
     "line_number": 353
@@ -3434,10 +3738,34 @@
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
     "class_name": "WindowService",
+    "variable_name": "INPUT_SERVICES_FOUND_HWND",
+    "value": 0,
+    "type": "int",
+    "line_number": 358
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
+    "class_name": "WindowService",
+    "variable_name": "INPUT_SERVICES_IF_FOUND",
+    "value": 0,
+    "type": "int",
+    "line_number": 364
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
+    "class_name": "WindowService",
+    "variable_name": "INPUT_SERVICES_WIN32GUI_SHOWWINDOW_FOUND_WIN32CON_SW_RESTORE",
+    "value": 0,
+    "type": "int",
+    "line_number": 365
+  },
+  {
+    "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
+    "class_name": "WindowService",
     "variable_name": "INPUT_SERVICES_WIN32GUI_SETFOREGROUNDWINDOW_FOUND",
     "value": 0,
     "type": "int",
-    "line_number": 354
+    "line_number": 366
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3453,7 +3781,7 @@
     "variable_name": "INPUT_SERVICES_RAW_SCALE_RANDOM_UNIFORM_INPUT_CONTROL",
     "value": 0.45,
     "type": "float",
-    "line_number": 98
+    "line_number": 103
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3461,7 +3789,7 @@
     "variable_name": "INPUT_SERVICES_CX_SX_EX_DY_DISTANCE_RAW",
     "value": 2,
     "type": "int",
-    "line_number": 106
+    "line_number": 111
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3469,7 +3797,7 @@
     "variable_name": "INPUT_SERVICES_CY_SY_EY_DX_DISTANCE_RAW",
     "value": 2,
     "type": "int",
-    "line_number": 107
+    "line_number": 112
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3477,7 +3805,7 @@
     "variable_name": "INPUT_SERVICES_NONE_CHANCE_MIN_DISTANCE",
     "value": 0.92,
     "type": "float",
-    "line_number": 149
+    "line_number": 159
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3485,7 +3813,7 @@
     "variable_name": "INPUT_SERVICES_NONE_CHANCE_MIN_DISTANCE",
     "value": 0.7,
     "type": "float",
-    "line_number": 149
+    "line_number": 159
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3493,7 +3821,7 @@
     "variable_name": "INPUT_SERVICES_NONE_CHANCE_MIN_DISTANCE",
     "value": 50,
     "type": "int",
-    "line_number": 149
+    "line_number": 159
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3501,7 +3829,7 @@
     "variable_name": "INPUT_SERVICES_NONE_CHANCE_MIN_DISTANCE",
     "value": 0.14,
     "type": "float",
-    "line_number": 149
+    "line_number": 159
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3509,7 +3837,7 @@
     "variable_name": "INPUT_SERVICES_FACTOR_DISTANCE_CAPPED_MAX_OVERSHOOT",
     "value": 1.01,
     "type": "float",
-    "line_number": 158
+    "line_number": 168
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3517,7 +3845,7 @@
     "variable_name": "INPUT_SERVICES_FACTOR_DISTANCE_CAPPED_MAX_OVERSHOOT",
     "value": 500,
     "type": "int",
-    "line_number": 158
+    "line_number": 168
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/input_services.py",
@@ -3525,7 +3853,7 @@
     "variable_name": "INPUT_SERVICES_FACTOR_DISTANCE_CAPPED_MAX_OVERSHOOT",
     "value": 0.03,
     "type": "float",
-    "line_number": 158
+    "line_number": 168
   },
   {
     "file_path": "C:/Users/torre/OneDrive/Documents/GitHub/Auto_tool/systool/services/monitoring.py",
