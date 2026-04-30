@@ -111,8 +111,8 @@ class RuneState:
     jitter: int = app_config.RUNE_JITTER_DEFAULT
     cast_delay_ms: int = app_config.RUNE_CAST_DELAY_MS_DEFAULT
     post_cast_settle_ms: int = app_config.RUNE_POST_CAST_SETTLE_MS_DEFAULT
-    min_mana: int = 0
-    max_mana: int = 0
+    min_mana: int = 60
+    max_mana: int = 80
     available_blank_runes: int = 0
     mouse_move_min_ms: int = app_config.RUNE_MOUSE_MOVE_MIN_MS_DEFAULT
     mouse_move_max_ms: int = app_config.RUNE_MOUSE_MOVE_MAX_MS_DEFAULT
