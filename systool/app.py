@@ -285,7 +285,7 @@ class SystemMonitorApp:
         notebook.add(automation_tab, text="🎮  Activity Control")
         notebook.add(rune_tab, text="✨  Rune Session")
         notebook.add(healer_tab, text="❤️  Auto Healer")
-        notebook.add(light_tab, text="💡  Light Control??")
+        notebook.add(light_tab, text="💡  Light Control")
         notebook.add(alarm_tab, text="👁️  Screen Watch")
         notebook.add(char_status_tab, text="📊  Character Status")
         notebook.add(variables_tab, text="🔬  Variables")
