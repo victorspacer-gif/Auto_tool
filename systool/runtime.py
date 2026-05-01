@@ -11,10 +11,7 @@ import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
 
-# ─── SDL audio driver for pygame-ce on Windows ────────────────────────
-# Force legacy Windows audio backend so mixer works reliably in background
-# threads and with Tkinter (avoids WASAPI / DirectSound conflicts).
-os.environ.setdefault("SDL_AUDIODRIVER", "waveout")
+
 
 logger = logging.getLogger(__name__)
 
