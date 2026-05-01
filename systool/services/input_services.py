@@ -162,22 +162,28 @@ def _apply_target_error(
         none_chance = 0.6
 
     roll = random.random()
+    if roll < none_chance:
+        return (ex, ey, "none")
 
-    if roll < 0.10:
+    # Split the remaining error cases between overshoot and undershoot while
+    # preserving the distance-based bias toward "none".
+    error_roll = (roll - none_chance) / max(1e-9, 1.0 - none_chance)
+
+    if error_roll < (10.0 / 18.0):
         # Overshoot: ~10% probability (roll threshold) — factor starts at 1.01, scales +0.03 per 500px distance
         factor = 1.01 + (distance / 500) * 0.03  # capped ~1.04 max overshoot
         tx = sx + (ex - sx) * factor
         ty = sy + (ey - sy) * factor
         return (tx, ty, "overshoot")
 
-    if roll < 0.18:
+    if error_roll <= 1.0:
         # Undershoot: ~8% exclusive probability (cumulative threshold at 18%) — factor ~0.96–0.98
         factor = 0.96 + random.random() * 0.02  # base 0.96, random up to +0.02
         tx = sx + (ex - sx) * factor
         ty = sy + (ey - sy) * factor
         return (tx, ty, "undershoot")
 
-    # None: majority of the time
+    # Safety fallback if floating-point drift nudges us outside the expected range.
     return (ex, ey, "none")
 
 
@@ -194,7 +200,13 @@ class HumanMouse:
         )
 
     @staticmethod
-    def move(mouse, target: tuple[int, int], duration: float | None = None) -> None:
+    def move(
+        mouse,
+        target: tuple[int, int],
+        duration: float | None = None,
+        *,
+        target_error_enabled: bool = False,
+    ) -> None:
         sx, sy = mouse.position
         ex, ey = target
         dx, dy = ex - sx, ey - sy
@@ -204,62 +216,53 @@ class HumanMouse:
             mouse.position = (int(ex), int(ey))
             return
 
-        # --- Phase 0 — Optional reaction delay (20–120 ms human response time) ---
+        # --- Phase 0: Optional reaction delay (20-120 ms human response time) ---
         time.sleep(random.uniform(0.020, 0.120))  # 20ms min to 120ms max reaction delay
 
         if duration is None:
-            duration = max(INPUT_MOUSE_DURATION_MIN, min(INPUT_MOUSE_DURATION_MAX, distance / random.uniform(INPUT_MOUSE_SPEED_DIVISOR_MIN, INPUT_MOUSE_SPEED_DIVISOR_MAX)))
+            duration = max(
+                INPUT_MOUSE_DURATION_MIN,
+                min(
+                    INPUT_MOUSE_DURATION_MAX,
+                    distance / random.uniform(INPUT_MOUSE_SPEED_DIVISOR_MIN, INPUT_MOUSE_SPEED_DIVISOR_MAX),
+                ),
+            )
 
-        # --- Phase 1 — Ballistic movement with possible target error ---
-        err_ex, err_ey, error_type = _apply_target_error(sx, sy, ex, ey, distance)
+        # --- Phase 1: Ballistic movement with optional target error ---
+        if target_error_enabled:
+            err_ex, err_ey, error_type = _apply_target_error(sx, sy, ex, ey, distance)
+        else:
+            err_ex, err_ey, error_type = ex, ey, "none"
 
-        # Ballistic phase takes 75–90% of total duration (leaves budget for corrections)
         ballistic_duration = duration * random.uniform(0.75, 0.90)
         _curve_move(
             mouse,
             start=(sx, sy),
             end=(int(err_ex), int(err_ey)),
             duration=ballistic_duration,
-            noise_scale=1.0,  # Full noise during ballistic phase (no reduction)
+            noise_scale=1.0,
             smooth=False,
             easing_mode="ballistic",
         )
 
-        # --- Phase 2 — Correction phase (only if error was introduced) ---
+        # --- Phase 2: Correction phase (only if error was introduced) ---
         if error_type != "none":
-            # Allocate a dedicated correction budget: 30–50% of total duration.
-            # This is separate from the ballistic time so corrections feel deliberate,
-            # not rushed into whatever milliseconds are left over.
-            correction_budget = duration * random.uniform(0.30, 0.50)  # 30-50% budget fraction
-
-            # Correction count: 1–2 attempts (fewer corrections, longer each)
-            correction_count = random.randint(1, 2)
-            for _ci in range(correction_count):
-                cur_x, cur_y = mouse.position
-                corr_dist = math.hypot(ex - cur_x, ey - cur_y)
-                if corr_dist < 1:
-                    break
-
-                # Each correction gets a generous slice of the dedicated budget.
-                # First correction takes more (it's bigger), subsequent ones taper off.
-                # First share: 55–75% of budget; subsequent shares: 30–50%
-                share = random.uniform(0.55, 0.75) if _ci == 0 else random.uniform(0.30, 0.50)
-                # Minimum correction duration is 60ms to prevent instant snaps
-                corr_dur = max(0.06, correction_budget * share)
-                correction_budget -= corr_dur
-
-                # Micro-pause between corrections — humans don't correct instantly;
-                # there's a brief processing delay (~15–40 ms) before the next adjustment.
-                if _ci > 0:
-                    time.sleep(random.uniform(0.015, 0.040))  # 15ms to 40ms inter-correction pause
-
+            correction_budget = duration * random.uniform(0.30, 0.50)
+            cur_x, cur_y = mouse.position
+            corr_dist = math.hypot(ex - cur_x, ey - cur_y)
+            if corr_dist >= 1:
+                # Use one deliberate correction so we do not stack multiple
+                # random micro-adjustments before the final settle phase.
+                corr_dur = max(0.06, correction_budget * random.uniform(0.65, 0.85))
                 _curve_move(
                     mouse,
                     start=(cur_x, cur_y),
                     end=(int(ex), int(ey)),
                     duration=corr_dur,
-                    noise_scale=random.uniform(0.15, 0.30),  # Reduced noise (15-30%) for correction phase
+                    noise_scale=random.uniform(0.06, 0.14),
                     smooth=True,
+                    easing_mode="correction",
+                    settle_mode=True,
                 )
 
         # --- Smooth settle to true target (no hard snap) ---
@@ -268,19 +271,15 @@ class HumanMouse:
         if settle_dist < 1:
             return
 
-        # Gentle final approach — near-silent movement with minimal wobble.
-        # Uses a very low noise floor and an extra fade multiplier so jitter
-        # stays imperceptible throughout the entire settle (not just at the end).
-        # Min 40ms; takes 8–15% of total duration for smooth deceleration
         settle_duration = max(0.04, duration * random.uniform(0.08, 0.15))
         _curve_move(
             mouse,
             start=(cur_x, cur_y),
             end=(int(ex), int(ey)),
             duration=settle_duration,
-            noise_scale=random.uniform(0.02, 0.05),  # Ultra-low noise (2-5%) — barely perceptible
+            noise_scale=random.uniform(0.02, 0.05),
             smooth=True,
-            settle_mode=True,  # Extra jitter suppression for final approach
+            settle_mode=True,
         )
 
     @staticmethod
@@ -290,15 +289,26 @@ class HumanMouse:
         dest: tuple[int, int],
         *,
         move_duration: float | None = None,
+        target_error_enabled: bool = False,
         press_delay_range: tuple[float, float] = (INPUT_PRESS_DELAY_MIN, INPUT_PRESS_DELAY_MAX),
         hold_delay_range: tuple[float, float] = (INPUT_HOLD_DELAY_MIN, INPUT_HOLD_DELAY_MAX),
         settle_delay_range: tuple[float, float] = (INPUT_SETTLE_DELAY_MIN, INPUT_SETTLE_DELAY_MAX),
     ) -> None:
-        HumanMouse.move(mouse, source, duration=move_duration)
+        HumanMouse.move(
+            mouse,
+            source,
+            duration=move_duration,
+            target_error_enabled=target_error_enabled,
+        )
         time.sleep(random.uniform(*press_delay_range))
         mouse.press(pynput_mouse.Button.left)
         time.sleep(random.uniform(*hold_delay_range))
-        HumanMouse.move(mouse, dest, duration=move_duration)
+        HumanMouse.move(
+            mouse,
+            dest,
+            duration=move_duration,
+            target_error_enabled=target_error_enabled,
+        )
         time.sleep(random.uniform(*settle_delay_range))
         mouse.release(pynput_mouse.Button.left)
 

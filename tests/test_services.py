@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 with patch("systool.runtime.pynput_kb"), \
      patch("systool.runtime.pynput_mouse"):
     from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
+    from systool.services import input_services
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
 try:
@@ -54,6 +55,46 @@ class TestHumanMouseJitter:
         results = [HumanMouse.jitter((50, 50), 10) for _ in range(20)]
         unique = set(results)
         assert len(unique) > 1, "Jitter should produce varied results"
+
+
+class TestHumanMouseMove:
+    class _FakeMouse:
+        def __init__(self, position=(0, 0)):
+            self.position = position
+
+    @staticmethod
+    def _straight_curve(mouse, start, end, duration, **_kwargs):
+        mouse.position = end
+
+    def test_move_disables_target_error_by_default(self):
+        mouse = self._FakeMouse()
+
+        with patch("systool.services.input_services.time.sleep", return_value=None), \
+             patch("systool.services.input_services._curve_move", side_effect=self._straight_curve), \
+             patch("systool.services.input_services._apply_target_error") as apply_target_error:
+            HumanMouse.move(mouse, (25, 30), duration=0.1)
+
+        apply_target_error.assert_not_called()
+        assert mouse.position == (25, 30)
+
+    def test_move_uses_target_error_when_enabled(self):
+        mouse = self._FakeMouse()
+
+        with patch("systool.services.input_services.time.sleep", return_value=None), \
+             patch("systool.services.input_services._curve_move", side_effect=self._straight_curve), \
+             patch(
+                 "systool.services.input_services._apply_target_error",
+                 return_value=(27, 33, "overshoot"),
+             ) as apply_target_error:
+            HumanMouse.move(mouse, (25, 30), duration=0.1, target_error_enabled=True)
+
+        apply_target_error.assert_called_once()
+        assert mouse.position == (25, 30)
+
+    def test_apply_target_error_prefers_none_for_short_moves(self):
+        with patch("systool.services.input_services.random.random", return_value=0.2):
+            tx, ty, error_type = input_services._apply_target_error(0, 0, 20, 20, distance=10)
+        assert (tx, ty, error_type) == (20, 20, "none")
 
 
 class TestSafeKeyboardSession:
