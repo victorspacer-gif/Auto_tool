@@ -114,18 +114,13 @@ try:
                 _pygame_mixer_initialized = False
 
     def _quit_pygame_mixer() -> None:
-        """Stop playback and release the channel, but keep mixer initialized.
-
-        On Windows, calling pygame.mixer.quit() then re-init'ing on the next
-        alarm is unreliable — DirectSound/WASAPI backends can fail silently
-        or leave the device in a broken state.  Instead we just stop playback
-        and let the mixer stay alive for subsequent alarms.
-        """
+        """Release the audio device after playback to prevent white noise."""
         global _pygame_mixer_initialized
         if _pygame_mixer_initialized and pygame is not None:
             try:
                 pygame.mixer.music.stop()
-                # Do NOT call pygame.mixer.quit() — it breaks re-init on Windows.
+                pygame.mixer.quit()
+                _pygame_mixer_initialized = False
             except Exception:
                 pass
 
