@@ -118,6 +118,9 @@ PYGAME_MIXER_CHANNELS: int = 2    # Stereo
 PYGAME_MIXER_BUFFER: int = 512    # Buffer size
 PYGAME_DEFAULT_VOLUME: float = 1.0  # Default alarm playback volume
 
+# ─── Alarm Sound ──────────────────────────────────────────────────────
+ALARM_SOUND_FILENAME: str = "brazil-alarm.mp3"  # Bundled default alarm sound (in systool/services/)
+
 # ─── UI / Layout ─────────────────────────────────────────────────────
 UI_THRESHOLD_WIDTH: int = 1180    # Responsive column threshold (px)
 APP_WINDOW_MIN_WIDTH: int = 960   # Main window minimum width

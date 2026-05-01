@@ -36,6 +36,7 @@ from ..runtime import (
     HAS_NUMPY,
     HAS_PYGAME,
     HAS_TESSERACT,
+    HAS_WIN32,
     CV2_IMPORT_ERROR,
     MSS_IMPORT_ERROR,
     NUMPY_IMPORT_ERROR,
@@ -49,14 +50,23 @@ from ..runtime import (
     pygame,
     pytesseract,
     resolve_tesseract_cmd,
+    win32con,
+    win32gui,
 )
+
+try:
+    import ctypes
+    HAS_CTYPES = True
+except ImportError:
+    HAS_CTYPES = False
 from ..theme import GREEN, ORANGE, RED, TEAL
 from ..config import CHAR_STATUS_POLL_MS_MIN
-from ..constants import (  # Monitoring timing and audio volume constants
+from ..constants import (  # Monitoring timing, audio volume, and alarm constants
     LIGHT_FREEZE_MIN_INTERVAL_MS,  # Light freeze poll interval (milliseconds)
     MONITOR_ERROR_RETRY_SLEEP,  # Error retry sleep interval (seconds)
     MONITOR_POLL_SLEEP,  # Monitor poll sleep interval (seconds)
     PYGAME_DEFAULT_VOLUME,  # Pygame default volume level (0-100 scale)
+    ALARM_SOUND_FILENAME,  # Default alarm sound filename bundled with the app
 )
 
 class LightControlService:
@@ -591,32 +601,103 @@ class AlarmService:
         self.runtime.ui.module_state_changed("alarm", False)
         self.runtime.ui.set_status("Screen watch stopped", RED)
 
+    def _resolve_alarm_sound_path(self) -> str:
+        """Resolve the alarm audio file path, falling back to bundled default."""
+        # First try user-configured path
+        raw = (self.runtime.state.alarm_mp3 or "").strip()
+        if raw:
+            resolved = self._resolve_alarm_audio_path(raw)
+            if os.path.exists(resolved):
+                return resolved
+
+        # Fall back to bundled alarm sound in systool/services/
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            default_path = os.path.join(base_dir, "services", ALARM_SOUND_FILENAME)
+            if os.path.exists(default_path):
+                return default_path
+        except Exception:
+            pass
+
+        return ""
+
+    def _flash_game_window(self) -> None:
+        """Flash the game window's taskbar icon using win32gui."""
+        if not HAS_WIN32 or not win32gui or not win32con:
+            return
+        try:
+            # Try to find the game process window (miracle_gl.exe)
+            def enum_callback(hwnd, results):
+                if win32gui.IsWindowVisible(hwnd):
+                    _, process_name = win32gui.GetWindowText(hwnd), None
+                    # Check process name from window title or class
+                    try:
+                        pid = win32gui.GetWindowThreadProcessId(hwnd)
+                        import psutil
+                        proc = psutil.Process(pid[1])
+                        pname = proc.name().lower()
+                        if "miracle" in pname or "game" in pname.lower():
+                            results.append((hwnd, process_name))
+                    except Exception:
+                        pass
+
+            handles = []
+            win32gui.EnumWindows(enum_callback, handles)
+            for hwnd, title in handles[:1]:  # Flash first matching window
+                try:
+                    FLASH_INFO = (win32con.FW_RUNNABLEONCALLBACK |
+                                  win32con.FW_RESTORECONFOFF |
+                                  50)  # flash 5 times
+                    win32gui.FlashWindow(hwnd, True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _play_system_sound(self) -> None:
+        """Play a standard Windows system sound (SystemAsterisk)."""
+        if not HAS_CTYPES:
+            return
+        try:
+            ctypes.windll.user32.MessageBeep(0x40)  # MB_OK | MB_ICONASTERISK = SystemAsterisk
+        except Exception:
+            pass
+
     def play_alarm(self) -> None:
-        path = self._resolve_alarm_audio_path(self.runtime.state.alarm_mp3)
+        path = self._resolve_alarm_sound_path()
         if path:
             self.runtime.state.alarm_mp3 = path
-        if not path or not os.path.exists(path):
-            self.runtime.ui.log("⚠️  Alert sound file not found")
-            return
+
+        state = self.runtime.state
+        flash_window = getattr(state, 'alarm_flash_window', True)  # Default: enabled
+        system_sound = getattr(state, 'alarm_system_sound', False)  # Default: disabled
 
         def play() -> None:
             try:
-                if HAS_PYGAME:
-                    # Lazy-init mixer only when an alert needs to play.
-                    _init_pygame_mixer()
-                    if pygame.mixer.get_init() is None:
-                        raise RuntimeError("pygame mixer failed to initialize")
-                    pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)  # Pygame default volume level (0-100 scale)
-                    pygame.mixer.music.load(path)
-                    pygame.mixer.music.play()
-                    # Wait until the sound finishes playing, then quit mixer
-                    # to release the audio device and prevent white noise.
-                    # Poll every 100ms while waiting for audio playback to finish (seconds)
-                    while pygame.mixer.get_busy():
-                        time.sleep(0.1)  # 100ms poll interval for audio busy check
-                    _quit_pygame_mixer()
-                else:
-                    os.startfile(path)
+                # Play Windows system sound if enabled (non-blocking, instant feedback)
+                if system_sound and HAS_CTYPES:
+                    self._play_system_sound()
+
+                # Flash game window taskbar icon if enabled
+                if flash_window and HAS_WIN32:
+                    self._flash_game_window()
+
+                # Play MP3 alarm sound via pygame or shell
+                if path and os.path.exists(path):
+                    if HAS_PYGAME:
+                        _init_pygame_mixer()
+                        if pygame.mixer.get_init() is None:
+                            raise RuntimeError("pygame mixer failed to initialize")
+                        pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)
+                        pygame.mixer.music.load(path)
+                        pygame.mixer.music.play()
+                        while pygame.mixer.get_busy():
+                            time.sleep(0.1)
+                        _quit_pygame_mixer()
+                    else:
+                        os.startfile(path)
+                elif not system_sound and not flash_window:
+                    self.runtime.ui.log("⚠️  No alarm sound configured")
             except Exception as exc:
                 self.runtime.ui.log(f"❌ Audio: {exc}")
 

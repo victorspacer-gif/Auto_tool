@@ -359,6 +359,8 @@ class ConfigSerializer:
         state.alarm.threshold = get_float_any(("alarm.threshold", "alarm_threshold"), state.alarm.threshold)
         state.alarm.cooldown = get_int_any(("alarm.cooldown", "alarm_cooldown"), state.alarm.cooldown)
         state.alarm.auto_pause = get_bool_any(("alarm.auto_pause", "alarm_auto_pause"), state.alarm.auto_pause)
+        state.alarm.flash_window = get_bool_any(("alarm.flash_window", "alarm_flash_window"), True)
+        state.alarm.system_sound = get_bool_any(("alarm.system_sound", "alarm_system_sound"), False)
         state.alarm.hp_percent = max(
             PERCENT_VALUE_MIN,
             min(

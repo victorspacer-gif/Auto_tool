@@ -507,6 +507,15 @@ class SystemMonitorApp:
         self.ui_vars["alarm_auto_pause_var"] = auto_pause
         tk.Checkbutton(panel, text="Auto-pause all activities when screen watch triggers", variable=auto_pause, font=BOLD, bg=PANEL, fg=ORANGE, selectcolor=PANEL, activebackground=PANEL, activeforeground=ORANGE).pack(anchor="w", pady=(8, 2))
         tk.Label(panel, text="When enabled: all running features pause on screen change detection.\nWhen disabled: the alert sound plays and monitoring continues.", font=SMALL, fg=MUTED, bg=PANEL, justify="left").pack(anchor="w")
+
+        # Flash window & system sound options
+        flash_var = tk.BooleanVar(value=self.runtime.state.alarm_flash_window)
+        self.ui_vars["alarm_flash_var"] = flash_var
+        sys_sound_var = tk.BooleanVar(value=self.runtime.state.alarm_system_sound)
+        self.ui_vars["alarm_sys_sound_var"] = sys_sound_var
+        tk.Checkbutton(panel, text="Flash game window taskbar icon on alarm", variable=flash_var, font=BOLD, bg=PANEL, fg=TEAL, selectcolor=PANEL, activebackground=PANEL, activeforeground=TEAL).pack(anchor="w", pady=(8, 2))
+        tk.Checkbutton(panel, text="Play Windows system sound (SystemAsterisk) on alarm", variable=sys_sound_var, font=BOLD, bg=PANEL, fg=TEAL, selectcolor=PANEL, activebackground=PANEL, activeforeground=TEAL).pack(anchor="w")
+
         action_row = tk.Frame(panel, bg=PANEL)
         action_row.pack(fill="x", pady=(10, 0))
         self._btn(action_row, "▶ Start Watching", self.alarm_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
@@ -1502,6 +1511,8 @@ class SystemMonitorApp:
             "alarm_hp_value_var": state.alarm_hp_value,
             "alarm_mp_value_var": state.alarm_mp_value,
             "alarm_cap_value_var": state.alarm_cap_value,
+            "alarm_flash_var": bool(state.alarm_flash_window),
+            "alarm_sys_sound_var": bool(state.alarm_system_sound),
             "char_status_tesseract_var": state.char_status_tesseract_path,
             "char_status_samples_var": state.char_status_samples,
             "fish_min_cap_var": state.fish_min_cap,
@@ -1632,6 +1643,10 @@ class SystemMonitorApp:
             state.alarm_auto_pause = bool(self.ui_vars["alarm_auto_pause_var"].get())
         if "alarm_mp3_var" in self.ui_vars:
             state.alarm_mp3 = str(self.ui_vars["alarm_mp3_var"].get())
+        if "alarm_flash_var" in self.ui_vars:
+            state.alarm_flash_window = bool(self.ui_vars["alarm_flash_var"].get())
+        if "alarm_sys_sound_var" in self.ui_vars:
+            state.alarm_system_sound = bool(self.ui_vars["alarm_sys_sound_var"].get())
 
     def _poll_light_settings(self, state) -> None:
         if "light_process_name_var" in self.ui_vars:

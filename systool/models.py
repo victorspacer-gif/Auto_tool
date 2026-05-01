@@ -52,6 +52,8 @@ class AlarmState:
     hp_value: int = 0
     mp_value: int = 0
     cap_value: int = 0
+    flash_window: bool = True
+    system_sound: bool = False
 
 
 @dataclasses.dataclass
@@ -262,6 +264,8 @@ class AppState:
     alarm_hp_value = _group_property("alarm", "hp_value")
     alarm_mp_value = _group_property("alarm", "mp_value")
     alarm_cap_value = _group_property("alarm", "cap_value")
+    alarm_flash_window = _group_property("alarm", "flash_window")
+    alarm_system_sound = _group_property("alarm", "system_sound")
 
     char_status_active = _group_property("char_status", "active")
     char_status_region = _group_property("char_status", "region")
