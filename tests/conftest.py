@@ -15,3 +15,7 @@ for mod in ["win32con", "win32gui", "pywin32"]:
 
 # Optional runtime deps that may not be installed in the test environment.
 sys.modules.setdefault("psutil", MagicMock())
+
+# Mock pygame — audio backend not available on Linux test machine, but we need
+# the module present so systool.runtime can import and define real functions.
+sys.modules.setdefault("pygame", MagicMock())

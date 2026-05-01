@@ -857,3 +857,5 @@ class TestAppRuntimeStopEvents:
         for i in range(len(events)):
             for j in range(i + 1, len(events)):
                 assert events[i] is not events[j]
+
+
