@@ -657,13 +657,17 @@ class TestConfigureTesseractRuntime:
 
 
 class TestPygameMixerStubs:
-    """Verify _init_pygame_mixer and _quit_pygame_mixer are callable no-ops when pygame unavailable."""
+    """Verify pygame mixer is eager-initialized at import time."""
 
-    def test_init_stub_is_callable(self):
-        from systool.runtime import _init_pygame_mixer
+    def test_mixer_initialized_at_import(self):
+        from systool.runtime import HAS_PYGAME, pygame
 
-        assert callable(_init_pygame_mixer)
-        _init_pygame_mixer()  # should not raise
+        if not HAS_PYGAME:
+            pytest.skip("pygame not available")
+
+        assert pygame.mixer.get_init() is not None, (
+            "mixer must be initialized at import time"
+        )
 
 
 class TestPauseControllerWaitInterruptibleDeadline:

@@ -41,8 +41,6 @@ from ..runtime import (
     MSS_IMPORT_ERROR,
     NUMPY_IMPORT_ERROR,
     TESSERACT_IMPORT_ERROR,
-    _init_pygame_mixer,
-    _quit_pygame_mixer,
     cv2,
     configure_tesseract_runtime,
     mss,
@@ -61,11 +59,10 @@ except ImportError:
     HAS_CTYPES = False
 from ..theme import GREEN, ORANGE, RED, TEAL
 from ..config import CHAR_STATUS_POLL_MS_MIN
-from ..constants import (  # Monitoring timing, audio volume, and alarm constants
+from ..constants import (  # Monitoring timing and alarm constants
     LIGHT_FREEZE_MIN_INTERVAL_MS,  # Light freeze poll interval (milliseconds)
     MONITOR_ERROR_RETRY_SLEEP,  # Error retry sleep interval (seconds)
     MONITOR_POLL_SLEEP,  # Monitor poll sleep interval (seconds)
-    PYGAME_DEFAULT_VOLUME,  # Pygame default volume level (0-100 scale)
     ALARM_SOUND_FILENAME,  # Default alarm sound filename bundled with the app
 )
 
@@ -686,20 +683,8 @@ class AlarmService:
                 if path and os.path.exists(path):
                     if HAS_PYGAME:
                         try:
-                            _init_pygame_mixer()
-                            if pygame.mixer.get_init() is None:
-                                raise RuntimeError("pygame mixer failed to initialize")
-                            pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)
                             pygame.mixer.music.load(path)
                             pygame.mixer.music.play()
-                            # Process SDL events so playback actually starts on Windows
-                            while pygame.mixer.get_busy():
-                                time.sleep(0.1)
-                                try:
-                                    pygame.event.get()
-                                except Exception:
-                                    pass
-                            _quit_pygame_mixer()
                         except Exception as exc:
                             logger.warning("pygame mixer failed, falling back to shell playback: %s", exc)
                             os.startfile(path)

@@ -11,23 +11,8 @@ import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
 
-# ─── SDL audio driver for pygame-ce on Windows ────────────────────────
-# Force legacy Windows audio backend so mixer works reliably in background
-# threads and with Tkinter (avoids WASAPI / DirectSound conflicts).
-os.environ.setdefault("SDL_AUDIODRIVER", "waveout")
-
 logger = logging.getLogger(__name__)
 
-from .constants import (
-    EXEC_WAIT_TIMEOUT_DEFAULT,
-    EXEC_WAIT_TIMEOUT_MAX,
-    EXEC_WAIT_TIMEOUT_MIN,
-    PAUSE_CONTROLLER_SLEEP_INTERVAL,
-    PYGAME_MIXER_BUFFER,
-    PYGAME_MIXER_CHANNELS,
-    PYGAME_MIXER_FORMAT,
-    PYGAME_MIXER_FREQ,
-)
 from .config import ConfigSerializer
 from .models import AppState, HotkeyJob
 
@@ -95,39 +80,24 @@ except Exception as exc:
     HAS_TESSERACT = False
     TESSERACT_IMPORT_ERROR = str(exc)
 
+# ── Constants (needed before pygame init) ────────────────────────────
+from .constants import (  # noqa: E402
+    EXEC_WAIT_TIMEOUT_DEFAULT,
+    EXEC_WAIT_TIMEOUT_MAX,
+    EXEC_WAIT_TIMEOUT_MIN,
+    PAUSE_CONTROLLER_SLEEP_INTERVAL,
+    PYGAME_MIXER_BUFFER,
+    PYGAME_MIXER_CHANNELS,
+    PYGAME_MIXER_FORMAT,
+    PYGAME_MIXER_FREQ,
+)
+
 try:
     import pygame
 
-    # Defer mixer init until first alert plays to avoid keeping the audio device open.
-    _pygame_mixer_initialized = False
-
-    def _init_pygame_mixer() -> None:
-        """Lazy-init pygame mixer on first use, then quit after playback."""
-        global _pygame_mixer_initialized
-        if not _pygame_mixer_initialized:
-            try:
-                pygame.mixer.pre_init(
-                    PYGAME_MIXER_FREQ,
-                    PYGAME_MIXER_FORMAT,
-                    PYGAME_MIXER_CHANNELS,
-                    PYGAME_MIXER_BUFFER,
-                )
-                pygame.mixer.init()
-                _pygame_mixer_initialized = True
-            except Exception as exc:
-                logger.warning("pygame mixer init failed: %s", exc)
-                _pygame_mixer_initialized = False
-
-    def _quit_pygame_mixer() -> None:
-        """Release the audio device after playback to prevent white noise."""
-        global _pygame_mixer_initialized
-        if _pygame_mixer_initialized and pygame is not None:
-            try:
-                pygame.mixer.music.stop()
-                pygame.mixer.quit()
-                _pygame_mixer_initialized = False
-            except Exception:
-                pass
+    # Eager init at import time (main thread) — matches Pointers-evaluation behavior.
+    pygame.mixer.pre_init(PYGAME_MIXER_FREQ, PYGAME_MIXER_FORMAT, PYGAME_MIXER_CHANNELS, PYGAME_MIXER_BUFFER)
+    pygame.mixer.init()
 
     HAS_PYGAME = True
 except Exception as exc:
@@ -135,11 +105,6 @@ except Exception as exc:
     HAS_PYGAME = False
     logger.warning("pygame unavailable — audio alerts disabled: %s", exc)
 
-
-# No-op stubs when pygame is not available (so monitoring.py can always import them).
-if "_init_pygame_mixer" not in globals():
-    _init_pygame_mixer = lambda: None  # noqa: E731
-    _quit_pygame_mixer = lambda: None  # noqa: E731
 
 try:
     from pynput import keyboard as pynput_kb
