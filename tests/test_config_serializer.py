@@ -134,6 +134,17 @@ class TestPartialConfigDefaults:
         assert state.rclick_mode == original.rclick_mode
         assert state.rune_spell_key == original.rune_spell_key
 
+    def test_apply_loaded_reads_alarm_mp3_from_dot_notation(self, state):
+        payload = {
+            "cfg": {"alarm.mp3": "C:/alerts/ping.mp3"},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert state.alarm.mp3 == "C:/alerts/ping.mp3"
+
 
 # ── Legacy migration ───────────────────────────────────────────────
 

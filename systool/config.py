@@ -295,6 +295,30 @@ class ConfigSerializer:
         def get_bool(name: str, default: bool) -> bool:
             return str(cfg.get(name, str(default))).lower() == "true"
 
+        def get_str_any(names: tuple[str, ...], default: str) -> str:
+            for name in names:
+                if name in cfg:
+                    return str(cfg.get(name, default))
+            return default
+
+        def get_int_any(names: tuple[str, ...], default: int) -> int:
+            for name in names:
+                if name in cfg:
+                    return get_int(name, default)
+            return default
+
+        def get_float_any(names: tuple[str, ...], default: float) -> float:
+            for name in names:
+                if name in cfg:
+                    return get_float(name, default)
+            return default
+
+        def get_bool_any(names: tuple[str, ...], default: bool) -> bool:
+            for name in names:
+                if name in cfg:
+                    return get_bool(name, default)
+            return default
+
         # ── AFK ───────────────────────────────────────────────────────
         state.afk_min_ms = get_int("afk_min_ms", state.afk_min_ms)
         state.afk_max_ms = get_int("afk_max_ms", state.afk_max_ms)
@@ -331,14 +355,29 @@ class ConfigSerializer:
         state.rclick_post_click_settle_ms = max(RCLICK_POST_CLICK_SETTLE_MS_MIN, get_int("rclick_post_click_settle_ms", state.rclick_post_click_settle_ms))
 
         # ── Alarm ─────────────────────────────────────────────────────
-        state.alarm.mp3 = get_str("alarm_mp3", state.alarm.mp3)
-        state.alarm.threshold = get_float("alarm_threshold", state.alarm.threshold)
-        state.alarm.cooldown = get_int("alarm_cooldown", state.alarm.cooldown)
-        state.alarm.auto_pause = get_bool("alarm_auto_pause", state.alarm.auto_pause)
-        state.alarm.hp_percent = max(PERCENT_VALUE_MIN, min(PERCENT_VALUE_MAX, get_int("alarm_hp_percent", state.alarm.hp_percent)))
-        state.alarm.hp_value = max(NON_NEGATIVE_INT_MIN, get_int("alarm_hp_value", state.alarm_hp_value))
-        state.alarm.mp_value = max(NON_NEGATIVE_INT_MIN, get_int("alarm_mp_value", state.alarm_mp_value))
-        state.alarm.cap_value = max(NON_NEGATIVE_INT_MIN, get_int("alarm_cap_value", state.alarm_cap_value))
+        state.alarm.mp3 = get_str_any(("alarm.mp3", "alarm_mp3"), state.alarm.mp3)
+        state.alarm.threshold = get_float_any(("alarm.threshold", "alarm_threshold"), state.alarm.threshold)
+        state.alarm.cooldown = get_int_any(("alarm.cooldown", "alarm_cooldown"), state.alarm.cooldown)
+        state.alarm.auto_pause = get_bool_any(("alarm.auto_pause", "alarm_auto_pause"), state.alarm.auto_pause)
+        state.alarm.hp_percent = max(
+            PERCENT_VALUE_MIN,
+            min(
+                PERCENT_VALUE_MAX,
+                get_int_any(("alarm.hp_percent", "alarm_hp_percent"), state.alarm.hp_percent),
+            ),
+        )
+        state.alarm.hp_value = max(
+            NON_NEGATIVE_INT_MIN,
+            get_int_any(("alarm.hp_value", "alarm_hp_value"), state.alarm_hp_value),
+        )
+        state.alarm.mp_value = max(
+            NON_NEGATIVE_INT_MIN,
+            get_int_any(("alarm.mp_value", "alarm_mp_value"), state.alarm_mp_value),
+        )
+        state.alarm.cap_value = max(
+            NON_NEGATIVE_INT_MIN,
+            get_int_any(("alarm.cap_value", "alarm_cap_value"), state.alarm_cap_value),
+        )
         state.alarm.region = alarm_region
 
         # ── Char-status ───────────────────────────────────────────────

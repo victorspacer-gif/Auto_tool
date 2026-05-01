@@ -13,6 +13,7 @@ with patch("systool.runtime.pynput_kb"), \
      patch("systool.runtime.pynput_mouse"):
     from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
     from systool.services import input_services
+    from systool.services.monitoring import AlarmService
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
 try:
@@ -95,6 +96,26 @@ class TestHumanMouseMove:
         with patch("systool.services.input_services.random.random", return_value=0.2):
             tx, ty, error_type = input_services._apply_target_error(0, 0, 20, 20, distance=10)
         assert (tx, ty, error_type) == (20, 20, "none")
+
+    def test_curve_move_finishes_on_exact_target(self):
+        mouse = self._FakeMouse()
+        with patch("systool.services.input_services.time.sleep", return_value=None):
+            input_services._curve_move(
+                mouse,
+                start=(0, 0),
+                end=(25, 30),
+                duration=0.1,
+                noise_scale=0.0,
+                smooth=True,
+                settle_mode=True,
+            )
+        assert mouse.position == (25, 30)
+
+
+class TestAlarmAudioPath:
+    def test_resolve_alarm_audio_path_normalizes_relative_path(self):
+        path = AlarmService._resolve_alarm_audio_path("alerts/test.mp3")
+        assert path.endswith("alerts\\test.mp3") or path.endswith("alerts/test.mp3")
 
 
 class TestSafeKeyboardSession:

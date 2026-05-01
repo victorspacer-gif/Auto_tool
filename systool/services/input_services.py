@@ -98,7 +98,11 @@ def _curve_move(
     step_duration = duration / steps
 
     # Control point — perpendicular offset from midpoint
-    if smooth:
+    if settle_mode:
+        # Final settling should not arc past the cursor axis or introduce any
+        # last-moment wobble before clicking.
+        raw_scale = 0.0
+    elif smooth:
         # Reduced randomness for smoother curves (scale to 45% of full range)
         raw_scale = random.uniform(*INPUT_CONTROL_SCALE_RANGE) * 0.45
     else:
@@ -132,7 +136,7 @@ def _curve_move(
         # In settle_mode, use a quadratic fade so even early steps are near-silent;
         # this prevents the "heavy wiggle before clicking" look on final approach.
         if settle_mode:
-            fade = max(0.0, (1.0 - t_value) ** 2) * 0.5  # Quadratic + 50% reduction
+            fade = 0.0
         else:
             fade = 1.0 - t_value
         x_pos += random.uniform(*INPUT_FAKE_JITTER_RANGE) * fade * noise_scale
@@ -140,6 +144,10 @@ def _curve_move(
 
         mouse.position = (int(x_pos), int(y_pos))
         time.sleep(step_duration)
+
+    # Always finish on the exact target pixel. The loop above stops short of
+    # t=1.0, which can otherwise leave a visible 1px correction at click time.
+    mouse.position = (int(ex), int(ey))
 
 
 def _apply_target_error(

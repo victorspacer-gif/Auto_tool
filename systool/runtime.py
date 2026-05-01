@@ -111,6 +111,7 @@ try:
                 _pygame_mixer_initialized = True
             except Exception as exc:
                 logger.warning("pygame mixer init failed: %s", exc)
+                _pygame_mixer_initialized = False
 
     def _quit_pygame_mixer() -> None:
         """Release the audio device after playback to prevent white noise."""

@@ -7,6 +7,7 @@ import os
 import re
 import threading
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -552,6 +553,22 @@ class AlarmService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
 
+    @staticmethod
+    def _resolve_alarm_audio_path(raw_path: str) -> str:
+        cleaned = (raw_path or "").strip().strip('"').strip("'")
+        if not cleaned:
+            return ""
+
+        candidate = Path(cleaned).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+
+        try:
+            resolved = candidate.resolve(strict=False)
+        except OSError:
+            resolved = candidate
+        return str(resolved)
+
     def start(self) -> None:
         state = self.runtime.state
         if state.alarm_active:
@@ -575,7 +592,9 @@ class AlarmService:
         self.runtime.ui.set_status("Screen watch stopped", RED)
 
     def play_alarm(self) -> None:
-        path = self.runtime.state.alarm_mp3
+        path = self._resolve_alarm_audio_path(self.runtime.state.alarm_mp3)
+        if path:
+            self.runtime.state.alarm_mp3 = path
         if not path or not os.path.exists(path):
             self.runtime.ui.log("⚠️  Alert sound file not found")
             return
@@ -585,6 +604,8 @@ class AlarmService:
                 if HAS_PYGAME:
                     # Lazy-init mixer only when an alert needs to play.
                     _init_pygame_mixer()
+                    if pygame.mixer.get_init() is None:
+                        raise RuntimeError("pygame mixer failed to initialize")
                     pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)  # Pygame default volume level (0-100 scale)
                     pygame.mixer.music.load(path)
                     pygame.mixer.music.play()

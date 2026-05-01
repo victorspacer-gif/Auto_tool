@@ -1311,8 +1311,9 @@ class SystemMonitorApp:
     def browse_alarm_sound(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("Audio", "*.mp3 *.wav *.ogg"), ("All", "*.*")])
         if path:
-            self.runtime.state.alarm_mp3 = path
-            self.ui_vars["alarm_mp3_var"].set(path)
+            normalized = os.path.abspath(os.path.expanduser(path))
+            self.runtime.state.alarm_mp3 = normalized
+            self.ui_vars["alarm_mp3_var"].set(normalized)
 
     def attach_light_process(self) -> None:
         ok, message = self.light_service.attach()
