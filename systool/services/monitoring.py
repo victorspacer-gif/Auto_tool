@@ -685,15 +685,24 @@ class AlarmService:
                 # Play MP3 alarm sound via pygame or shell
                 if path and os.path.exists(path):
                     if HAS_PYGAME:
-                        _init_pygame_mixer()
-                        if pygame.mixer.get_init() is None:
-                            raise RuntimeError("pygame mixer failed to initialize")
-                        pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)
-                        pygame.mixer.music.load(path)
-                        pygame.mixer.music.play()
-                        while pygame.mixer.get_busy():
-                            time.sleep(0.1)
-                        _quit_pygame_mixer()
+                        try:
+                            _init_pygame_mixer()
+                            if pygame.mixer.get_init() is None:
+                                raise RuntimeError("pygame mixer failed to initialize")
+                            pygame.mixer.music.set_volume(PYGAME_DEFAULT_VOLUME)
+                            pygame.mixer.music.load(path)
+                            pygame.mixer.music.play()
+                            # Process SDL events so playback actually starts on Windows
+                            while pygame.mixer.get_busy():
+                                time.sleep(0.1)
+                                try:
+                                    pygame.event.get()
+                                except Exception:
+                                    pass
+                            _quit_pygame_mixer()
+                        except Exception as exc:
+                            logger.warning("pygame mixer failed, falling back to shell playback: %s", exc)
+                            os.startfile(path)
                     else:
                         os.startfile(path)
                 elif not system_sound and not flash_window:
