@@ -34,6 +34,9 @@ hiddenimports = [
     "studiomemuer_light_module",
     "studiomemuer_light_module.light_profile",
     "studiomemuer_light_module.memory_backend",
+    # Submodules needed for dynamic __import__ resolution
+    "studiomemuer_mp_module.mp_profile",
+    "studiomemuer_cap_module.cap_profile",
     # Purecase module (dynamically imported at runtime)
     "purecase_module",
 ]
