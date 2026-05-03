@@ -201,6 +201,7 @@ class AppState:
     rclick_click_delay_min_ms: int = app_config.APP_RCLICK_CLICK_DELAY_MIN_MS_DEFAULT
     rclick_click_delay_max_ms: int = app_config.APP_RCLICK_CLICK_DELAY_MAX_MS_DEFAULT
     rclick_post_click_settle_ms: int = app_config.APP_RCLICK_POST_CLICK_SETTLE_MS_DEFAULT
+    rclick_jitter: int = app_config.RCLICK_JITTER_DEFAULT
 
     alarm: AlarmState = dataclasses.field(default_factory=AlarmState)
     char_status: CharStatusState = dataclasses.field(default_factory=CharStatusState)

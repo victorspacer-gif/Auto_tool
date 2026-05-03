@@ -553,6 +553,7 @@ class RightClickService:
                 click_delay_min_ms = state.rclick_click_delay_min_ms
                 click_delay_max_ms = state.rclick_click_delay_max_ms
                 post_settle_ms = state.rclick_post_click_settle_ms
+                rclick_jitter = state.rclick_jitter
             if mode == "food":
                 allowed, debug_message = self._food_mode_decision(food_text, food_seconds, food_min_minutes)
                 self.runtime.ui.log(debug_message)
@@ -577,7 +578,8 @@ class RightClickService:
                     break
                 continue
             try:
-                HumanMouse.move(mouse, target)
+                click_target = HumanMouse.jitter(target, rclick_jitter)
+                HumanMouse.move(mouse, click_target)
                 for click_index in range(clicks_to_send):
                     # Add slight random variation between clicks for natural rhythm
                     # Convert burst_interval_ms to seconds (/1000); add jitter on top

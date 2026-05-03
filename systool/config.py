@@ -69,6 +69,7 @@ APP_RCLICK_FOOD_BURST_INTERVAL_MS_DEFAULT: int = 200
 APP_RCLICK_CLICK_DELAY_MIN_MS_DEFAULT: int = 150
 APP_RCLICK_CLICK_DELAY_MAX_MS_DEFAULT: int = 250
 APP_RCLICK_POST_CLICK_SETTLE_MS_DEFAULT: int = 300
+RCLICK_JITTER_DEFAULT: int = 5
 APP_LIGHT_FREEZE_INTERVAL_MS_DEFAULT: int = 1_000
 
 # Validation and clamping bounds for persisted/user-provided values.
@@ -182,6 +183,7 @@ class ConfigSerializer:
             "afk_min_ms", "afk_max_ms",
             "rclick_min_ms", "rclick_max_ms",
             "rclick_mode", "rclick_require_food",
+            "rclick_jitter",
             "rclick_food_min_minutes", "rclick_food_burst_count",
             "rclick_food_burst_count_min", "rclick_food_burst_count_max",
             "rclick_food_burst_interval_ms",
@@ -353,6 +355,7 @@ class ConfigSerializer:
             get_int("rclick_click_delay_max_ms", state.rclick_click_delay_max_ms),
         )
         state.rclick_post_click_settle_ms = max(RCLICK_POST_CLICK_SETTLE_MS_MIN, get_int("rclick_post_click_settle_ms", state.rclick_post_click_settle_ms))
+        state.rclick_jitter = max(0, get_int("rclick_jitter", state.rclick_jitter))
 
         # ── Alarm ─────────────────────────────────────────────────────
         state.alarm.mp3 = get_str_any(("alarm.mp3", "alarm_mp3"), state.alarm.mp3)

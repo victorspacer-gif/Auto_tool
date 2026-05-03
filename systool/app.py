@@ -406,6 +406,9 @@ class SystemMonitorApp:
         self.pos_label = tk.Label(panel, text="Pos: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
         self.pos_label.pack(anchor="w", pady=(0, 4))
         self._btn(panel, "🎯 Record Position", self.record_rclick_pos, BLUE).pack(fill="x", pady=(0, 6))
+        rclick_jitter = tk.StringVar(value=str(self.runtime.state.rclick_jitter))
+        self.ui_vars["rclick_jitter_var"] = rclick_jitter
+        self._label_entry(panel, "Click jitter (px ±):", rclick_jitter, width=5)
         min_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_min_ms)))
         max_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_max_ms)))
         self.ui_vars["rclick_min_var"] = min_var
@@ -1521,6 +1524,7 @@ class SystemMonitorApp:
             "fish_min_cap_var": state.fish_min_cap,
             "fish_rod_jit_var": state.fish_rod_jitter,
             "fish_spot_jit_var": state.fish_spot_jitter,
+            "rclick_jitter_var": state.rclick_jitter,
             "fish_session_var": state.fish_session_minutes,
             "fish_auto_restart_enabled_var": bool(state.fish_auto_restart_enabled),
             "fish_auto_restart_food_secs_var": str(state.fish_auto_restart_food_min_secs),
@@ -1636,6 +1640,7 @@ class SystemMonitorApp:
         state.rclick_click_delay_min_ms = max(100, self._get_ui_ms("rclick_click_delay_min_var", state.rclick_click_delay_min_ms))
         state.rclick_click_delay_max_ms = max(state.rclick_click_delay_min_ms, self._get_ui_ms("rclick_click_delay_max_var", state.rclick_click_delay_max_ms))
         state.rclick_post_click_settle_ms = max(100, self._get_ui_ms("rclick_post_settle_ms_var", state.rclick_post_click_settle_ms))
+        state.rclick_jitter = max(0, self._get_ui_int("rclick_jitter_var", state.rclick_jitter))
 
     def _poll_alarm_and_status_settings(self, state) -> None:
         state.alarm_threshold = self._get_ui_int("alarm_thresh_var", int(state.alarm_threshold * 100)) / 100.0
