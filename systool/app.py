@@ -409,9 +409,15 @@ class SystemMonitorApp:
 
         unit = self._get_unit_label()
 
-        # ── Row 1: Jitter + Timer Min ───────────────────────────────
+        # ── Row 1: Jitter (alone) ───────────────────────────────────
         rclick_jitter = tk.StringVar(value=str(self.runtime.state.rclick_jitter))
         self.ui_vars["rclick_jitter_var"] = rclick_jitter
+
+        row1 = tk.Frame(panel, bg=PANEL)
+        row1.pack(fill="x", pady=2)
+        self._label_entry(row1, "Click jitter (px ±):", rclick_jitter, width=5).pack(side="left")
+
+        # ── Row 2: Timer Min + Timer Max ────────────────────────────
         min_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_min_ms)))
         max_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_max_ms)))
         self.ui_vars["rclick_min_var"] = min_var
@@ -419,49 +425,43 @@ class SystemMonitorApp:
         min_var.trace_add("write", self._update_rclick_min)
         max_var.trace_add("write", self._update_rclick_max)
 
-        row1 = tk.Frame(panel, bg=PANEL)
-        row1.pack(fill="x", pady=2)
-        self._label_entry(row1, "Click jitter (px ±):", rclick_jitter, width=5).pack(side="left")
-        self._label_entry(row1, f"Timer Min ({unit}):", min_var).pack(side="left", padx=(8, 0))
-
-        # ── Row 2: Timer Max + Burst min ────────────────────────────
-        rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
-        self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
-
         row2 = tk.Frame(panel, bg=PANEL)
         row2.pack(fill="x", pady=2)
-        self._label_entry(row2, f"Timer Max ({unit}):", max_var).pack(side="left")
-        self._label_entry(row2, "Burst clicks min:", rclick_food_burst_count_min, width=6).pack(side="left", padx=(8, 0))
+        self._label_entry(row2, f"Timer Min ({unit}):", min_var).pack(side="left")
+        self._label_entry(row2, f"Timer Max ({unit}):", max_var).pack(side="left", padx=(8, 0))
 
-        # ── Row 3: Burst max + Burst interval ───────────────────────
+        # ── Row 3: Burst clicks min + Burst clicks max ──────────────
+        rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
         rclick_food_burst_count_max = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_max))
-        rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
+        self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
         self.ui_vars["rclick_food_burst_count_max_var"] = rclick_food_burst_count_max
-        self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
 
         row3 = tk.Frame(panel, bg=PANEL)
         row3.pack(fill="x", pady=2)
-        self._label_entry(row3, "Burst clicks max:", rclick_food_burst_count_max, width=6).pack(side="left")
-        self._label_entry(row3, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6).pack(side="left", padx=(8, 0))
+        self._label_entry(row3, "Burst clicks min:", rclick_food_burst_count_min, width=6).pack(side="left")
+        self._label_entry(row3, "Burst clicks max:", rclick_food_burst_count_max, width=6).pack(side="left", padx=(8, 0))
 
-        # ── Row 4: Click delay min + max ────────────────────────────
+        # ── Row 4: Burst interval + Click delay min ────────────────
+        rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
         click_delay_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_min_ms)))
-        click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
+        self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
         self.ui_vars["rclick_click_delay_min_var"] = click_delay_min
-        self.ui_vars["rclick_click_delay_max_var"] = click_delay_max
 
         row4 = tk.Frame(panel, bg=PANEL)
         row4.pack(fill="x", pady=2)
-        self._label_entry(row4, f"Click delay min ({unit}):", click_delay_min, width=6).pack(side="left")
-        self._label_entry(row4, f"Click delay max ({unit}):", click_delay_max, width=6).pack(side="left", padx=(8, 0))
+        self._label_entry(row4, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6).pack(side="left")
+        self._label_entry(row4, f"Click delay min ({unit}):", click_delay_min, width=6).pack(side="left", padx=(8, 0))
 
-        # ── Row 5: Post-click settle (alone) ────────────────────────
+        # ── Row 5: Click delay max + Post-click settle ─────────────
+        click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
         post_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_post_click_settle_ms)))
+        self.ui_vars["rclick_click_delay_max_var"] = click_delay_max
         self.ui_vars["rclick_post_settle_ms_var"] = post_settle
 
         row5 = tk.Frame(panel, bg=PANEL)
         row5.pack(fill="x", pady=2)
-        self._label_entry(row5, f"Post-click settle ({unit}):", post_settle, width=6).pack(side="left")
+        self._label_entry(row5, f"Click delay max ({unit}):", click_delay_max, width=6).pack(side="left")
+        self._label_entry(row5, f"Post-click settle ({unit}):", post_settle, width=6).pack(side="left", padx=(8, 0))
 
         # ── Mode dropdown (stays as-is) ─────────────────────────────
         rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
