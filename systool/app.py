@@ -406,34 +406,69 @@ class SystemMonitorApp:
         self.pos_label = tk.Label(panel, text="Pos: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
         self.pos_label.pack(anchor="w", pady=(0, 4))
         self._btn(panel, "🎯 Record Position", self.record_rclick_pos, BLUE).pack(fill="x", pady=(0, 6))
+
+        unit = self._get_unit_label()
+
+        # ── Row 1: Jitter + Timer Min ───────────────────────────────
         rclick_jitter = tk.StringVar(value=str(self.runtime.state.rclick_jitter))
         self.ui_vars["rclick_jitter_var"] = rclick_jitter
-        self._label_entry(panel, "Click jitter (px ±):", rclick_jitter, width=5)
         min_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_min_ms)))
         max_var = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_max_ms)))
         self.ui_vars["rclick_min_var"] = min_var
         self.ui_vars["rclick_max_var"] = max_var
         min_var.trace_add("write", self._update_rclick_min)
         max_var.trace_add("write", self._update_rclick_max)
-        unit = self._get_unit_label()
-        self._label_entry(panel, f"Timer Min ({unit}):", min_var)
-        self._label_entry(panel, f"Timer Max ({unit}):", max_var)
-        rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
-        rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_minutes))
+
+        row1 = tk.Frame(panel, bg=PANEL)
+        row1.pack(fill="x", pady=2)
+        self._label_entry(row1, "Click jitter (px ±):", rclick_jitter, width=5).pack(side="left")
+        self._label_entry(row1, f"Timer Min ({unit}):", min_var).pack(side="left", padx=(8, 0))
+
+        # ── Row 2: Timer Max + Burst min ────────────────────────────
         rclick_food_burst_count_min = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_min))
+        self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
+
+        row2 = tk.Frame(panel, bg=PANEL)
+        row2.pack(fill="x", pady=2)
+        self._label_entry(row2, f"Timer Max ({unit}):", max_var).pack(side="left")
+        self._label_entry(row2, "Burst clicks min:", rclick_food_burst_count_min, width=6).pack(side="left", padx=(8, 0))
+
+        # ── Row 3: Burst max + Burst interval ───────────────────────
         rclick_food_burst_count_max = tk.StringVar(value=str(self.runtime.state.rclick_food_burst_count_max))
         rclick_food_burst_interval = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_food_burst_interval_ms)))
-        click_delay_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_min_ms)))
-        click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
-        post_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_post_click_settle_ms)))
-        self.ui_vars["rclick_mode_var"] = rclick_mode
-        self.ui_vars["rclick_food_min_var"] = rclick_food_min
-        self.ui_vars["rclick_food_burst_count_min_var"] = rclick_food_burst_count_min
         self.ui_vars["rclick_food_burst_count_max_var"] = rclick_food_burst_count_max
         self.ui_vars["rclick_food_burst_interval_var"] = rclick_food_burst_interval
+
+        row3 = tk.Frame(panel, bg=PANEL)
+        row3.pack(fill="x", pady=2)
+        self._label_entry(row3, "Burst clicks max:", rclick_food_burst_count_max, width=6).pack(side="left")
+        self._label_entry(row3, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6).pack(side="left", padx=(8, 0))
+
+        # ── Row 4: Click delay min + max ────────────────────────────
+        click_delay_min = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_min_ms)))
+        click_delay_max = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_click_delay_max_ms)))
         self.ui_vars["rclick_click_delay_min_var"] = click_delay_min
         self.ui_vars["rclick_click_delay_max_var"] = click_delay_max
+
+        row4 = tk.Frame(panel, bg=PANEL)
+        row4.pack(fill="x", pady=2)
+        self._label_entry(row4, f"Click delay min ({unit}):", click_delay_min, width=6).pack(side="left")
+        self._label_entry(row4, f"Click delay max ({unit}):", click_delay_max, width=6).pack(side="left", padx=(8, 0))
+
+        # ── Row 5: Post-click settle (alone) ────────────────────────
+        post_settle = tk.StringVar(value=str(self._ms_to_display(self.runtime.state.rclick_post_click_settle_ms)))
         self.ui_vars["rclick_post_settle_ms_var"] = post_settle
+
+        row5 = tk.Frame(panel, bg=PANEL)
+        row5.pack(fill="x", pady=2)
+        self._label_entry(row5, f"Post-click settle ({unit}):", post_settle, width=6).pack(side="left")
+
+        # ── Mode dropdown (stays as-is) ─────────────────────────────
+        rclick_mode = tk.StringVar(value=self.runtime.state.rclick_mode)
+        rclick_food_min = tk.StringVar(value=str(self.runtime.state.rclick_food_min_minutes))
+        self.ui_vars["rclick_mode_var"] = rclick_mode
+        self.ui_vars["rclick_food_min_var"] = rclick_food_min
+
         mode_row = tk.Frame(panel, bg=PANEL)
         mode_row.pack(fill="x", pady=2)
         tk.Label(mode_row, text="Mode:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
@@ -441,19 +476,24 @@ class SystemMonitorApp:
         mode_menu.config(font=BODY, bg=PANEL, fg=FG, activebackground=BLUE, bd=0, relief="flat", highlightthickness=0)
         mode_menu["menu"].config(bg=PANEL, fg=FG, activebackground=BLUE, activeforeground="white")
         mode_menu.pack(side="left", padx=4)
+
         self.rclick_food_mode_container = tk.Frame(panel, bg=PANEL)
         self.rclick_food_mode_container.pack(fill="x")
         self.rclick_food_mode_rows = [
             self._label_entry(self.rclick_food_mode_container, "Min food timer (minutes):", rclick_food_min, width=6),
         ]
-        self._label_entry(panel, "Burst clicks min:", rclick_food_burst_count_min, width=6)
-        self._label_entry(panel, "Burst clicks max:", rclick_food_burst_count_max, width=6)
-        self._label_entry(panel, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
-        self.rclick_food_mode_anchor = self._label_entry(panel, f"Click delay min ({unit}):", click_delay_min, width=6)
-        self._label_entry(panel, f"Click delay max ({unit}):", click_delay_max, width=6)
-        self._label_entry(panel, f"Post-click settle ({unit}):", post_settle, width=6)
+
+        # ── Food-mode controls inside the conditional container ─────
+        # These are packed into rclick_food_mode_container when mode == "food"
+        self._label_entry(self.rclick_food_mode_container, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
+        self._label_entry(self.rclick_food_mode_container, f"Click delay min ({unit}):", click_delay_min, width=6)
+        self._label_entry(self.rclick_food_mode_container, f"Click delay max ({unit}):", click_delay_max, width=6)
+        self._label_entry(self.rclick_food_mode_container, f"Post-click settle ({unit}):", post_settle, width=6)
+
         rclick_mode.trace_add("write", self._update_rclick_mode_controls)
         self._update_rclick_mode_controls()
+
+        # ── Buttons row ─────────────────────────────────────────────
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(6, 0))
         self._btn(buttons, "▶ Start", self.rclick_service.start, GREEN).pack(side="left", expand=True, fill="x", padx=2)
@@ -465,13 +505,9 @@ class SystemMonitorApp:
         show_food_controls = mode == "food"
         if self.rclick_food_mode_container is None:
             return
-        if show_food_controls:
-            if not self.rclick_food_mode_container.winfo_manager():
-                if self.rclick_food_mode_anchor is not None:
-                    self.rclick_food_mode_container.pack(fill="x", before=self.rclick_food_mode_anchor)
-                else:
-                    self.rclick_food_mode_container.pack(fill="x")
-        elif self.rclick_food_mode_container.winfo_manager():
+        if show_food_controls and not self.rclick_food_mode_container.winfo_manager():
+            self.rclick_food_mode_container.pack(fill="x")
+        elif not show_food_controls and self.rclick_food_mode_container.winfo_manager():
             self.rclick_food_mode_container.pack_forget()
 
     def _build_alarm_tab(self, parent: tk.Frame) -> None:
