@@ -21,6 +21,7 @@ from .monitoring import (
     StatPointerService,
 )
 from .position_capture import PositionCaptureService
+from .runtime_timer import RuntimeTimerService
 from .runes import RuneMakerService
 
 __all__ = [
@@ -39,6 +40,7 @@ __all__ = [
     "MpService",
     "PositionCaptureService",
     "RightClickService",
+    "RuntimeTimerService",
     "RuneMakerService",
     "SafeKeyboardSession",
     "StatPointerService",

@@ -113,6 +113,11 @@ class ServiceContainer:
         from .services import HotkeyJobService
         return self._lazy("job_service", HotkeyJobService, (self.runtime,))
 
+    @property
+    def runtime_timer_service(self):
+        from .services import RuntimeTimerService
+        return self._lazy("runtime_timer_service", RuntimeTimerService, (self.runtime,))
+
     # -- Internal helpers --------------------------------------------------
 
     def _lazy(self, key: str, cls, args: tuple) -> object:

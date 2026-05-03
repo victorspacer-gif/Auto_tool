@@ -344,6 +344,7 @@ class AppRuntime:
         self.hp_service: object | None = None
         self.mp_service: object | None = None
         self.cap_service: object | None = None
+        self.runtime_timer_stop = threading.Event()
 
     def save_config(self) -> None:
         config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")

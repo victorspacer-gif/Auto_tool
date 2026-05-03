@@ -92,6 +92,7 @@ class SystemMonitorApp:
         self.runtime.cap_service = self.cap_service
         self.rune_service = self.container.rune_service
         self.job_service = self.container.job_service
+        self.runtime_timer_service = self.container.runtime_timer_service
 
 
         self.root: tk.Tk | None = None
@@ -194,6 +195,8 @@ class SystemMonitorApp:
 
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()
+        # Start runtime timer immediately — independent of other services.
+        self.runtime_timer_service.start()
         if HAS_TRAY:
             self._start_tray()
 
