@@ -861,6 +861,10 @@ class CharacterStatusService:
             (0, 180, 42, 203),   # Cap box A: left=0, top=180, right=42, bottom=203
             (0, 164, 44, 203),   # Cap box B (fallback): left=0, top=164, right=44, bottom=203
         ],
+        "food": [
+            (128, 59, 169, 77),  # Food timer box A: left=128, top=59, right=169, bottom=77
+            (124, 57, 169, 79),  # Food timer box B (fallback): left=124, top=57, right=169, bottom=79
+        ],
     }
 
     def __init__(self, runtime: AppRuntime) -> None:
@@ -1003,9 +1007,53 @@ class CharacterStatusService:
             self.runtime.ui.module_state_changed("char_status", False)
             self.runtime.ui.log("⏹ Character status watcher end")
 
+    def _extract_food_from_roi(self, frame) -> dict[str, int | None | str]:
+        """Extract food timer from a cropped ROI region using OCR + regex.
+
+        Replaces the previous full-frame regex approach to prevent false positives
+        when unrelated UI text contains 'food' followed by digits.
+        """
+        values: dict[str, int | None | str] = {
+            "food_seconds": None,
+            "food_text": "",
+        }
+        for box in self.ROI_MAP["food"]:
+            crop = self._crop(frame, box)
+            if crop.size == 0:
+                continue
+            # Enlarge crop 3x to improve OCR accuracy on small text regions
+            enlarged = cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+            # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
+            gray = cv2.GaussianBlur(gray, (3, 3), 0)
+            variants = []
+            # OTSU threshold: auto-computes optimal binarization; output max value is 255
+            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            variants.append(binary)
+            variants.append(cv2.bitwise_not(binary))
+            # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
+            adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
+            variants.append(adaptive)
+            variants.append(cv2.bitwise_not(adaptive))
+            for image_variant in variants:
+                text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
+                normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
+                match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
+                if match:
+                    food_text = match.group(1)
+                    values["food_text"] = food_text
+                    values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
+                    break
+            if values["food_seconds"] is not None:
+                break
+        return values
+
     def _extract_values(self, frame) -> dict[str, int | None]:
         values: dict[str, int | None] = self._extract_values_from_text(frame)
         for key, boxes in self.ROI_MAP.items():
+            if key == "food":
+                # Food is handled separately via ROI crop + regex (not _ocr_digits)
+                continue
             if values.get(key) is not None:
                 continue
             for box in boxes:
@@ -1014,6 +1062,11 @@ class CharacterStatusService:
                 if value is not None:
                     values[key] = value
                     break
+        # Extract food from ROI (separate path — cropped region + regex)
+        food_values = self._extract_food_from_roi(frame)
+        for key in ("food_seconds", "food_text"):
+            if food_values.get(key) is not None:
+                values[key] = food_values[key]
         return values if any(value is not None for value in values.values()) else {}
 
     def _extract_values_from_regions(self, sct, regions: dict[str, tuple[int, int, int, int]]) -> dict[str, int | None]:
@@ -1092,8 +1145,6 @@ class CharacterStatusService:
             "hp": None,
             "mana": None,
             "cap": None,
-            "food_seconds": None,
-            "food_text": "",
         }
         # Enlarge frame 3x to improve OCR accuracy on small text regions
         enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
@@ -1115,26 +1166,18 @@ class CharacterStatusService:
             "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],  # "hit points" with optional plural
             "mana": [r"mana\s+(\d+)"],  # Simple "mana <number>" pattern
             "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],  # "capacity/capacity" variants
-            "food": [r"food\s+(\d{1,2}:\d{2}|\d{1,3})"],  # "food HH:MM" or "food M" (minutes)
         }
         for image_variant in variants:
             text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
             normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
             for key, patterns in field_patterns.items():
-                if key == "food" and values["food_seconds"] is not None:
-                    continue
-                if key != "food" and values[key] is not None:
+                if values[key] is not None:
                     continue
                 for pattern in patterns:
                     match = re.search(pattern, normalized)
                     if not match:
                         continue
-                    if key == "food":
-                        food_text = match.group(1)
-                        values["food_text"] = food_text
-                        values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
-                    else:
-                        values[key] = int(match.group(1))
+                    values[key] = int(match.group(1))
                     break
         return values
 
