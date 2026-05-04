@@ -841,6 +841,9 @@ class AlarmService:
         self.runtime.ui.log("⏹ Screen watch end")
 
 class CharacterStatusService:
+    # Maximum allowed food timer value in seconds (1 hour). Values above this are rejected as unrealistic OCR artifacts.
+    MAX_FOOD_SECONDS = 3600
+
     # Base dimensions of the full character status window in pixels (width, height)
     BASE_SIZE = (170, 203)
     # ROI (Region of Interest) coordinates for stat extraction — each tuple is (left, top, right, bottom)
@@ -1149,11 +1152,17 @@ class CharacterStatusService:
             if minutes >= 60:
                 return None
             # Convert to total seconds: hours * 3600 + minutes * 60
-            return hours * 3600 + minutes * 60
+            parsed_seconds = hours * 3600 + minutes * 60
+            if parsed_seconds > CharacterStatusService.MAX_FOOD_SECONDS:
+                return None
+            return parsed_seconds
         # Regex for plain minute count — 1-3 digit number (e.g., "45" = 45 minutes)
         minute_match = re.fullmatch(r"(\d{1,3})", normalized)
         if minute_match:
-            return int(minute_match.group(1)) * 60
+            parsed_seconds = int(minute_match.group(1)) * 60
+            if parsed_seconds > CharacterStatusService.MAX_FOOD_SECONDS:
+                return None
+            return parsed_seconds
         return None
 
     def _crop(self, frame, box: tuple[int, int, int, int]):

@@ -160,13 +160,14 @@ class TestSafeKeyboardSession:
 
 class TestFoodTimerParsing:
     def test_parse_food_timer_h_mm(self):
-        assert CharacterStatusService._parse_food_seconds("1:05") == 3900
+        # "1:05" (3900s) exceeds MAX_FOOD_SECONDS (3600), so it's rejected
+        assert CharacterStatusService._parse_food_seconds("1:05") is None
+        # Valid HH:MM within cap
+        assert CharacterStatusService._parse_food_seconds("0:45") == 2700
 
-    def test_parse_food_timer_plain_minutes(self):
-        assert CharacterStatusService._parse_food_seconds("15") == 900
-
-    def test_parse_food_timer_rejects_invalid_minutes(self):
-        assert CharacterStatusService._parse_food_seconds("1:75") is None
+    def test_parse_food_timer_rejects_over_cap(self):
+        assert CharacterStatusService._parse_food_seconds("999") is None
+        assert CharacterStatusService._parse_food_seconds("1:01") is None
 
     def test_food_mode_decision_blocks_when_food_missing(self):
         allowed, message = RightClickService._food_mode_decision("", None, 10)
