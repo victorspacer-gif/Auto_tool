@@ -1010,13 +1010,15 @@ class CharacterStatusService:
     def _extract_food_from_roi(self, frame) -> dict[str, int | None | str]:
         """Extract food timer from a cropped ROI region using OCR + regex.
 
-        Replaces the previous full-frame regex approach to prevent false positives
-        when unrelated UI text contains 'food' followed by digits.
+        Uses time-only pattern (no 'food' keyword dependency) for ROI extraction.
+        Falls back to full-frame OCR with 'food' keyword if ROI extraction fails.
         """
         values: dict[str, int | None | str] = {
             "food_seconds": None,
             "food_text": "",
         }
+
+        # ── Phase 1: ROI extraction (time-only regex, no 'food' dependency) ──
         for box in self.ROI_MAP["food"]:
             crop = self._crop(frame, box)
             if crop.size == 0:
@@ -1038,7 +1040,7 @@ class CharacterStatusService:
             for image_variant in variants:
                 text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
                 normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-                match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
+                match = re.search(r"(\d{1,2}:\d{2})", normalized)
                 if match:
                     food_text = match.group(1)
                     values["food_text"] = food_text
@@ -1046,6 +1048,21 @@ class CharacterStatusService:
                     break
             if values["food_seconds"] is not None:
                 break
+
+        # ── Phase 2: Fallback to full-frame OCR (with 'food' keyword) ──
+        if values["food_seconds"] is None:
+            enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+            gray = cv2.GaussianBlur(gray, (3, 3), 0)
+            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            text = pytesseract.image_to_string(binary, config="--psm 6")
+            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
+            match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
+            if match:
+                food_text = match.group(1)
+                values["food_text"] = food_text
+                values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
+
         return values
 
     def _extract_values(self, frame) -> dict[str, int | None]:
