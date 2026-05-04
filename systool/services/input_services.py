@@ -499,7 +499,7 @@ class RightClickService:
     @staticmethod
     def food_timer_meets_threshold(food_seconds: int | None, threshold_minutes: int) -> bool:
         # Minimum 1-minute threshold enforced; convert minutes to seconds (×60)
-        return food_seconds is not None and food_seconds >= max(1, threshold_minutes) * 60
+        return food_seconds is not None and food_seconds <= max(1, threshold_minutes) * 60
 
     @staticmethod
     def _format_food_timer_debug(food_seconds: int | None) -> str:
