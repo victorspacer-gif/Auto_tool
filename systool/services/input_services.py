@@ -517,6 +517,7 @@ class RightClickService:
         food_seconds: int | None,
         threshold_minutes: int,
     ) -> tuple[bool, str]:
+        logger.info("[FOOD] raw=%s, seconds=%s, threshold=%d, decision=%r", food_text.strip() or "—", food_seconds, max(1, threshold_minutes), cls.food_timer_meets_threshold(food_seconds, threshold_minutes))
         allowed = cls.food_timer_meets_threshold(food_seconds, threshold_minutes)
         raw_value = food_text.strip() or "—"
         parsed_value = cls._format_food_timer_debug(food_seconds)

@@ -1209,6 +1209,8 @@ class CharacterStatusService:
             if parsed_seconds > CharacterStatusService.MAX_FOOD_SECONDS:
                 return None
             return parsed_seconds
+        if normalized:
+            logger.info("[FOOD] rejected_parse=%r", normalized)
         return None
 
     def _crop(self, frame, box: tuple[int, int, int, int]):
