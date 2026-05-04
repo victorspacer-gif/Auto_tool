@@ -1064,9 +1064,12 @@ class CharacterStatusService:
                     break
         # Extract food from ROI (separate path — cropped region + regex)
         food_values = self._extract_food_from_roi(frame)
-        for key in ("food_seconds", "food_text"):
-            if food_values.get(key) is not None:
-                values[key] = food_values[key]
+        # Only distribute food fields when they are consistent together.
+        # _parse_food_seconds can return None even when OCR succeeds,
+        # so we must not set food_text if food_seconds is None (and vice versa).
+        if food_values.get("food_seconds") is not None:
+            values["food_seconds"] = food_values["food_seconds"]
+            values["food_text"] = food_values["food_text"]
         return values if any(value is not None for value in values.values()) else {}
 
     def _extract_values_from_regions(self, sct, regions: dict[str, tuple[int, int, int, int]]) -> dict[str, int | None]:
