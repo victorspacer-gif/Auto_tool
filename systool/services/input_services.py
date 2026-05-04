@@ -37,6 +37,7 @@ from ..constants import (
     INPUT_RCCLICK_MAX_WAIT,
     INPUT_QUEUE_WINDOW,
     RIGHT_CLICK_FOOD_BURST_COOLDOWN,
+    RCCLICK_FOOD_COOLDOWN_SECONDS,
     AFK_CTRL_HOLD_MIN,
     AFK_CTRL_HOLD_MAX,
     AFK_DIR_PRESS_MIN,
@@ -472,6 +473,7 @@ class AntiAfkService:
 class RightClickService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
+        self.last_food_click_ts: float = 0.0  # Anti-spam timestamp for food right-clicks
 
     def start(self) -> None:
         state = self.runtime.state
@@ -568,6 +570,13 @@ class RightClickService:
                     # Convert ms to seconds (/1000); calculate total queue window for food burst
                     clicks_to_send * (click_delay_max_ms / 1000.0) + max(0, clicks_to_send - 1) * max(click_delay_min_ms / 1000.0, burst_interval_ms / 1000.0),
                 )
+            # Anti-spam / OCR latency buffer: skip if within cooldown of last food click
+            if mode == "food" and self.last_food_click_ts > 0:
+                current_time = time.time()
+                if current_time - self.last_food_click_ts < RCCLICK_FOOD_COOLDOWN_SECONDS:
+                    if not self.runtime.pause.wait_interruptible(RCCLICK_WAIT_INTERRUPTIBLE, self.runtime.rclick_stop):
+                        break
+                    continue
             else:
                 # Convert ms to seconds (/1000); wait between non-food right-clicks
                 if not self.runtime.pause.wait_interruptible(random.randint(min_ms, max_ms) / 1000.0, self.runtime.rclick_stop):
@@ -598,6 +607,7 @@ class RightClickService:
                 state.stats["right_clicks"] += clicks_to_send
             if mode == "food":
                 self.runtime.ui.log(f"🖱️  Food burst at {target} ×{clicks_to_send}")
+                self.last_food_click_ts = time.time()  # Anti-spam: mark last food click time
                 if not self.runtime.pause.wait_interruptible(RIGHT_CLICK_FOOD_BURST_COOLDOWN, self.runtime.rclick_stop):
                     break
             else:

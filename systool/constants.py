@@ -89,7 +89,8 @@ AFK_DIR_PRESS_MIN: float = 0.03           # Direction key press min (s)
 AFK_DIR_PRESS_MAX: float = 0.06           # Direction key press max (s)
 AFK_DIR_RELEASE_MIN: float = 0.02         # Release pause min (s)
 AFK_DIR_RELEASE_MAX: float = 0.04         # Release pause max (s)
-RIGHT_CLICK_FOOD_BURST_COOLDOWN: float = 1.5  # Cooldown after a food burst (s)
+RIGHT_CLICK_FOOD_BURST_COOLDOWN: float = 1.5   # Short cooldown between food burst iterations (s)
+RCCLICK_FOOD_COOLDOWN_SECONDS: float = 15.0    # Anti-spam cooldown after food right-click (s)
 
 # ─── Healer Service ────────────────────────────────────────────────
 HEALER_CAST_HOLD_SECONDS: float = 0.03    # Spell tap hold duration (s)
