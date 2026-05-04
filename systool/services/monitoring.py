@@ -841,8 +841,8 @@ class AlarmService:
         self.runtime.ui.log("⏹ Screen watch end")
 
 class CharacterStatusService:
-    # Maximum allowed food timer value in seconds (1 hour). Values above this are rejected as unrealistic OCR artifacts.
-    MAX_FOOD_SECONDS = 3600
+    # Maximum allowed food timer value in seconds (40 min). Values above this are rejected as unrealistic OCR artifacts.
+    MAX_FOOD_SECONDS = 2400
 
     # Base dimensions of the full character status window in pixels (width, height)
     BASE_SIZE = (170, 203)
