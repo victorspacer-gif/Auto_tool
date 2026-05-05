@@ -393,6 +393,8 @@ class ConfigSerializer:
         state.char_status.cap_region = char_status_cap_region
         state.char_status.poll_ms = max(CHAR_STATUS_POLL_MS_MIN, get_int("char_status_poll_ms", state.char_status.poll_ms))
         state.char_status.tesseract_path = get_str("char_status_tesseract_path", state.char_status.tesseract_path)
+        state.char_status.samples = max(NON_NEGATIVE_INT_MIN, get_int("char_status.samples", state.char_status.samples))
+        state.char_status.sample_delay_ms = max(NON_NEGATIVE_INT_MIN, get_int("char_status.sample_delay_ms", state.char_status.sample_delay_ms))
 
         # ── Fishing ───────────────────────────────────────────────────
         # All keys use dot-notation (e.g., "fishing.cast_min_ms") to match _flatten output.
@@ -436,7 +438,8 @@ class ConfigSerializer:
         )
         state.rune.jitter = get_int("rune_jitter", state.rune.jitter)
         state.rune.cast_delay_ms = get_int("rune_cast_delay_ms", state.rune.cast_delay_ms)
-        state.rune.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("rune_min_mana", state.rune.min_mana))
+        state.rune.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("rune.min_mana", state.rune.min_mana))
+        state.rune.max_mana = max(NON_NEGATIVE_INT_MIN, get_int("rune.max_mana", state.rune.max_mana))
         state.rune.available_blank_runes = max(NON_NEGATIVE_INT_MIN, get_int("rune_available_blank_runes", state.rune_available_blank_runes))
         state.rune.mouse_move_min_ms = max(RUNE_MOUSE_MOVE_MS_MIN, get_int("rune_mouse_move_min_ms", state.rune.mouse_move_min_ms))
         state.rune.mouse_move_max_ms = max(state.rune.mouse_move_min_ms, get_int("rune_mouse_move_max_ms", state.rune.mouse_move_max_ms))
