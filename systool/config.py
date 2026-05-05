@@ -421,51 +421,53 @@ class ConfigSerializer:
         state.fish_spots = list(spots)
 
         # ── Rune ──────────────────────────────────────────────────────
-        state.rune.spell_key = get_str("rune_spell_key", state.rune.spell_key)
-        state.rune.cycle_delay_ms = get_int("rune_cycle_delay_ms", state.rune.cycle_delay_ms)
-        state.rune.cycle_delay_variation_ms = max(NON_NEGATIVE_INT_MIN, get_int("rune_cycle_delay_variation_ms", state.rune.cycle_delay_variation_ms))
+        # All keys use dot-notation (e.g., "rune.cycle_delay_ms") to match _flatten output.
+        state.rune.spell_key = get_str("rune.spell_key", state.rune.spell_key)
+        state.rune.cycle_delay_ms = get_int("rune.cycle_delay_ms", state.rune.cycle_delay_ms)
+        state.rune.cycle_delay_variation_ms = max(NON_NEGATIVE_INT_MIN, get_int("rune.cycle_delay_variation_ms", state.rune.cycle_delay_variation_ms))
         state.rune.hand_pos = (
-            get_int("rune_hand_x", state.rune.hand_pos[0]),
-            get_int("rune_hand_y", state.rune.hand_pos[1]),
+            get_int("rune.hand_x", state.rune.hand_pos[0]),
+            get_int("rune.hand_y", state.rune.hand_pos[1]),
         )
         state.rune.storage_pos = (
-            get_int("rune_storage_x", state.rune.storage_pos[0]),
-            get_int("rune_storage_y", state.rune.storage_pos[1]),
+            get_int("rune.storage_x", state.rune.storage_pos[0]),
+            get_int("rune.storage_y", state.rune.storage_pos[1]),
         )
         state.rune.blank_pos = (
-            get_int("rune_blank_x", state.rune.blank_pos[0]),
-            get_int("rune_blank_y", state.rune.blank_pos[1]),
+            get_int("rune.blank_x", state.rune.blank_pos[0]),
+            get_int("rune.blank_y", state.rune.blank_pos[1]),
         )
-        state.rune.jitter = get_int("rune_jitter", state.rune.jitter)
-        state.rune.cast_delay_ms = get_int("rune_cast_delay_ms", state.rune.cast_delay_ms)
+        state.rune.jitter = get_int("rune.jitter", state.rune.jitter)
+        state.rune.cast_delay_ms = get_int("rune.cast_delay_ms", state.rune.cast_delay_ms)
+        state.rune.post_cast_settle_ms = max(NON_NEGATIVE_INT_MIN, get_int("rune.post_cast_settle_ms", state.rune.post_cast_settle_ms))
         state.rune.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("rune.min_mana", state.rune.min_mana))
         state.rune.max_mana = max(NON_NEGATIVE_INT_MIN, get_int("rune.max_mana", state.rune.max_mana))
-        state.rune.available_blank_runes = max(NON_NEGATIVE_INT_MIN, get_int("rune_available_blank_runes", state.rune_available_blank_runes))
-        state.rune.mouse_move_min_ms = max(RUNE_MOUSE_MOVE_MS_MIN, get_int("rune_mouse_move_min_ms", state.rune.mouse_move_min_ms))
-        state.rune.mouse_move_max_ms = max(state.rune.mouse_move_min_ms, get_int("rune_mouse_move_max_ms", state.rune.mouse_move_max_ms))
-        state.rune.mouse_press_min_ms = max(RUNE_MOUSE_PRESS_MS_MIN, get_int("rune_mouse_press_min_ms", state.rune.mouse_press_min_ms))
-        state.rune.mouse_press_max_ms = max(state.rune.mouse_press_min_ms, get_int("rune_mouse_press_max_ms", state.rune.mouse_press_max_ms))
-        state.rune.mouse_settle_min_ms = max(RUNE_MOUSE_SETTLE_MS_MIN, get_int("rune_mouse_settle_min_ms", state.rune.mouse_settle_min_ms))
-        state.rune.mouse_settle_max_ms = max(state.rune.mouse_settle_min_ms, get_int("rune_mouse_settle_max_ms", state.rune.mouse_settle_max_ms))
+        state.rune.available_blank_runes = max(NON_NEGATIVE_INT_MIN, get_int("rune.available_blank_runes", state.rune_available_blank_runes))
+        state.rune.mouse_move_min_ms = max(RUNE_MOUSE_MOVE_MS_MIN, get_int("rune.mouse_move_min_ms", state.rune.mouse_move_min_ms))
+        state.rune.mouse_move_max_ms = max(state.rune.mouse_move_min_ms, get_int("rune.mouse_move_max_ms", state.rune.mouse_move_max_ms))
+        state.rune.mouse_press_min_ms = max(RUNE_MOUSE_PRESS_MS_MIN, get_int("rune.mouse_press_min_ms", state.rune.mouse_press_min_ms))
+        state.rune.mouse_press_max_ms = max(state.rune.mouse_press_min_ms, get_int("rune.mouse_press_max_ms", state.rune.mouse_press_max_ms))
+        state.rune.mouse_settle_min_ms = max(RUNE_MOUSE_SETTLE_MS_MIN, get_int("rune.mouse_settle_min_ms", state.rune.mouse_settle_min_ms))
+        state.rune.mouse_settle_max_ms = max(state.rune.mouse_settle_min_ms, get_int("rune.mouse_settle_max_ms", state.rune.mouse_settle_max_ms))
 
         # ── Healer ────────────────────────────────────────────────────
-        state.healer.mode = get_str("healer_mode", state.healer.mode)
-        state.healer.spell_key = get_str("healer_spell_key", state.healer.spell_key)
-        state.healer.use_percent = get_bool("healer_use_percent", state.healer.use_percent)
-        state.healer.hp_percent = max(HEALER_HP_MIN, min(PERCENT_VALUE_MAX, get_int("healer_hp_percent", state.healer.hp_percent)))
-        state.healer.hp_value = max(HEALER_HP_MIN, get_int("healer_hp_value", state.healer_hp_value))
-        state.healer.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("healer_min_mana", state.healer.min_mana))
-        state.healer.max_mana = max(state.healer.min_mana, get_int("healer_max_mana", state.healer_max_mana))
+        state.healer.mode = get_str("healer.mode", state.healer.mode)
+        state.healer.spell_key = get_str("healer.spell_key", state.healer.spell_key)
+        state.healer.use_percent = get_bool("healer.use_percent", state.healer.use_percent)
+        state.healer.hp_percent = max(HEALER_HP_MIN, min(PERCENT_VALUE_MAX, get_int("healer.hp_percent", state.healer.hp_percent)))
+        state.healer.hp_value = max(HEALER_HP_MIN, get_int("healer.hp_value", state.healer.hp_value))
+        state.healer.min_mana = max(NON_NEGATIVE_INT_MIN, get_int("healer.min_mana", state.healer.min_mana))
+        state.healer.max_mana = max(state.healer.min_mana, get_int("healer.max_mana", state.healer.max_mana))
         state.healer.character_pos = (
-            get_int("healer_character_x", state.healer.character_pos[0]),
-            get_int("healer_character_y", state.healer.character_pos[1]),
+            get_int("healer.character_x", state.healer.character_pos[0]),
+            get_int("healer.character_y", state.healer.character_pos[1]),
         )
         state.healer.rune_pos = (
-            get_int("healer_rune_x", state.healer.rune_pos[0]),
-            get_int("healer_rune_y", state.healer.rune_pos[1]),
+            get_int("healer.rune_x", state.healer.rune_pos[0]),
+            get_int("healer.rune_y", state.healer.rune_pos[1]),
         )
-        state.healer.mouse_speed = max(HEALER_MOUSE_SPEED_MIN, min(HEALER_MOUSE_SPEED_MAX, get_float("healer_mouse_speed", state.healer.mouse_speed)))
-        state.healer.rune_delay_ms = max(HEALER_RUNE_DELAY_MS_MIN, get_int("healer_rune_delay_ms", state.healer.rune_delay_ms))
+        state.healer.mouse_speed = max(HEALER_MOUSE_SPEED_MIN, min(HEALER_MOUSE_SPEED_MAX, get_float("healer.mouse_speed", state.healer.mouse_speed)))
+        state.healer.rune_delay_ms = max(HEALER_RUNE_DELAY_MS_MIN, get_int("healer.rune_delay_ms", state.healer.rune_delay_ms))
 
         # ── Light ─────────────────────────────────────────────────────
         state.light_process_name = get_str("light_process_name", state.light_process_name)
