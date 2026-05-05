@@ -234,6 +234,10 @@ class AppState:
     cap_source: str = "none"
     cap_value: float | None = None
 
+    food_pointer_address_hex: str = ""
+    food_source: str = "ocr"
+    food_value: int | None = None
+
     _prev_ocr_hp: int | None = None
     _prev_ocr_mp: int | None = None
     _prev_ocr_cap: int | None = None

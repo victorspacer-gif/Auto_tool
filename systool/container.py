@@ -104,6 +104,10 @@ class ServiceContainer:
         return self._lazy("cap_service", CapService, (self.runtime,))
 
     @property
+    def food_service(self):
+        from .services import FoodService
+        return self._lazy("food_service", FoodService, (self.runtime,))
+    @property
     def rune_service(self):
         from .services import RuneMakerService
         return self._lazy("rune_service", RuneMakerService, (self.runtime,))

@@ -90,6 +90,8 @@ class SystemMonitorApp:
         self.runtime.mp_service = self.mp_service
         self.cap_service = self.container.cap_service
         self.runtime.cap_service = self.cap_service
+        self.food_service = self.container.food_service
+        self.runtime.food_service = self.food_service
         self.rune_service = self.container.rune_service
         self.job_service = self.container.job_service
         self.runtime_timer_service = self.container.runtime_timer_service
@@ -633,6 +635,8 @@ class SystemMonitorApp:
         self.var_mp_source_label.pack(fill="x", pady=2)
         self.var_cap_source_label = tk.Label(meta_panel, text="Cap source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
         self.var_cap_source_label.pack(fill="x", pady=2)
+        self.var_food_source_label = tk.Label(meta_panel, text="Food source: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_food_source_label.pack(fill="x", pady=2)
 
         addr_frame = tk.Frame(meta_panel, bg=PANEL)
         addr_frame.pack(fill="x", pady=(4, 0))
@@ -642,6 +646,8 @@ class SystemMonitorApp:
         self.var_mp_addr_label.pack(fill="x", pady=1)
         self.var_cap_addr_label = tk.Label(addr_frame, text="Cap address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
         self.var_cap_addr_label.pack(fill="x", pady=1)
+        self.var_food_addr_label = tk.Label(addr_frame, text="Food address: —", font=MONO, fg=MUTED, bg=PANEL, anchor="w")
+        self.var_food_addr_label.pack(fill="x", pady=1)
 
         stats_panel = tk.LabelFrame(right, text=" 📊  Read Statistics ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
         stats_panel.pack(fill="both", expand=True, pady=(0, 8))
@@ -1744,9 +1750,9 @@ class SystemMonitorApp:
             mp_display = state.mp_value if state.mp_value is not None else state.char_status_mana
             self._set_stat_label(self.var_mp_label, mp_display, state.mp_source if state.mp_value is not None else None)
         if self.var_food_label:
-            self.var_food_label.config(
-                text=f"Food: {self._format_food_timer(state.char_status_food_seconds, state.char_status_food_text)}"
-            )
+            food_display = state.food_value if state.food_value is not None else state.char_status_food_seconds
+            src = "pointer" if state.food_value is not None else ("ocr" if state.char_status_food_seconds is not None else "none")
+            self._set_stat_label(self.var_food_label, food_display, src)
 
         # Right column: source metadata (pointer/ocr/none)
         if self.var_hp_source_label:
@@ -1758,6 +1764,9 @@ class SystemMonitorApp:
         if self.var_cap_source_label:
             src = state.cap_source if state.cap_value is not None else ("ocr" if state.char_status_cap is not None else "none")
             self.var_cap_source_label.config(text=f"Cap source: {src}")
+        if self.var_food_source_label:
+            src = state.food_source if state.food_value is not None else ("ocr" if state.char_status_food_seconds is not None else "none")
+            self.var_food_source_label.config(text=f"Food source: {src}")
 
         # Right column: pointer addresses (hex)
         if self.var_hp_addr_label:
@@ -1769,6 +1778,9 @@ class SystemMonitorApp:
         if self.var_cap_addr_label:
             addr = state.cap_pointer_address_hex or "—"
             self.var_cap_addr_label.config(text=f"Cap address: {addr}")
+        if self.var_food_addr_label:
+            addr = state.food_pointer_address_hex or "—"
+            self.var_food_addr_label.config(text=f"Food address: {addr}")
 
         # Right column: regen rates & read statistics (from OCR character status service)
         if self.var_regen_label:

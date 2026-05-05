@@ -139,10 +139,10 @@ class TestAppStateHealerMaxMana:
         assert state.healer_max_mana == 0
 
     def test_rune_max_mana_default(self):
-        from systool.models import AppState
+        from systool.models import AppState, RuneState
         state = AppState()
         assert hasattr(state, "rune_max_mana")
-        assert state.rune_max_mana == 0
+        assert state.rune_max_mana == RuneState.max_mana
 
 
 class TestHotkeyJobMaxManaField:
@@ -155,8 +155,9 @@ class TestHotkeyJobMaxManaField:
 
     def test_hotkey_job_max_mana_default(self):
         from systool.models import HotkeyJob
+        from systool.config import HOTKEY_JOB_MAX_MANA_DEFAULT
         job = HotkeyJob(job_id=1)
-        assert job.max_mana == 0
+        assert job.max_mana == HOTKEY_JOB_MAX_MANA_DEFAULT
 
 
 class TestManaThresholdIntegration:

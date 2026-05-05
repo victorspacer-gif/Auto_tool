@@ -18,8 +18,9 @@ class TestHotkeyJobDefaults:
         assert job.max_ms == 30_000
 
     def test_default_mana(self):
+        from systool.config import HOTKEY_JOB_MIN_MANA_DEFAULT
         job = HotkeyJob(job_id=1)
-        assert job.min_mana == 0
+        assert job.min_mana == HOTKEY_JOB_MIN_MANA_DEFAULT
 
     def test_burst_defaults(self):
         job = HotkeyJob(job_id=1)
@@ -123,9 +124,10 @@ class TestAppStateDefaults:
         assert state.fishing.mouse_speed == FISH_MOUSE_SPEED_DEFAULT
 
     def test_rune_defaults(self):
+        from systool.config import RUNE_CYCLE_DELAY_MS_DEFAULT
         state = AppState()
         assert state.rune_spell_key == "f1"
-        assert state.rune_cycle_delay_ms == 18_000
+        assert state.rune_cycle_delay_ms == RUNE_CYCLE_DELAY_MS_DEFAULT
         assert state.rune_hand_pos == (0, 0)
 
     def test_healer_defaults(self):

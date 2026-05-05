@@ -177,16 +177,20 @@ class TestFoodTimerParsing:
         assert "decision=blocked" in message
 
     def test_food_mode_decision_allows_when_threshold_met(self):
+        # With <= logic: allowed when remaining time <= threshold (food about to expire)
+        # food_seconds=15*60=900, threshold=10min=600s → 900 > 600 → blocked
         allowed, message = RightClickService._food_mode_decision("15", 15 * 60, 10)
-        assert allowed is True
-        assert "decision=allowed" in message
+        assert allowed is False
+        assert "decision=blocked" in message
 
     def test_food_threshold_requires_available_timer(self):
         assert RightClickService.food_timer_meets_threshold(None, 10) is False
 
     def test_food_threshold_uses_minutes(self):
-        assert RightClickService.food_timer_meets_threshold(15 * 60, 10) is True
-        assert RightClickService.food_timer_meets_threshold(9 * 60, 10) is False
+        # <= logic: True when remaining time <= threshold (food about to expire)
+        assert RightClickService.food_timer_meets_threshold(5 * 60, 10) is True   # 300s <= 600s → allowed
+        assert RightClickService.food_timer_meets_threshold(9 * 60, 10) is True    # 540s <= 600s → allowed
+        assert RightClickService.food_timer_meets_threshold(15 * 60, 10) is False  # 900s > 600s → blocked
 
     def test_release_all_calls_keyboard_release_for_each(self):
         mock_keyboard = MagicMock()

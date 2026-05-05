@@ -482,6 +482,7 @@ class HpService(StatPointerService):
         hp_val = None
         mp_val = None
         cap_val = None
+        food_val = None
 
         if self._hp_address is not None and self.controller is not None:
             try:
@@ -503,6 +504,13 @@ class HpService(StatPointerService):
             except Exception:
                 logger.debug("Cap pointer read failed")
 
+        food_addr = getattr(state, "_food_resolved_addr", None)
+        if food_addr is not None and self.controller is not None:
+            try:
+                food_val = int(self.controller.read_double(food_addr))
+            except Exception:
+                logger.debug("Food pointer read failed")
+
         with self.runtime.settings_lock:
             if hp_val is not None:
                 state.hp_value = hp_val
@@ -510,6 +518,8 @@ class HpService(StatPointerService):
                 state.mp_value = mp_val
             if cap_val is not None:
                 state.cap_value = cap_val
+            if food_val is not None:
+                state.food_value = food_val
 
         return (hp_val, mp_val, cap_val)
 
@@ -554,6 +564,25 @@ class CapService(StatPointerService):
     def get_cap_peak(self) -> int:
         with self.runtime.settings_lock:
             return self.runtime.state.char_status_cap_peak
+
+
+class FoodService(StatPointerService):
+    """Food timer value reader with pointer-first resolution and OCR fallback."""
+
+    stat_label = "Food"
+    pointer_address_attr = "food_pointer_address_hex"
+    source_attr = "food_source"
+    value_attr = "food_value"
+    fallback_attr = "char_status_food_seconds"
+    state_resolved_attr = "_food_resolved_addr"
+    local_address_attr = "_food_address"
+    local_cache_attr = "_food_cache_time"
+    local_ttl_attr = "_FOOD_CACHE_TTL"
+    profile_module = "studiomemuer_food_module.food_profile"
+    profile_name = "DEFAULT_FOOD_PROFILE"
+
+    def get_food(self) -> int | None:
+        return self._get_value()
 
 
 class AlarmService:

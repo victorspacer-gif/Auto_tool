@@ -197,6 +197,7 @@ class ConfigSerializer:
             "hp_pointer_address_hex", "hp_source", "hp_value",
             "mp_pointer_address_hex", "mp_source", "mp_value",
             "cap_pointer_address_hex", "cap_source", "cap_value",
+            "food_pointer_address_hex", "food_source", "food_value",
         ]
         for attr in direct_attrs:
             result[attr] = ConfigSerializer._to_json_compatible(getattr(state, attr))
