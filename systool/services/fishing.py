@@ -140,7 +140,6 @@ class FishingService:
                 wait_min = state.fish_wait_min_ms
                 wait_max = state.fish_wait_max_ms
                 min_cap = state.fish_min_cap
-                food_seconds = state.char_status_food_seconds
                 auto_restart_enabled = state.fish_auto_restart_enabled
                 auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
                 # Mouse speed multiplier — higher values produce faster movement.
@@ -154,6 +153,15 @@ class FishingService:
                         logger.debug("Cap read failed during fishing loop")
                 if current_cap is None:
                     current_cap = state.char_status_cap
+                # Use pointer-based Food first, fall back to OCR
+                food_seconds = None
+                if self.runtime.food_service is not None:
+                    try:
+                        food_seconds = self.runtime.food_service.get_food()
+                    except Exception:
+                        logger.debug("Food read failed during fishing loop")
+                if food_seconds is None:
+                    food_seconds = state.char_status_food_seconds
             if min_cap > 0 and current_cap is not None and current_cap <= min_cap:
                 self.runtime.ui.log(f"📦 Fishing stopped — capacity {current_cap} is at/below limit {min_cap}")
                 self.runtime.ui.set_status("Fishing stopped by capacity threshold", ORANGE)
@@ -231,7 +239,9 @@ class FishingService:
             state.fish_session_deadline = None
         # Check if we stopped due to low food and auto-restart is enabled
         with self.runtime.settings_lock:
-            food_seconds = state.char_status_food_seconds
+            food_seconds = state.food_value
+            if food_seconds is None:
+                food_seconds = state.char_status_food_seconds
             auto_restart_enabled = state.fish_auto_restart_enabled
             auto_restart_food_min_secs = state.fish_auto_restart_food_min_secs
         if (

@@ -1734,6 +1734,11 @@ class SystemMonitorApp:
                     self.cap_service.get_cap()
                 except Exception:
                     logger.debug("Cap read failed")
+            if self.food_service is not None:
+                try:
+                    self.food_service.get_food()
+                except Exception:
+                    logger.debug("Food read failed")
 
         # Left column: live values (pointer-based when available, OCR fallback)
         if self.var_level_label:
