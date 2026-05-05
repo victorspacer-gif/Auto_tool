@@ -474,6 +474,7 @@ class RightClickService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.last_food_click_ts: float = 0.0  # Anti-spam timestamp for food right-clicks
+        self._food_cooldown_until: float = 0.0  # Cooldown expiry time (random 5–14 min after threshold hit)
 
     def start(self) -> None:
         state = self.runtime.state
@@ -500,7 +501,7 @@ class RightClickService:
 
     @staticmethod
     def food_timer_meets_threshold(food_seconds: int | None, threshold_minutes: int) -> bool:
-        # Minimum 1-minute threshold enforced; convert minutes to seconds (×60)
+        # Eat when remaining hunger time drops to or below the threshold (e.g., <= 15 min)
         return food_seconds is not None and food_seconds <= max(1, threshold_minutes) * 60
 
     @staticmethod
@@ -561,9 +562,17 @@ class RightClickService:
                 allowed, debug_message = self._food_mode_decision(food_text, food_seconds, food_min_minutes)
                 self.runtime.ui.log(debug_message)
                 if not allowed:
-                    if not self.runtime.pause.wait_interruptible(RCCLICK_WAIT_INTERRUPTIBLE, self.runtime.rclick_stop):
+                    # Food timer above threshold — enter cooldown for a random 5–14 min before re-checking
+                    current_time = time.time()
+                    if self._food_cooldown_until == 0.0 or current_time >= self._food_cooldown_until:
+                        cooldown_seconds = random.uniform(300, 840)  # Random between 5 and 14 minutes
+                        self._food_cooldown_until = current_time + cooldown_seconds
+                        self.runtime.ui.log(f"⏳ Food threshold reached — entering {cooldown_seconds:.0f}s cooldown")
+                    if not self.runtime.pause.wait_interruptible(min(RCCLICK_WAIT_INTERRUPTIBLE, max(0, self._food_cooldown_until - time.time())), self.runtime.rclick_stop):
                         break
                     continue
+                # Eating resumed — reset cooldown timer
+                self._food_cooldown_until = 0.0
                 clicks_to_send = random.randint(burst_count_min, burst_count_max)
                 queue_window = max(
                     RCCLICK_QUEUE_WINDOW_MIN,
