@@ -82,8 +82,8 @@ class PointerReader:
     def get_light_profile(self) -> LightPointerProfile:
         return DEFAULT_LIGHT_PROFILE
 
-    def read_hp(self) -> int:
-        return int(self._read_stat("hp"))
+    def read_hp(self) -> float:
+        return float(self._read_stat("hp"))
 
     def read_mp(self) -> float:
         return float(self._read_stat("mp"))

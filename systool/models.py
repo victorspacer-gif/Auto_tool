@@ -224,7 +224,7 @@ class AppState:
 
     hp_pointer_address_hex: str = ""
     hp_source: str = "ocr"
-    hp_value: int | None = None
+    hp_value: float | None = None
 
     mp_pointer_address_hex: str = ""
     mp_source: str = "none"

@@ -40,7 +40,7 @@ DEFAULT_HP_PROFILE = StatPointerProfile(
     module_name="miracle_gl",
     pointer_chains=[[0x00A783E0, 0x4A0]],
     structure_value_offset=0,
-    read_method="read_byte",
+    read_method="read_double",
     description="HP pointer imported from HP pointer.CT.",
     ct_filename="HP pointer.CT",
 )

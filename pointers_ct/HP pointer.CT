@@ -5,7 +5,7 @@
       <ID>9</ID>
       <Description>"ponteiro HP"</Description>
       <ShowAsSigned>0</ShowAsSigned>
-      <VariableType>Byte</VariableType>
+      <VariableType>Double</VariableType>
       <Address>"miracle_gl.exe"+00A783E0</Address>
       <Offsets>
         <Offset>4A0</Offset>
