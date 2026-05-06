@@ -27,16 +27,11 @@ hiddenimports = [
     "win32process",
     "pywintypes",
     "pythoncom",
-    # Dynamically loaded memory modules (imported inside methods, not at module level)
-    "studiomemuer_hp_module",
-    "studiomemuer_mp_module",
-    "studiomemuer_cap_module",
-    "studiomemuer_light_module",
-    "studiomemuer_light_module.light_profile",
-    "studiomemuer_light_module.memory_backend",
-    # Submodules needed for dynamic __import__ resolution
-    "studiomemuer_mp_module.mp_profile",
-    "studiomemuer_cap_module.cap_profile",
+    # Pointer modules (consolidated into systool.pointers package)
+    "systool.pointers.pointer_reader",
+    "systool.pointers.memory_backend",
+    "systool.pointers.profiles",
+    "systool.pointers.pointer_chain_ranker",
     # Purecase module (dynamically imported at runtime)
     "purecase_module",
 ]
