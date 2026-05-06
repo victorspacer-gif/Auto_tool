@@ -40,6 +40,7 @@ class LightMemoryController:
     def __init__(self, process_name: str) -> None:
         self.process_name = process_name
         self.pm: pymem.Pymem | None = None
+        self.pid: int | None = None
         self._lock = threading.RLock()
 
     def attach(self) -> None:
@@ -49,11 +50,13 @@ class LightMemoryController:
 
         self.pm = pymem.Pymem()
         self.pm.open_process_from_id(pid)
+        self.pid = pid
 
     def detach(self) -> None:
         if self.pm is not None:
             self.pm.close_process()
             self.pm = None
+        self.pid = None
 
     def read_byte(self, address: int) -> int:
         with self._lock:

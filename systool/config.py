@@ -107,7 +107,7 @@ JOB_JSON_MAX_MS_DEFAULT: int = 3_000
 
 # Fields that need special handling during serialization (non-dataclass types).
 _JSON_SPECIAL = frozenset({
-    "hotkey_bindings", "jobs", "fish_spots",
+    "hotkey_bindings", "jobs", "fish_spots", "__meta__",
 })
 
 
@@ -189,7 +189,9 @@ class ConfigSerializer:
             "rclick_food_burst_interval_ms",
             "rclick_click_delay_min_ms", "rclick_click_delay_max_ms",
             "rclick_post_click_settle_ms",
-            "light_process_name", "light_direct_address_hex",
+            "light_process_name", "attached_window_title",
+            "character_name", "character_name_normalized",
+            "light_direct_address_hex",
             "light_freeze_enabled", "light_freeze_color_value",
             "light_freeze_intensity_value", "light_freeze_interval_ms",
             "light_last_mode", "light_last_color_address_hex",
@@ -207,6 +209,29 @@ class ConfigSerializer:
         if isinstance(rclick_pos, tuple):
             result["rclick_pos_x"] = rclick_pos[0]
             result["rclick_pos_y"] = rclick_pos[1]
+        if state.alarm.region is not None:
+            result["alarm_region"] = ConfigSerializer._to_json_compatible(state.alarm.region)
+        if state.char_status.region is not None:
+            result["char_status_region"] = ConfigSerializer._to_json_compatible(state.char_status.region)
+        if state.char_status.hp_region is not None:
+            result["char_status_hp_region"] = ConfigSerializer._to_json_compatible(state.char_status.hp_region)
+        if state.char_status.mana_region is not None:
+            result["char_status_mana_region"] = ConfigSerializer._to_json_compatible(state.char_status.mana_region)
+        if state.char_status.cap_region is not None:
+            result["char_status_cap_region"] = ConfigSerializer._to_json_compatible(state.char_status.cap_region)
+
+        result["rune.hand_x"] = state.rune.hand_pos[0]
+        result["rune.hand_y"] = state.rune.hand_pos[1]
+        result["rune.storage_x"] = state.rune.storage_pos[0]
+        result["rune.storage_y"] = state.rune.storage_pos[1]
+        result["rune.blank_x"] = state.rune.blank_pos[0]
+        result["rune.blank_y"] = state.rune.blank_pos[1]
+        result["healer.character_x"] = state.healer.character_pos[0]
+        result["healer.character_y"] = state.healer.character_pos[1]
+        result["healer.rune_x"] = state.healer.rune_pos[0]
+        result["healer.rune_y"] = state.healer.rune_pos[1]
+        result["light_original_color_value"] = ConfigSerializer._to_json_compatible(state.light_original_color_value)
+        result["light_original_intensity_value"] = ConfigSerializer._to_json_compatible(state.light_original_intensity_value)
 
         # Special fields that don't fit the dataclass flattening pattern.
         result["hotkey_bindings"] = dict(state.hotkey_bindings)
@@ -237,9 +262,12 @@ class ConfigSerializer:
         return result
 
     @staticmethod
-    def save_json(path: str, state: AppState) -> None:
+    def save_json(path: str, state: AppState, metadata: dict[str, Any] | None = None) -> None:
+        payload = ConfigSerializer.to_dict(state)
+        if metadata:
+            payload["__meta__"] = metadata
         with open(path, "w", encoding="utf-8") as handle:
-            json.dump(ConfigSerializer.to_dict(state), handle, indent=2)
+            json.dump(payload, handle, indent=2)
 
     # ── Deserialization ─────────────────────────────────────────────
 
@@ -264,6 +292,7 @@ class ConfigSerializer:
             "char_status_mana_region": tuple(raw["char_status_mana_region"]) if raw.get("char_status_mana_region") else None,
             "char_status_cap_region": tuple(raw["char_status_cap_region"]) if raw.get("char_status_cap_region") else None,
             "hotkeys": raw.get("hotkey_bindings", {}),
+            "metadata": raw.get("__meta__", {}),
         }
 
     @staticmethod
@@ -471,6 +500,9 @@ class ConfigSerializer:
 
         # ── Light ─────────────────────────────────────────────────────
         state.light_process_name = get_str("light_process_name", state.light_process_name)
+        state.attached_window_title = get_str("attached_window_title", state.attached_window_title)
+        state.character_name = get_str("character_name", state.character_name)
+        state.character_name_normalized = get_str("character_name_normalized", state.character_name_normalized)
         state.light_direct_address_hex = get_str("light_direct_address_hex", state.light_direct_address_hex)
         state.sandbox.backend = get_str("sandbox_backend", state.sandbox.backend)
         state.sandbox.box_name = get_str("sandbox_box_name", state.sandbox.box_name)
