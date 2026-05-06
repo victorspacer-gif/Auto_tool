@@ -474,7 +474,7 @@ class RightClickService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.last_food_click_ts: float = 0.0  # Anti-spam timestamp for food right-clicks
-        self._food_cooldown_until: float = 0.0  # Cooldown expiry time (random 5–14 min after threshold hit)
+        self._food_restart_threshold_seconds: int | None = None  # Hysteresis restart threshold (X - random(60–300s))
 
     def start(self) -> None:
         state = self.runtime.state
@@ -519,16 +519,20 @@ class RightClickService:
         food_text: str,
         food_seconds: int | None,
         threshold_minutes: int,
+        restart_threshold_seconds: int | None = None,
     ) -> tuple[bool, str]:
-        logger.info("[FOOD] raw=%s, seconds=%s, threshold=%d, decision=%r", food_text.strip() or "—", food_seconds, max(1, threshold_minutes), cls.food_timer_meets_threshold(food_seconds, threshold_minutes))
-        allowed = cls.food_timer_meets_threshold(food_seconds, threshold_minutes)
+        # Use hysteresis restart threshold when available; fall back to fixed threshold.
+        effective_threshold = restart_threshold_seconds if restart_threshold_seconds is not None else max(1, threshold_minutes) * 60
+        allowed = food_seconds is not None and food_seconds <= effective_threshold
         raw_value = food_text.strip() or "—"
         parsed_value = cls._format_food_timer_debug(food_seconds)
         threshold_display = f"{max(1, threshold_minutes)}:00"
         decision = "allowed" if allowed else "blocked"
         return allowed, (
             f"🍖 R-click food gate — raw='{raw_value}' parsed={parsed_value} "
-            f"threshold={threshold_display} decision={decision}"
+            f"threshold={threshold_display}"
+            + (f" restart_threshold={effective_threshold}s ({effective_threshold // 60}m)" if restart_threshold_seconds is not None else "")
+            + f" decision={decision}"
         )
 
     def _worker(self) -> None:
@@ -559,20 +563,26 @@ class RightClickService:
                 post_settle_ms = state.rclick_post_click_settle_ms
                 rclick_jitter = state.rclick_jitter
             if mode == "food":
-                allowed, debug_message = self._food_mode_decision(food_text, food_seconds, food_min_minutes)
+                allowed, debug_message = self._food_mode_decision(
+                    food_text, food_seconds, food_min_minutes,
+                    restart_threshold_seconds=self._food_restart_threshold_seconds,
+                )
                 self.runtime.ui.log(debug_message)
                 if not allowed:
-                    # Food timer above threshold — enter cooldown for a random 5–14 min before re-checking
-                    current_time = time.time()
-                    if self._food_cooldown_until == 0.0 or current_time >= self._food_cooldown_until:
-                        cooldown_seconds = random.uniform(300, 840)  # Random between 5 and 14 minutes
-                        self._food_cooldown_until = current_time + cooldown_seconds
-                        self.runtime.ui.log(f"⏳ Food threshold reached — entering {cooldown_seconds:.0f}s cooldown")
-                    if not self.runtime.pause.wait_interruptible(min(RCCLICK_WAIT_INTERRUPTIBLE, max(0, self._food_cooldown_until - time.time())), self.runtime.rclick_stop):
+                    # Food timer above threshold — generate hysteresis restart threshold.
+                    # Pick random lower bound 60–300s, subtract from X to get restart point.
+                    random_lower_bound = random.randint(60, 300)
+                    self._food_restart_threshold_seconds = max(1, food_min_minutes * 60) - random_lower_bound
+                    self.runtime.ui.log(
+                        f"⏳ Food timer above threshold ({food_seconds}s > {max(1, food_min_minutes)}m) "
+                        f"— hysteresis restart at {self._food_restart_threshold_seconds}s "
+                        f"({self._food_restart_threshold_seconds // 60}m), lower_bound={random_lower_bound}s"
+                    )
+                    if not self.runtime.pause.wait_interruptible(RCCLICK_WAIT_INTERRUPTIBLE, self.runtime.rclick_stop):
                         break
                     continue
-                # Eating resumed — reset cooldown timer
-                self._food_cooldown_until = 0.0
+                # Eating resumed — reset hysteresis threshold so next stop generates a new one.
+                self._food_restart_threshold_seconds = None
                 clicks_to_send = random.randint(burst_count_min, burst_count_max)
                 queue_window = max(
                     RCCLICK_QUEUE_WINDOW_MIN,

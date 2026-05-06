@@ -192,6 +192,45 @@ class TestFoodTimerParsing:
         assert RightClickService.food_timer_meets_threshold(9 * 60, 10) is True      # 540s < 600s → allowed
         assert RightClickService.food_timer_meets_threshold(15 * 60, 10) is False    # 900s > 600s → blocked (still full)
 
+    def test_food_mode_decision_with_hysteresis_restart_blocked(self):
+        """When restart threshold is set and food_seconds exceeds it, eating should be blocked."""
+        # X=15min=900s, random_lower_bound=200s → restart_threshold=700s (11m 40s)
+        restart_threshold = 700
+        allowed, message = RightClickService._food_mode_decision(
+            "13:00", 13 * 60, 15, restart_threshold_seconds=restart_threshold
+        )
+        assert allowed is False  # 780s > 700s → blocked
+        assert "restart_threshold=700s" in message
+        assert "decision=blocked" in message
+
+    def test_food_mode_decision_with_hysteresis_restart_allowed(self):
+        """When restart threshold is set and food_seconds drops below it, eating should be allowed."""
+        # X=15min=900s, random_lower_bound=200s → restart_threshold=700s (11m 40s)
+        restart_threshold = 700
+        allowed, message = RightClickService._food_mode_decision(
+            "10:00", 10 * 60, 15, restart_threshold_seconds=restart_threshold
+        )
+        assert allowed is True   # 600s <= 700s → allowed
+        assert "restart_threshold=700s" in message
+        assert "decision=allowed" in message
+
+    def test_food_mode_decision_hysteresis_uses_restart_not_fixed(self):
+        """Hysteresis restart threshold takes precedence over the fixed threshold."""
+        # Fixed threshold = 10min = 600s, but restart_threshold = 500s (lower)
+        # food_seconds = 550s: should be blocked because it exceeds restart threshold.
+        allowed, message = RightClickService._food_mode_decision(
+            "9:10", 550, 10, restart_threshold_seconds=500
+        )
+        assert allowed is False  # 550 > 500 → blocked (even though 550 < 600 fixed threshold)
+
+    def test_food_mode_decision_hysteresis_fallback_to_fixed(self):
+        """When restart_threshold_seconds is None, falls back to fixed threshold."""
+        allowed, message = RightClickService._food_mode_decision(
+            "5:00", 300, 10, restart_threshold_seconds=None
+        )
+        assert allowed is True   # 300 <= 600 → allowed
+        assert "restart_threshold=" not in message  # No hysteresis info in message
+
     def test_release_all_calls_keyboard_release_for_each(self):
         mock_keyboard = MagicMock()
         session = SafeKeyboardSession(mock_keyboard)
