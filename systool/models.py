@@ -211,6 +211,9 @@ class AppState:
     sandbox: SandboxState = dataclasses.field(default_factory=SandboxState)
 
     light_process_name: str = "miracle_gl.exe"
+    attached_window_title: str = ""
+    character_name: str = ""
+    character_name_normalized: str = ""
     light_direct_address_hex: str = ""
     light_freeze_enabled: bool = False
     light_freeze_color_value: int = 0

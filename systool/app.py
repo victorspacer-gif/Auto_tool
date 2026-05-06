@@ -13,6 +13,15 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+from .character_profiles import (
+    AUTOSAVE_INTERVAL_MS,
+    CharacterIdentity,
+    build_identity,
+    build_profile_path,
+    get_window_title_for_pid,
+    load_character_profile,
+    save_character_profile,
+)
 from .constants import (
     APP_SETTINGS_POLL_INTERVAL_MS,
     APP_STATS_POLL_INTERVAL_MS,
@@ -135,6 +144,8 @@ class SystemMonitorApp:
         self.rclick_food_mode_container: tk.Frame | None = None
         self.rclick_food_mode_rows: list[tk.Widget] = []
         self.rclick_food_mode_anchor: tk.Widget | None = None
+        self.character_autosave_timer_id: str | None = None
+        self.current_character_profile_path: str | None = None
 
         # Background stats polling (HP/MP/Cap pointer reads)
         self._stats_poll_timer_id: int | None = None
@@ -194,6 +205,7 @@ class SystemMonitorApp:
         self._refresh_variables_display()
         # Start background stats polling (100ms interval, UI-only-on-change)
         self._start_stats_polling()
+        self._schedule_character_autosave()
 
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()
@@ -1373,6 +1385,8 @@ class SystemMonitorApp:
             self.ui_vars["alarm_mp3_var"].set(normalized)
 
     def attach_light_process(self) -> None:
+        self._poll_settings(schedule_next=False)
+        self._save_current_character_profile(log_success=False)
         ok, message = self.light_service.attach()
         # Also resolve HP/MP/Cap pointers on light attach (same process handle)
         if ok and self.hp_service is not None:
@@ -1396,7 +1410,81 @@ class SystemMonitorApp:
                     message += f" | {cap_msg}"
             except Exception as exc:
                 message += f" | Cap attach warning: {exc}"
+        if ok:
+            try:
+                profile_message = self._load_or_create_attached_character_profile()
+                if profile_message:
+                    message += f" | {profile_message}"
+            except Exception as exc:
+                message += f" | Character profile warning: {exc}"
         self._set_light_status(ok, message)
+
+    def _load_or_create_attached_character_profile(self) -> str:
+        controller = getattr(self.light_service, "controller", None)
+        pid = getattr(controller, "pid", None) if controller is not None else None
+        window_title = get_window_title_for_pid(int(pid or 0))
+        identity = build_identity(self.runtime.state.light_process_name, window_title)
+        profile_path = build_profile_path(identity.normalized_name)
+
+        self.runtime.state.attached_window_title = identity.window_title
+        self.runtime.state.character_name = identity.character_name
+        self.runtime.state.character_name_normalized = identity.normalized_name
+        self.current_character_profile_path = str(profile_path)
+
+        if profile_path.exists():
+            payload = load_character_profile(profile_path)
+            ConfigSerializer.apply_loaded(self.runtime.state, payload)
+            self.runtime.state.light_process_name = identity.process_name
+            self.runtime.state.attached_window_title = identity.window_title
+            self.runtime.state.character_name = identity.character_name
+            self.runtime.state.character_name_normalized = identity.normalized_name
+            self._sync_ui_from_state()
+            self._restart_global_listener()
+            if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
+                self.char_status_service.restart_if_needed()
+            else:
+                self.char_status_service.stop()
+            self.runtime.ui.set_status(f"Perfil carregado para {identity.character_name}", GREEN)
+            self.runtime.ui.log(f"📂 Character profile loaded: {profile_path}")
+            return f"character={identity.character_name}"
+
+        save_character_profile(profile_path, self.runtime.state, identity)
+        self.runtime.ui.log(f"💾 Character profile created: {profile_path}")
+        self.runtime.ui.set_status(f"Novo perfil criado para {identity.character_name}", TEAL)
+        return f"character={identity.character_name}"
+
+    def _save_current_character_profile(self, log_success: bool = False) -> bool:
+        profile_path = self.current_character_profile_path
+        normalized_name = self.runtime.state.character_name_normalized.strip()
+        if not profile_path or not normalized_name:
+            return False
+
+        self._poll_settings(schedule_next=False)
+        identity = build_identity(self.runtime.state.light_process_name, self.runtime.state.attached_window_title)
+        if self.runtime.state.character_name.strip():
+            identity = CharacterIdentity(
+                process_name=identity.process_name,
+                window_title=identity.window_title,
+                character_name=self.runtime.state.character_name.strip(),
+                normalized_name=normalized_name,
+            )
+        save_character_profile(profile_path, self.runtime.state, identity)
+        if log_success:
+            self.runtime.ui.log(f"💾 Character autosaved: {profile_path}")
+        return True
+
+    def _schedule_character_autosave(self) -> None:
+        if not self.root:
+            return
+        self.character_autosave_timer_id = self.root.after(AUTOSAVE_INTERVAL_MS, self._run_character_autosave)
+
+    def _run_character_autosave(self) -> None:
+        try:
+            self._save_current_character_profile(log_success=True)
+        except Exception as exc:
+            self.runtime.ui.log(f"❌ Character autosave failed: {exc}")
+        finally:
+            self._schedule_character_autosave()
 
     def toggle_light_freeze(self) -> None:
         enabled = bool(self.ui_vars.get("light_freeze_enabled_var").get()) if "light_freeze_enabled_var" in self.ui_vars else False
