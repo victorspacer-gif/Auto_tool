@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 import psutil
 
 try:
-    from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as DEFAULT_LIGHT_PROFILE
-    from studiomemuer_light_module.memory_backend import (
+    from ..pointers import (
+        AddressResolveError,
+        DEFAULT_LIGHT_PROFILE,
         LightMemoryController,
         MemoryWriteError,
+        PointerReader,
         ProcessNotFoundError,
     )
 
@@ -25,8 +27,10 @@ try:
 except ImportError:
     DEFAULT_LIGHT_PROFILE = None
     LightMemoryController = None
+    AddressResolveError = RuntimeError
     MemoryWriteError = RuntimeError
     ProcessNotFoundError = RuntimeError
+    PointerReader = None
     HAS_LIGHT_MODULE = False
 
 from ..runtime import (
@@ -70,6 +74,7 @@ class LightControlService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller = None
+        self.pointer_reader: PointerReader | None = None
         self._freeze_stop = threading.Event()
         self._freeze_thread: threading.Thread | None = None
 
@@ -89,6 +94,7 @@ class LightControlService:
         try:
             self.controller = LightMemoryController(process_name)
             self.controller.attach()
+            self.pointer_reader = PointerReader(self.controller)
             return True, f"Attached to {process_name} | pointer list loaded"
         except ProcessNotFoundError as exc:
             fallback_name = self._find_game_process_name()
@@ -97,6 +103,7 @@ class LightControlService:
             try:
                 self.controller = LightMemoryController(fallback_name)
                 self.controller.attach()
+                self.pointer_reader = PointerReader(self.controller)
                 self.runtime.state.light_process_name = fallback_name
                 return True, f"Attached to {fallback_name} | auto-detected game process"
             except Exception as fallback_exc:
@@ -112,6 +119,7 @@ class LightControlService:
             except Exception:
                 logger.debug("Light controller detach failed")
             self.controller = None
+            self.pointer_reader = None
         return True, "Detached"
 
     def apply_default(self) -> tuple[bool, str]:
@@ -218,14 +226,9 @@ class LightControlService:
                 )
 
             ctrl = self._require_controller()
-            profile = self._profile()
-            color_address, intensity_address = ctrl.resolve_light_pair_addresses(
-                module_name=profile.module_name,
-                pointer_chains=[list(chain) for chain in profile.pointer_chains],
-                structure_value_offset=profile.structure_value_offset,
-                signature_pattern=profile.signature_pattern,
-                signature_offset_to_base=profile.signature_offset_to_base,
-            )
+            if self.pointer_reader is None:
+                raise RuntimeError("PointerReader unavailable.")
+            color_address, intensity_address = self.pointer_reader.resolve_light_pair_addresses()
             return self._write_direct_pair(
                 color_address=color_address,
                 color_value=color_value,
@@ -279,6 +282,7 @@ class StatPointerService:
     """Shared pointer-backed stat reader with OCR fallback."""
 
     stat_label = "Stat"
+    stat_name = ""
     pointer_address_attr = ""
     source_attr = ""
     value_attr = ""
@@ -287,12 +291,10 @@ class StatPointerService:
     local_address_attr = "_resolved_address"
     local_cache_attr = "_cache_time"
     local_ttl_attr = "_CACHE_TTL"
-    profile_module = ""
-    profile_name = ""
-
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
+        self.pointer_reader: PointerReader | None = None
         setattr(self, self.local_address_attr, None)
         setattr(self, self.local_cache_attr, 0.0)
         setattr(self, self.local_ttl_attr, 60.0)
@@ -302,6 +304,7 @@ class StatPointerService:
         try:
             self.controller = LightMemoryController(process_name)
             self.controller.attach()
+            self.pointer_reader = PointerReader(self.controller, cache_ttl=getattr(self, self.local_ttl_attr))
         except ProcessNotFoundError as exc:
             fallback_name = self._find_game_process_name()
             if not fallback_name:
@@ -309,6 +312,7 @@ class StatPointerService:
             try:
                 self.controller = LightMemoryController(fallback_name)
                 self.controller.attach()
+                self.pointer_reader = PointerReader(self.controller, cache_ttl=getattr(self, self.local_ttl_attr))
                 self.runtime.state.light_process_name = fallback_name
             except Exception as fallback_exc:
                 return False, f"{exc} | fallback attach failed: {fallback_exc}"
@@ -321,10 +325,13 @@ class StatPointerService:
             self._store_resolved_address(address)
             parts.append(f"{self.stat_label} pointer resolved at 0x{address:X}")
             try:
-                value = self.controller.read_double(address)
+                value = self._read_pointer_value()
                 with self.runtime.settings_lock:
                     setattr(self.runtime.state, self.value_attr, value)
-                parts.append(f"{self.stat_label}={value:.1f}")
+                if isinstance(value, int):
+                    parts.append(f"{self.stat_label}={value}")
+                else:
+                    parts.append(f"{self.stat_label}={value:.1f}")
             except Exception as exc:
                 parts.append(f"{self.stat_label} read failed: {exc}")
 
@@ -335,6 +342,7 @@ class StatPointerService:
         if self.controller is not None:
             self.controller.detach()
         self.controller = None
+        self.pointer_reader = None
         setattr(self, self.local_address_attr, None)
         return True, "Detached"
 
@@ -365,21 +373,12 @@ class StatPointerService:
             setattr(state, self.state_resolved_attr, address)
 
     def _resolve_pointer(self) -> int | None:
-        ctrl = self.controller
-        if ctrl is None:
+        if self.pointer_reader is None or not self.stat_name:
             return None
-        module = __import__(self.profile_module, fromlist=[self.profile_name])
-        profile = getattr(module, self.profile_name)
-        module_base = ctrl.get_module_base(profile.module_name)
-        for chain in profile.pointer_chains:
-            try:
-                base_candidate = ctrl.resolve_pointer_chain(module_base, chain)
-                target_candidate = base_candidate + profile.structure_value_offset
-                ctrl.read_double(target_candidate)
-                return target_candidate
-            except Exception:
-                continue
-        return None
+        try:
+            return self.pointer_reader.resolve_address(self.stat_name)
+        except Exception:
+            return None
 
     def _get_fallback_value(self) -> float | None:
         with self.runtime.settings_lock:
@@ -388,15 +387,21 @@ class StatPointerService:
             return float(fallback_value)
         return None
 
+    def _read_pointer_value(self) -> float | int:
+        if self.pointer_reader is None or not self.stat_name:
+            raise RuntimeError("Pointer reader unavailable.")
+        read_method = getattr(self.pointer_reader, f"read_{self.stat_name}")
+        return read_method()
+
     def _get_value(self) -> float | None:
         state = self.runtime.state
         if not self._is_address_valid():
             self._ensure_address_resolved()
 
         address = getattr(self, self.local_address_attr)
-        if address is not None and self.controller is not None:
+        if address is not None and self.pointer_reader is not None:
             try:
-                value = self.controller.read_double(address)
+                value = self._read_pointer_value()
                 with self.runtime.settings_lock:
                     setattr(state, self.value_attr, value)
                 return value
@@ -418,6 +423,7 @@ class HpService(StatPointerService):
     """HP value reader with pointer-first resolution and OCR fallback."""
 
     stat_label = "HP"
+    stat_name = "hp"
     pointer_address_attr = "hp_pointer_address_hex"
     source_attr = "hp_source"
     value_attr = "hp_value"
@@ -425,8 +431,6 @@ class HpService(StatPointerService):
     local_address_attr = "_hp_address"
     local_cache_attr = "_hp_cache_time"
     local_ttl_attr = "_HP_CACHE_TTL"
-    profile_module = "studiomemuer_hp_module.hp_profile"
-    profile_name = "DEFAULT_HP_PROFILE"
 
     def __init__(self, runtime: AppRuntime) -> None:
         super().__init__(runtime)
@@ -445,15 +449,7 @@ class HpService(StatPointerService):
 
         parts = message.split(" | ")[1:] if " | " in message else []
         try:
-            from studiomemuer_light_module.light_profile import DEFAULT_PROFILE as LIGHT_PROFILE
-
-            light_address = self.controller.resolve_light_address(
-                module_name=LIGHT_PROFILE.module_name,
-                pointer_chains=LIGHT_PROFILE.pointer_chains,
-                structure_value_offset=LIGHT_PROFILE.structure_value_offset,
-                signature_pattern=LIGHT_PROFILE.signature_pattern,
-                signature_offset_to_base=LIGHT_PROFILE.signature_offset_to_base,
-            )
+            light_address = self.pointer_reader.resolve_light_address() if self.pointer_reader else None
         except Exception:
             light_address = None
 
@@ -484,30 +480,27 @@ class HpService(StatPointerService):
         cap_val = None
         food_val = None
 
-        if self._hp_address is not None and self.controller is not None:
+        if self.pointer_reader is not None:
             try:
-                hp_val = self.controller.read_double(self._hp_address)
+                hp_val = float(self.pointer_reader.read_hp())
             except Exception:
                 logger.debug("HP pointer read failed")
 
-        mp_addr = getattr(state, "_mp_resolved_addr", None)
-        if mp_addr is not None and self.controller is not None:
+        if getattr(state, "_mp_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
-                mp_val = self.controller.read_double(mp_addr)
+                mp_val = self.pointer_reader.read_mp()
             except Exception:
                 logger.debug("MP pointer read failed")
 
-        cap_addr = getattr(state, "_cap_resolved_addr", None)
-        if cap_addr is not None and self.controller is not None:
+        if getattr(state, "_cap_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
-                cap_val = self.controller.read_double(cap_addr)
+                cap_val = self.pointer_reader.read_cap()
             except Exception:
                 logger.debug("Cap pointer read failed")
 
-        food_addr = getattr(state, "_food_resolved_addr", None)
-        if food_addr is not None and self.controller is not None:
+        if getattr(state, "_food_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
-                food_val = int(self.controller.read_double(food_addr))
+                food_val = self.pointer_reader.read_food()
             except Exception:
                 logger.debug("Food pointer read failed")
 
@@ -528,6 +521,7 @@ class MpService(StatPointerService):
     """MP (Mana) value reader with pointer-first resolution and OCR fallback."""
 
     stat_label = "MP"
+    stat_name = "mp"
     pointer_address_attr = "mp_pointer_address_hex"
     source_attr = "mp_source"
     value_attr = "mp_value"
@@ -536,8 +530,6 @@ class MpService(StatPointerService):
     local_address_attr = "_mp_address"
     local_cache_attr = "_mp_cache_time"
     local_ttl_attr = "_MP_CACHE_TTL"
-    profile_module = "studiomemuer_mp_module.mp_profile"
-    profile_name = "DEFAULT_MP_PROFILE"
 
     def get_mp(self) -> float | None:
         return self._get_value()
@@ -547,6 +539,7 @@ class CapService(StatPointerService):
     """Cap value reader with pointer-first resolution and OCR fallback."""
 
     stat_label = "Cap"
+    stat_name = "cap"
     pointer_address_attr = "cap_pointer_address_hex"
     source_attr = "cap_source"
     value_attr = "cap_value"
@@ -555,8 +548,6 @@ class CapService(StatPointerService):
     local_address_attr = "_cap_address"
     local_cache_attr = "_cap_cache_time"
     local_ttl_attr = "_CAP_CACHE_TTL"
-    profile_module = "studiomemuer_cap_module.cap_profile"
-    profile_name = "DEFAULT_CAP_PROFILE"
 
     def get_cap(self) -> float | None:
         return self._get_value()
@@ -570,6 +561,7 @@ class FoodService(StatPointerService):
     """Food timer value reader with pointer-first resolution and OCR fallback."""
 
     stat_label = "Food"
+    stat_name = "food"
     pointer_address_attr = "food_pointer_address_hex"
     source_attr = "food_source"
     value_attr = "food_value"
@@ -578,11 +570,10 @@ class FoodService(StatPointerService):
     local_address_attr = "_food_address"
     local_cache_attr = "_food_cache_time"
     local_ttl_attr = "_FOOD_CACHE_TTL"
-    profile_module = "studiomemuer_food_module.food_profile"
-    profile_name = "DEFAULT_FOOD_PROFILE"
 
     def get_food(self) -> int | None:
-        return self._get_value()
+        value = self._get_value()
+        return int(value) if value is not None else None
 
 
 class AlarmService:

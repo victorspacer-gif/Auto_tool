@@ -35,12 +35,7 @@ class LightPatchResult:
 
 
 class LightMemoryController:
-    """Thread-safe memory read/write controller for Windows processes.
-
-    All public methods acquire an internal lock before calling into pymem,
-    preventing concurrent ReadProcessMemory calls that can deadlock on Windows
-    when the target process is momentarily unresponsive.
-    """
+    """Thread-safe memory read/write controller for Windows processes."""
 
     def __init__(self, process_name: str) -> None:
         self.process_name = process_name
@@ -79,7 +74,6 @@ class LightMemoryController:
                 raise MemoryWriteError(f"Failed to write byte at 0x{address:X}: {exc}") from exc
 
     def read_double(self, address: int) -> float:
-        """Read a double-precision floating-point value from the target process."""
         with self._lock:
             if self.pm is None:
                 raise ProcessNotFoundError("Not attached to process.")
@@ -117,15 +111,12 @@ class LightMemoryController:
                 if module_substr in module.name.lower():
                     return module.lpBaseOfDll
 
-            # Some client variants rename the main executable (for example miracle_dx-*.exe)
-            # while the imported CE pointers still reference the game's primary module base.
-            # If the configured module name is absent, fall back to the attached process main module.
             for module in modules:
                 if module.name.lower().endswith(".exe"):
                     return module.lpBaseOfDll
 
             if modules:
-                return modules[0].lpBaseOfDll  # Fallback: use first module (usually main executable) when no substring match found
+                return modules[0].lpBaseOfDll
 
             raise ProcessNotFoundError(f"Module not found: {module_substr}")
 
@@ -136,8 +127,8 @@ class LightMemoryController:
             if not offsets:
                 raise AddressResolveError("Pointer chain is empty.")
 
-            cursor = module_base + offsets[0]  # First offset is relative to module base (not a pointer hop)
-            if len(offsets) == 1:  # Single-element chain: direct address from module base, no indirection
+            cursor = module_base + offsets[0]
+            if len(offsets) == 1:
                 return cursor
 
             for index, offset in enumerate(offsets[1:], start=1):
@@ -221,30 +212,6 @@ class LightMemoryController:
 
             raise AddressResolveError("Unable to resolve light address from pointer chains/signature.")
 
-    def apply_light_value(self, address_hex: str, value_hex: str) -> PatchResult:
-        address = int(address_hex, 16)
-        value = int(value_hex, 16)
-        return self.write_byte(address, value)
-
-    def apply_light_by_resolver(
-        self,
-        module_name: str,
-        pointer_chains: list[list[int]],
-        structure_value_offset: int,
-        value_hex: str,
-        signature_pattern: str | None = None,
-        signature_offset_to_base: int = 0,
-    ) -> PatchResult:
-        address = self.resolve_light_address(
-            module_name=module_name,
-            pointer_chains=pointer_chains,
-            structure_value_offset=structure_value_offset,
-            signature_pattern=signature_pattern,
-            signature_offset_to_base=signature_offset_to_base,
-        )
-        value = int(value_hex, 16)
-        return self.write_byte(address, value)
-
     def resolve_light_pair_addresses(
         self,
         module_name: str,
@@ -274,22 +241,3 @@ class LightMemoryController:
             color=self.write_byte(color_address, color_value),
             intensity=self.write_byte(color_address + 1, intensity_value),
         )
-
-    def apply_light_pair_by_resolver(
-        self,
-        module_name: str,
-        pointer_chains: list[list[int]],
-        color_value: int,
-        intensity_value: int,
-        structure_value_offset: int = 0,
-        signature_pattern: str | None = None,
-        signature_offset_to_base: int = 0,
-    ) -> LightPatchResult:
-        color_address, _intensity_address = self.resolve_light_pair_addresses(
-            module_name=module_name,
-            pointer_chains=pointer_chains,
-            structure_value_offset=structure_value_offset,
-            signature_pattern=signature_pattern,
-            signature_offset_to_base=signature_offset_to_base,
-        )
-        return self.write_light_pair(color_address, color_value, intensity_value)

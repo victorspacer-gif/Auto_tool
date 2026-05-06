@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from studiomemuer_light_module.light_profile import DEFAULT_PROFILE
-from studiomemuer_light_module.memory_backend import AddressResolveError, LightMemoryController
+from .memory_backend import AddressResolveError, LightMemoryController
+from .profiles import DEFAULT_LIGHT_PROFILE
 
 
 @dataclass
@@ -21,17 +21,17 @@ class ChainScore:
     errors: int = 0
 
     def final_score(self) -> float:
-        if self.attempts <= 0:  # Guard: no samples means score is meaningless
+        if self.attempts <= 0:
             return 0.0
         repeatability = self.resolves / self.attempts
         readability = self.value_reads / self.attempts
         expected_hit_ratio = self.expected_value_hits / self.attempts
         sig_ratio = self.signature_hits / self.attempts
-        depth_penalty = max(0, len(self.chain) - 4) * 0.03  # 3% penalty per hop beyond 4 (deeper chains are less reliable)
-        error_penalty = (self.errors / self.attempts) * 0.30  # Up to 30% score reduction for resolution errors
-        score = 0.45 * repeatability + 0.25 * readability + 0.15 * expected_hit_ratio + 0.15 * sig_ratio  # Weighted scoring formula
+        depth_penalty = max(0, len(self.chain) - 4) * 0.03
+        error_penalty = (self.errors / self.attempts) * 0.30
+        score = 0.45 * repeatability + 0.25 * readability + 0.15 * expected_hit_ratio + 0.15 * sig_ratio
         score = score - depth_penalty - error_penalty
-        return max(0.0, min(1.0, score))  # Clamp final score to [0.0, 1.0] range
+        return max(0.0, min(1.0, score))
 
 
 def _parse_expected_values(raw: str) -> set[int]:
@@ -48,9 +48,8 @@ def _signature_hit(controller: LightMemoryController, profile) -> bool:
 
 
 def run_ranking(sample_count: int, expected_values: set[int]) -> dict:
-    profile = DEFAULT_PROFILE
+    profile = DEFAULT_LIGHT_PROFILE
     controller = LightMemoryController(profile.process_name)
-
     chain_scores = [ChainScore(chain_index=i, chain=list(chain)) for i, chain in enumerate(profile.pointer_chains)]
 
     try:
@@ -106,7 +105,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output-json",
-        default="studiomemuer_light_module/pointer_chain_rankings.json",
+        default="systool/pointers/pointer_chain_rankings.json",
         help="Output JSON report path.",
     )
     args = parser.parse_args()
