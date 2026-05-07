@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import hashlib
 import threading
 import time
 import tkinter as tk
@@ -147,6 +149,7 @@ class SystemMonitorApp:
         self.rclick_food_mode_anchor: tk.Widget | None = None
         self.character_autosave_timer_id: str | None = None
         self.current_character_profile_path: str | None = None
+        self._last_saved_json_hash: str | None = None  # SHA-256 of last saved config payload (no metadata)
 
         # Background stats polling (HP/MP/Cap pointer reads)
         self._stats_poll_timer_id: int | None = None
@@ -1460,7 +1463,7 @@ class SystemMonitorApp:
         self.runtime.ui.set_status(f"Novo perfil criado para {identity.character_name}", TEAL)
         return f"character={identity.character_name}"
 
-    def _save_current_character_profile(self, log_success: bool = False) -> bool:
+    def _save_current_character_profile(self, log_success: bool = False, force: bool = False) -> bool:
         profile_path = self.current_character_profile_path
         normalized_name = self.runtime.state.character_name_normalized.strip()
         if not profile_path or not normalized_name:
@@ -1475,7 +1478,25 @@ class SystemMonitorApp:
                 character_name=self.runtime.state.character_name.strip(),
                 normalized_name=normalized_name,
             )
+
+        # Check for changes: compute hash of config payload (no metadata) and compare.
+        if not force:
+            current_dict = ConfigSerializer.to_dict(self.runtime.state)
+            # Strip __meta__ key so we only compare the actual config data.
+            clean = {k: v for k, v in current_dict.items() if not k.startswith("__")}
+            payload_json = json.dumps(clean, sort_keys=True, indent=2)
+            current_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+            if self._last_saved_json_hash == current_hash:
+                # No change since last save — skip disk write.
+                return False
+
         save_character_profile(profile_path, self.runtime.state, identity)
+        # Update the tracked hash (include metadata for the saved file).
+        full_dict = ConfigSerializer.to_dict(self.runtime.state)
+        clean_for_hash = {k: v for k, v in full_dict.items() if not k.startswith("__")}
+        payload_json = json.dumps(clean_for_hash, sort_keys=True, indent=2)
+        self._last_saved_json_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
         if log_success:
             self.runtime.ui.log(f"💾 Character autosaved: {profile_path}")
         return True
