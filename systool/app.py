@@ -18,6 +18,7 @@ from .character_profiles import (
     CharacterIdentity,
     build_identity,
     build_profile_path,
+    find_latest_profile_for,
     get_window_title_for_pid,
     load_character_profile,
     save_character_profile,
@@ -1424,23 +1425,26 @@ class SystemMonitorApp:
         pid = getattr(controller, "pid", None) if controller is not None else None
         window_title = get_window_title_for_pid(int(pid or 0))
         identity = build_identity(self.runtime.state.light_process_name, window_title)
-        profile_path = build_profile_path(identity.normalized_name)
 
         self.runtime.state.attached_window_title = identity.window_title
         self.runtime.state.character_name = identity.character_name
         self.runtime.state.character_name_normalized = identity.normalized_name
-        self.current_character_profile_path = str(profile_path)
 
-        if profile_path.exists():
+        # Prefer the most recent autosave matching this character name (case-insensitive).
+        profile_path = find_latest_profile_for(identity.normalized_name)
+
+        if profile_path is not None:
             payload = load_character_profile(profile_path)
             ConfigSerializer.apply_loaded(self.runtime.state, payload)
             self.runtime.state.light_process_name = identity.process_name
             self.runtime.state.attached_window_title = identity.window_title
             self.runtime.state.character_name = identity.character_name
             self.runtime.state.character_name_normalized = identity.normalized_name
+            self.current_character_profile_path = str(profile_path)
             self._sync_ui_from_state()
             self._restart_global_listener()
-            if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
+            if (self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region
+                    or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region):
                 self.char_status_service.restart_if_needed()
             else:
                 self.char_status_service.stop()
@@ -1448,7 +1452,10 @@ class SystemMonitorApp:
             self.runtime.ui.log(f"📂 Character profile loaded: {profile_path}")
             return f"character={identity.character_name}"
 
+        # No matching autosave found — create a fresh one at the canonical path.
+        profile_path = build_profile_path(identity.normalized_name)
         save_character_profile(profile_path, self.runtime.state, identity)
+        self.current_character_profile_path = str(profile_path)
         self.runtime.ui.log(f"💾 Character profile created: {profile_path}")
         self.runtime.ui.set_status(f"Novo perfil criado para {identity.character_name}", TEAL)
         return f"character={identity.character_name}"
@@ -1474,13 +1481,23 @@ class SystemMonitorApp:
         return True
 
     def _manual_save_profiles(self) -> None:
-        """User-triggered manual save — ports the legacy '💾 Save JSON' button behavior."""
+        """User-triggered manual save — opens a file dialog and saves the full state.
+
+        This is the legacy '💾 Save JSON' behavior: it works regardless of whether
+        the client is attached, allowing users to save configuration at any time.
+        """
+        path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json"), ("All", "*.*")],
+            initialfile=f"autotool_{time.strftime('%Y%m%d_%H%M%S')}.json",
+        )
+        if not path:
+            return
         try:
-            ok = self._save_current_character_profile(log_success=True)
-            if not ok:
-                self.runtime.ui.log("⚠️  Manual save skipped: no character profile attached")
+            ConfigSerializer.save_json(path, self.runtime.state)
+            self.runtime.ui.log(f"💾 Saved: {path}")
         except Exception as exc:
-            self.runtime.ui.log(f"❌ Manual save failed: {exc}")
+            self.runtime.ui.log(f"❌ Save failed: {exc}")
 
     def _schedule_character_autosave(self) -> None:
         if not self.root:

@@ -89,6 +89,27 @@ def build_profile_path(normalized_name: str, base_dir: os.PathLike[str] | str | 
     return ensure_autosave_directory(base_dir=base_dir) / f"{AUTOSAVE_PREFIX}{safe_name}{AUTOSAVE_SUFFIX}"
 
 
+def find_latest_profile_for(normalized_name: str, base_dir: os.PathLike[str] | str | None = None) -> Path | None:
+    """Find the most recent autosave profile matching *normalized_name* (case-insensitive).
+
+    Scans all ``{AUTOSAVE_PREFIX}*.json`` files in the autosave directory and picks
+    the one whose normalized character name matches (case-insensitive) with the
+    highest modification time.  Returns ``None`` when no match is found.
+    """
+    norm_lower = normalized_name.lower()
+    autosave_dir = ensure_autosave_directory(base_dir=base_dir)
+
+    best: Path | None = None
+    for candidate in autosave_dir.glob(f"{AUTOSAVE_PREFIX}*.json"):
+        # Strip prefix and suffix to get the stored name.
+        inner = candidate.name[len(AUTOSAVE_PREFIX):-len(AUTOSAVE_SUFFIX)]
+        if normalize_character_name(inner).lower() == norm_lower:
+            if best is None or candidate.stat().st_mtime > best.stat().st_mtime:
+                best = candidate
+
+    return best
+
+
 def profile_metadata(identity: CharacterIdentity) -> dict[str, object]:
     return {
         "schema_version": PROFILE_SCHEMA_VERSION,
