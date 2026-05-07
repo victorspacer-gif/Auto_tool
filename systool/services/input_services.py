@@ -569,16 +569,25 @@ class RightClickService:
                 )
                 self.runtime.ui.log(debug_message)
                 if not allowed:
-                    # Food timer above threshold — generate hysteresis restart threshold.
-                    # Pick random lower bound 60–300s, subtract from X to get restart point.
+                    # Food timer above threshold — calculate smart sleep until food
+                    # reaches the eating threshold + OCR refresh buffer instead of
+                    # polling every second.  Hysteresis restart point is still
+                    # generated so it's ready when we wake up and re-check.
+                    fixed_threshold_seconds = max(1, food_min_minutes) * 60
+                    ocr_refresh_delay: float = 20.0  # typical OCR/game update cycle
+                    remaining_seconds = max(0, (food_seconds - fixed_threshold_seconds) + ocr_refresh_delay)
+
                     random_lower_bound = random.randint(60, 300)
                     self._food_restart_threshold_seconds = max(1, food_min_minutes * 60) - random_lower_bound
                     self.runtime.ui.log(
-                        f"⏳ Food timer above threshold ({food_seconds}s > {max(1, food_min_minutes)}m) "
+                        f"⏳ Food timer above threshold ({food_seconds}s > {fixed_threshold_seconds}s) "
                         f"— hysteresis restart at {self._food_restart_threshold_seconds}s "
-                        f"({self._food_restart_threshold_seconds // 60}m), lower_bound={random_lower_bound}s"
+                        f"({self._food_restart_threshold_seconds // 60}m), lower_bound={random_lower_bound}s, "
+                        f"sleeping ~{remaining_seconds:.0f}s ({remaining_seconds / 60:.1f}min)"
                     )
-                    if not self.runtime.pause.wait_interruptible(RCCLICK_WAIT_INTERRUPTIBLE, self.runtime.rclick_stop):
+
+                    # Sleep until food should be near threshold instead of polling every second.
+                    if not self.runtime.pause.wait_interruptible(remaining_seconds, self.runtime.rclick_stop):
                         break
                     continue
                 # Eating resumed — reset hysteresis threshold so next stop generates a new one.
