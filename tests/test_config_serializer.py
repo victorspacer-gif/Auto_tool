@@ -277,9 +277,74 @@ class TestToJsonCompleteness:
         assert j["key"] == "F2"
         assert j["min_ms"] == 5000
         assert j["max_ms"] == 10000
+        assert j["min_mana"] == 20
+        assert j["max_mana"] == 35
 
 
-# ── Fishing mouse speed serialization ───────────────────────────────
+# ── Job mana fields serialization ────────────────────────────────
+
+
+class TestJobManaFields:
+
+    def test_to_dict_serializes_job_max_mana(self, state):
+        """to_dict should include max_mana in the jobs dict."""
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1, key="F3", min_mana=50, max_mana=80)
+        state.jobs.append(job)
+
+        d = ConfigSerializer.to_dict(state)
+        assert len(d["jobs"]) == 1
+        j = d["jobs"][0]
+        assert "max_mana" in j
+        assert j["max_mana"] == 80
+
+    def test_apply_loaded_reads_job_max_mana(self, state):
+        """apply_loaded should read max_mana from job_data."""
+        payload = {
+            "cfg": {},
+            "jobs": [{"job_id": 1, "key": "F4", "min_mana": 30, "max_mana": 65}],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert len(state.jobs) == 1
+        job = state.jobs[0]
+        assert job.max_mana == 65
+
+    def test_json_round_trip_preserves_job_max_mana(self, state):
+        """Full JSON save/load should preserve max_mana value."""
+        from systool.models import HotkeyJob
+        job = HotkeyJob(job_id=1, key="F5", min_mana=40, max_mana=90)
+        state.jobs.append(job)
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fh:
+            path = fh.name
+
+        try:
+            ConfigSerializer.save_json(path, state)
+            payload = ConfigSerializer.load_file(path)
+            restored = AppState()
+            ConfigSerializer.apply_loaded(restored, payload)
+            assert len(restored.jobs) == 1
+            assert restored.jobs[0].max_mana == 90
+        finally:
+            os.unlink(path)
+
+    def test_apply_loaded_defaults_max_mana_when_missing(self, state):
+        """Missing max_mana in job_data should use HOTKEY_JOB_MAX_MANA_DEFAULT."""
+        from systool.config import HOTKEY_JOB_MAX_MANA_DEFAULT
+        payload = {
+            "cfg": {},
+            "jobs": [{"job_id": 1}],
+            "spots": [],
+            "alarm_region": None,
+            "hotkeys": {},
+        }
+        ConfigSerializer.apply_loaded(state, payload)
+        assert len(state.jobs) == 1
+        assert state.jobs[0].max_mana == HOTKEY_JOB_MAX_MANA_DEFAULT
+
 
 
 class TestFishMouseSpeedConfig:

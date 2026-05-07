@@ -690,7 +690,7 @@ class SystemMonitorApp:
         tk.Label(wrapper, text="Save / Load complete configuration\n(all jobs · hotkey bindings · rune maker · alarm · fishing · timers…)", font=BOLD, fg=FG, bg=BG, justify="center").grid(row=0, column=0, pady=(0, 20), sticky="ew")
         buttons = tk.Frame(wrapper, bg=BG)
         buttons.grid(row=1, column=0)
-        self._btn(buttons, "💾 Save JSON", self.save_config_json, BLUE).pack(side="left", padx=8, ipadx=12)
+        self._btn(buttons, "💾 Save JSON", self._manual_save_profiles, BLUE).pack(side="left", padx=8, ipadx=12)
         self._btn(buttons, "📂 Load", self.load_config, ORANGE).pack(side="left", padx=8, ipadx=12)
         tk.Label(
             wrapper,
@@ -915,7 +915,7 @@ class SystemMonitorApp:
         )
         if path:
             self.sandbox_exe_var.set(path.replace("/", "\\"))
-            self.runtime.save_config()  # Save immediately after selection
+            self._save_current_character_profile(log_success=False)
 
     def _on_sandbox_backend_change(self) -> None:
         if self.sandbox_backend_var and self.sandbox_box_frame:
@@ -1473,6 +1473,15 @@ class SystemMonitorApp:
             self.runtime.ui.log(f"💾 Character autosaved: {profile_path}")
         return True
 
+    def _manual_save_profiles(self) -> None:
+        """User-triggered manual save — ports the legacy '💾 Save JSON' button behavior."""
+        try:
+            ok = self._save_current_character_profile(log_success=True)
+            if not ok:
+                self.runtime.ui.log("⚠️  Manual save skipped: no character profile attached")
+        except Exception as exc:
+            self.runtime.ui.log(f"❌ Manual save failed: {exc}")
+
     def _schedule_character_autosave(self) -> None:
         if not self.root:
             return
@@ -1579,16 +1588,6 @@ class SystemMonitorApp:
         canvas.bind("<ButtonRelease-1>", on_release)
         overlay.bind("<Escape>", lambda _e: overlay.destroy())
         overlay.focus_force()
-
-    def save_config_json(self) -> None:
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json"), ("All", "*.*")], initialfile=f"autotool_{time.strftime('%Y%m%d_%H%M%S')}.json")
-        if not path:
-            return
-        try:
-            ConfigSerializer.save_json(path, self.runtime.state)
-            self.runtime.ui.log(f"💾 Saved: {path}")
-        except Exception as exc:
-            self.runtime.ui.log(f"❌ Save failed: {exc}")
 
     def load_config(self) -> None:
         path = filedialog.askopenfilename(title="Load Config", filetypes=[("JSON", "*.json"), ("All", "*.*")])

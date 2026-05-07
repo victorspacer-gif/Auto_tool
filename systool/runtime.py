@@ -13,7 +13,6 @@ from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
-from .config import ConfigSerializer
 from .models import AppState, HotkeyJob
 
 try:
@@ -320,13 +319,6 @@ class MouseGate:
 class AppRuntime:
     def __init__(self) -> None:
         self.state = AppState()
-        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
-        if os.path.exists(config_path):
-            try:
-                payload = ConfigSerializer.load_file(config_path)
-                ConfigSerializer.apply_loaded(self.state, payload)
-            except Exception as exc:
-                logger.error("Failed to load config from %s: %s", config_path, exc)
         self.settings_lock = threading.RLock()
         self.record_lock = threading.RLock()
         self.ui = UINotifier()
@@ -346,10 +338,6 @@ class AppRuntime:
         self.cap_service: object | None = None
         self.food_service: object | None = None
         self.runtime_timer_stop = threading.Event()
-
-    def save_config(self) -> None:
-        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
-        ConfigSerializer.save_json(config_path, self.state)
 
 
 def resolve_tesseract_cmd(explicit_path: str = "") -> str | None:

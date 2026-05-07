@@ -150,4 +150,18 @@ if "%OPEN_DIST%"=="1" if exist "dist\SystemMonitor\SystemMonitor.exe" (
     start "" "%cd%\dist\SystemMonitor"
 )
 
+REM ============================================================
+REM Clean up unnecessary Tesseract files for a lean distribution.
+REM These configs/tessconfigs/doc files are only needed during
+REM training or development — not at runtime on the target machine.
+REM ============================================================
+echo Cleaning unnecessary Tesseract artifacts...
+rd /s /q "vendor\tesseract\tessdata\configs" >nul 2>nul
+rd /s /q "vendor\tesseract\tessdata\tessconfigs" >nul 2>nul
+if exist "vendor\tesseract\doc" (
+    del "vendor\tesseract\doc\AUTHORS" 2>nul
+    del "vendor\tesseract\doc\LICENSE" 2>nul
+    del "vendor\tesseract\doc\README.md" 2>nul
+)
+
 endlocal
