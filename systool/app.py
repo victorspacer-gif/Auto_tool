@@ -21,8 +21,10 @@ from .character_profiles import (
     build_identity,
     build_profile_path,
     find_latest_profile_for,
+    get_window_rect_for_pid,
     get_window_title_for_pid,
     load_character_profile,
+    remap_ocr_regions_from_profile,
     save_character_profile,
 )
 from .constants import (
@@ -1427,6 +1429,7 @@ class SystemMonitorApp:
         controller = getattr(self.light_service, "controller", None)
         pid = getattr(controller, "pid", None) if controller is not None else None
         window_title = get_window_title_for_pid(int(pid or 0))
+        window_rect = get_window_rect_for_pid(int(pid or 0))
         identity = build_identity(self.runtime.state.light_process_name, window_title)
 
         self.runtime.state.attached_window_title = identity.window_title
@@ -1438,12 +1441,15 @@ class SystemMonitorApp:
 
         if profile_path is not None:
             payload = load_character_profile(profile_path)
+            for key, region in remap_ocr_regions_from_profile(payload, window_rect).items():
+                payload[key] = region
             ConfigSerializer.apply_loaded(self.runtime.state, payload)
             self.runtime.state.light_process_name = identity.process_name
             self.runtime.state.attached_window_title = identity.window_title
             self.runtime.state.character_name = identity.character_name
             self.runtime.state.character_name_normalized = identity.normalized_name
             self.current_character_profile_path = str(profile_path)
+            self._refresh_last_saved_profile_hash()
             self._sync_ui_from_state()
             self._restart_global_listener()
             if (self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region
@@ -1457,8 +1463,9 @@ class SystemMonitorApp:
 
         # No matching autosave found — create a fresh one at the canonical path.
         profile_path = build_profile_path(identity.normalized_name)
-        save_character_profile(profile_path, self.runtime.state, identity)
+        save_character_profile(profile_path, self.runtime.state, identity, window_rect=window_rect)
         self.current_character_profile_path = str(profile_path)
+        self._refresh_last_saved_profile_hash()
         self.runtime.ui.log(f"💾 Character profile created: {profile_path}")
         self.runtime.ui.set_status(f"Novo perfil criado para {identity.character_name}", TEAL)
         return f"character={identity.character_name}"
@@ -1481,25 +1488,36 @@ class SystemMonitorApp:
 
         # Check for changes: compute hash of config payload (no metadata) and compare.
         if not force:
-            current_dict = ConfigSerializer.to_dict(self.runtime.state)
-            # Strip __meta__ key so we only compare the actual config data.
-            clean = {k: v for k, v in current_dict.items() if not k.startswith("__")}
-            payload_json = json.dumps(clean, sort_keys=True, indent=2)
-            current_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+            current_hash = self._compute_profile_payload_hash()
             if self._last_saved_json_hash == current_hash:
                 # No change since last save — skip disk write.
                 return False
 
-        save_character_profile(profile_path, self.runtime.state, identity)
-        # Update the tracked hash (include metadata for the saved file).
-        full_dict = ConfigSerializer.to_dict(self.runtime.state)
-        clean_for_hash = {k: v for k, v in full_dict.items() if not k.startswith("__")}
-        payload_json = json.dumps(clean_for_hash, sort_keys=True, indent=2)
-        self._last_saved_json_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+        save_character_profile(
+            profile_path,
+            self.runtime.state,
+            identity,
+            window_rect=self._get_attached_window_rect(),
+        )
+        self._refresh_last_saved_profile_hash()
 
         if log_success:
             self.runtime.ui.log(f"💾 Character autosaved: {profile_path}")
         return True
+
+    def _compute_profile_payload_hash(self) -> str:
+        current_dict = ConfigSerializer.to_dict(self.runtime.state)
+        clean = {k: v for k, v in current_dict.items() if not k.startswith("__")}
+        payload_json = json.dumps(clean, sort_keys=True, indent=2)
+        return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
+    def _refresh_last_saved_profile_hash(self) -> None:
+        self._last_saved_json_hash = self._compute_profile_payload_hash()
+
+    def _get_attached_window_rect(self) -> tuple[int, int, int, int] | None:
+        controller = getattr(self.light_service, "controller", None)
+        pid = getattr(controller, "pid", None) if controller is not None else None
+        return get_window_rect_for_pid(int(pid or 0))
 
     def _manual_save_profiles(self) -> None:
         """User-triggered manual save — opens a file dialog and saves the full state.
@@ -1634,6 +1652,7 @@ class SystemMonitorApp:
         try:
             payload = ConfigSerializer.load_file(path)
             ConfigSerializer.apply_loaded(self.runtime.state, payload)
+            self._refresh_last_saved_profile_hash()
             self._sync_ui_from_state()
             self._restart_global_listener()
             if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
