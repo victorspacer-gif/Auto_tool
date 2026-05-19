@@ -1449,14 +1449,7 @@ class SystemMonitorApp:
             self.runtime.state.character_name = identity.character_name
             self.runtime.state.character_name_normalized = identity.normalized_name
             self.current_character_profile_path = str(profile_path)
-            self._refresh_last_saved_profile_hash()
-            self._sync_ui_from_state()
-            self._restart_global_listener()
-            if (self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region
-                    or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region):
-                self.char_status_service.restart_if_needed()
-            else:
-                self.char_status_service.stop()
+            self._apply_loaded_runtime_state()
             self.runtime.ui.set_status(f"Perfil carregado para {identity.character_name}", GREEN)
             self.runtime.ui.log(f"📂 Character profile loaded: {profile_path}")
             return f"character={identity.character_name}"
@@ -1652,18 +1645,49 @@ class SystemMonitorApp:
         try:
             payload = ConfigSerializer.load_file(path)
             ConfigSerializer.apply_loaded(self.runtime.state, payload)
-            self._refresh_last_saved_profile_hash()
-            self._sync_ui_from_state()
-            self._restart_global_listener()
-            if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
-                self.char_status_service.restart_if_needed()
-            else:
-                self.char_status_service.stop()
+            self._apply_loaded_runtime_state()
             self.runtime.ui.log(f"📂 Loaded: {path}")
             self.runtime.ui.log("✅ Config applied")
             self.runtime.ui.set_status("Config loaded", GREEN)
         except Exception as exc:
             self.runtime.ui.log(f"❌ Load failed: {exc}")
+
+    def _apply_loaded_runtime_state(self) -> None:
+        self._refresh_last_saved_profile_hash()
+        self._sync_ui_from_state()
+        self._restart_global_listener()
+        if (self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region
+                or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region):
+            self.char_status_service.restart_if_needed()
+        else:
+            self.char_status_service.stop()
+        self._reapply_light_freeze_from_state()
+
+    def _reapply_light_freeze_from_state(self) -> None:
+        enabled = bool(self.runtime.state.light_freeze_enabled)
+        controller = getattr(self.light_service, "controller", None)
+
+        if not enabled:
+            self.light_service.stop_freeze()
+            self._refresh_module_indicator("light", False)
+            return
+
+        if controller is None:
+            self._refresh_module_indicator("light", False)
+            return
+
+        ok, message = self.light_service.start_freeze()
+        if not ok:
+            self.runtime.state.light_freeze_enabled = False
+            if "light_freeze_enabled_var" in self.ui_vars:
+                self.ui_vars["light_freeze_enabled_var"].set(False)
+            self._refresh_module_indicator("light", False)
+            self._set_light_status(False, message)
+            self.runtime.ui.log(f"❌ {message}")
+            return
+
+        self._refresh_module_indicator("light", True)
+        self._set_light_status(True, message)
 
     def _sync_ui_from_state(self) -> None:
         state = self.runtime.state

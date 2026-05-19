@@ -100,3 +100,66 @@ def test_save_current_character_profile_skips_disk_write_when_state_is_unchanged
 
     assert saved is False
     assert called["count"] == 0
+
+
+def test_load_attached_profile_reapplies_light_freeze_when_enabled(monkeypatch):
+    app = object.__new__(SystemMonitorApp)
+    app.runtime = SimpleNamespace(
+        state=AppState(),
+        ui=SimpleNamespace(log=lambda _msg: None, set_status=lambda _msg, _color: None),
+    )
+    app.ui_vars = {}
+    app.current_character_profile_path = None
+    app.light_service = SimpleNamespace(
+        controller=SimpleNamespace(pid=1234),
+        start_freeze=lambda: (True, "Light freeze enabled."),
+        stop_freeze=lambda: None,
+    )
+    app.char_status_service = SimpleNamespace(restart_if_needed=lambda: None, stop=lambda: None)
+    app._refresh_module_indicator = lambda _module, _enabled: None
+    app._set_light_status = lambda _ok, _message: None
+    app._sync_ui_from_state = lambda: None
+    app._restart_global_listener = lambda: None
+    app._refresh_last_saved_profile_hash = lambda: None
+
+    start_calls = {"count": 0}
+
+    def fake_start_freeze():
+        start_calls["count"] += 1
+        return True, "Light freeze enabled."
+
+    app.light_service.start_freeze = fake_start_freeze
+
+    monkeypatch.setattr("systool.app.get_window_title_for_pid", lambda _pid: "Miracle 7.4 - Sir Test")
+    monkeypatch.setattr("systool.app.get_window_rect_for_pid", lambda _pid: (100, 200, 800, 600))
+    monkeypatch.setattr(
+        "systool.app.build_identity",
+        lambda _process_name, _window_title: SimpleNamespace(
+            process_name="miracle_gl.exe",
+            window_title="Miracle 7.4 - Sir Test",
+            character_name="Sir Test",
+            normalized_name="Sir_Test",
+        ),
+    )
+    monkeypatch.setattr("systool.app.find_latest_profile_for", lambda _name: Path("/tmp/autosave_Sir_Test.json"))
+    monkeypatch.setattr(
+        "systool.app.load_character_profile",
+        lambda _path: {
+            "cfg": {"light_freeze_enabled": True},
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "char_status_region": None,
+            "char_status_hp_region": None,
+            "char_status_mana_region": None,
+            "char_status_cap_region": None,
+            "hotkeys": {},
+        },
+    )
+    monkeypatch.setattr("systool.app.remap_ocr_regions_from_profile", lambda _payload, _window_rect: {})
+
+    message = SystemMonitorApp._load_or_create_attached_character_profile(app)
+
+    assert message == "character=Sir Test"
+    assert app.runtime.state.light_freeze_enabled is True
+    assert start_calls["count"] == 1
