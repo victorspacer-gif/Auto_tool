@@ -5,6 +5,7 @@ import random
 import sys
 import threading
 import time
+from types import SimpleNamespace
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -242,6 +243,33 @@ class TestFoodTimerParsing:
 
 
 class TestCharacterStatusExtraction:
+    def test_extract_values_from_text_subset_does_not_raise_key_error(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+        fake_cv2 = SimpleNamespace(
+            resize=MagicMock(return_value=MagicMock()),
+            cvtColor=MagicMock(return_value=MagicMock()),
+            GaussianBlur=MagicMock(return_value=MagicMock()),
+            threshold=MagicMock(return_value=(None, MagicMock())),
+            bitwise_not=MagicMock(return_value=MagicMock()),
+            adaptiveThreshold=MagicMock(return_value=MagicMock()),
+            INTER_CUBIC=1,
+            COLOR_BGR2GRAY=2,
+            THRESH_BINARY=3,
+            THRESH_OTSU=4,
+            ADAPTIVE_THRESH_GAUSSIAN_C=5,
+        )
+        fake_tesseract = SimpleNamespace(
+            image_to_string=MagicMock(return_value="Level 8"),
+        )
+
+        with patch("systool.services.monitoring.cv2", fake_cv2), \
+             patch("systool.services.monitoring.pytesseract", fake_tesseract):
+            values = service._extract_values_from_text(frame, required_keys={"level", "hp"})
+
+        assert values["level"] == 8
+        assert "hp" in values
+
     def test_extract_values_prefers_roi_before_full_text(self):
         service = CharacterStatusService(runtime=MagicMock())
         frame = MagicMock()

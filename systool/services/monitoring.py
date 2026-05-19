@@ -1235,6 +1235,8 @@ class CharacterStatusService:
             text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
             normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
             for key, patterns in field_patterns.items():
+                if key not in values:
+                    continue
                 if values[key] is not None:
                     continue
                 for pattern in patterns:
