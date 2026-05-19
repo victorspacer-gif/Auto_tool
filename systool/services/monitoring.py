@@ -958,31 +958,13 @@ class CharacterStatusService:
                         mana_region = state.char_status_mana_region
                         cap_region = state.char_status_cap_region
                         poll_ms = max(CHAR_STATUS_POLL_MS_MIN, state.char_status_poll_ms)
-                        sample_count = max(1, state.char_status_samples)
-                        sample_delay_ms = max(0, state.char_status_sample_delay_ms)
                     if not region and not all([hp_region, mana_region, cap_region]):
                         break
                     try:
                         samples = []
-                        field_regions = {
-                            "hp": hp_region,
-                            "mana": mana_region,
-                            "cap": cap_region,
-                        }
-                        for sample_index in range(sample_count):
+                        for _ in range(state.char_status_samples):
                             parsed_sample: dict[str, int | None] = {}
-                            if all(field_regions.values()):
-                                parsed_sample.update(
-                                    self._extract_values_from_regions(
-                                        sct,
-                                        field_regions,
-                                    )
-                                )
                             if region:
-                                required_keys = {"level", "food_seconds", "food_text"}
-                                for key in ("hp", "mana", "cap"):
-                                    if field_regions[key] is None:
-                                        required_keys.add(key)
                                 monitor = {
                                     "left": region[0],  # x-coordinate (index 0)
                                     "top": region[1],   # y-coordinate (index 1)
@@ -991,17 +973,22 @@ class CharacterStatusService:
                                     "mon": 1,           # Monitor index: primary display
                                 }
                                 frame = np.array(sct.grab(monitor))[:, :, :3]
+                                parsed_sample = self._extract_values(frame)
+                            if all([hp_region, mana_region, cap_region]):
                                 parsed_sample.update(
-                                    self._extract_values(
-                                        frame,
-                                        required_keys=required_keys,
-                                        existing_values=parsed_sample,
+                                    self._extract_values_from_regions(
+                                        sct,
+                                        {
+                                            "hp": hp_region,
+                                            "mana": mana_region,
+                                            "cap": cap_region,
+                                        },
                                     )
                                 )
                             samples.append(parsed_sample)
-                            if sample_index < sample_count - 1:
+                            if _ < state.char_status_samples - 1:
                                 # Convert ms sample delay to seconds for time.sleep() (seconds)
-                                time.sleep(sample_delay_ms / 1000.0)
+                                time.sleep(state.char_status_sample_delay_ms / 1000.0)
                         parsed = self._aggregate_samples(samples)
                     except pytesseract.TesseractNotFoundError:
                         with self.runtime.settings_lock:
@@ -1098,39 +1085,28 @@ class CharacterStatusService:
 
         return values
 
-    def _extract_values(
-        self,
-        frame,
-        required_keys: set[str] | None = None,
-        existing_values: dict[str, int | None | str] | None = None,
-    ) -> dict[str, int | None | str]:
-        values: dict[str, int | None | str] = dict(existing_values or {})
-        needed = set(required_keys or {"level", "hp", "mana", "cap", "food_seconds", "food_text"})
-
-        for key in ("hp", "mana", "cap"):
-            if key not in needed or values.get(key) is not None:
+    def _extract_values(self, frame) -> dict[str, int | None]:
+        values: dict[str, int | None] = self._extract_values_from_text(frame)
+        for key, boxes in self.ROI_MAP.items():
+            if key == "food":
+                # Food is handled separately via ROI crop + regex (not _ocr_digits)
                 continue
-            for box in self.ROI_MAP[key]:
+            if values.get(key) is not None:
+                continue
+            for box in boxes:
                 crop = self._crop(frame, box)
                 value = self._ocr_digits(crop, key)
                 if value is not None:
                     values[key] = value
                     break
-
-        if "food_seconds" in needed and values.get("food_seconds") is None:
-            food_values = self._extract_food_from_roi(frame)
-            if food_values.get("food_seconds") is not None:
-                values["food_seconds"] = food_values["food_seconds"]
-                values["food_text"] = food_values["food_text"]
-
-        text_needed = {
-            key
-            for key in ("level", "hp", "mana", "cap")
-            if key in needed and values.get(key) is None
-        }
-        if text_needed:
-            values.update(self._extract_values_from_text(frame, required_keys=text_needed))
-
+        # Extract food from ROI (separate path — cropped region + regex)
+        food_values = self._extract_food_from_roi(frame)
+        # Only distribute food fields when they are consistent together.
+        # _parse_food_seconds can return None even when OCR succeeds,
+        # so we must not set food_text if food_seconds is None (and vice versa).
+        if food_values.get("food_seconds") is not None:
+            values["food_seconds"] = food_values["food_seconds"]
+            values["food_text"] = food_values["food_text"]
         return values if any(value is not None for value in values.values()) else {}
 
     def _extract_values_from_regions(self, sct, regions: dict[str, tuple[int, int, int, int]]) -> dict[str, int | None]:
@@ -1203,26 +1179,27 @@ class CharacterStatusService:
                     aggregated[key] = Counter(text_values).most_common(1)[0][0]
         return aggregated
 
-    def _extract_values_from_text(self, frame, required_keys: set[str] | None = None) -> dict[str, int | None | str]:
+    def _extract_values_from_text(self, frame) -> dict[str, int | None | str]:
         values: dict[str, int | None] = {
             "level": None,
             "hp": None,
             "mana": None,
             "cap": None,
         }
-        if required_keys is not None:
-            values = {key: None for key in values if key in required_keys}
-            if not values:
-                return {}
         # Enlarge frame 3x to improve OCR accuracy on small text regions
         enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
         # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        # Start with the fastest high-signal variants. Adaptive fallback is only
-        # attempted if the simpler binary pass leaves fields unresolved.
+        variants = []
+        # OTSU threshold: auto-computes optimal binarization; output max value is 255
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        variants = [binary, cv2.bitwise_not(binary)]
+        variants.append(binary)
+        variants.append(cv2.bitwise_not(binary))
+        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
+        adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
+        variants.append(adaptive)
+        variants.append(cv2.bitwise_not(adaptive))
         # Regex patterns for extracting stat values from OCR text output (field → list of patterns)
         field_patterns = {
             "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],  # English or localized "level/levele/l evel"
@@ -1230,13 +1207,10 @@ class CharacterStatusService:
             "mana": [r"mana\s+(\d+)"],  # Simple "mana <number>" pattern
             "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],  # "capacity/capacity" variants
         }
-        adaptive = None
-        for variant_index, image_variant in enumerate(variants):
+        for image_variant in variants:
             text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
             normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
             for key, patterns in field_patterns.items():
-                if key not in values:
-                    continue
                 if values[key] is not None:
                     continue
                 for pattern in patterns:
@@ -1245,18 +1219,6 @@ class CharacterStatusService:
                         continue
                     values[key] = int(match.group(1))
                     break
-            if all(value is not None for value in values.values()):
-                break
-            if variant_index == len(variants) - 1 and any(value is None for value in values.values()):
-                adaptive = cv2.adaptiveThreshold(
-                    gray,
-                    255,
-                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                    cv2.THRESH_BINARY,
-                    31,
-                    7,
-                )
-                variants.extend([adaptive, cv2.bitwise_not(adaptive)])
         return values
 
     @staticmethod
@@ -1307,7 +1269,12 @@ class CharacterStatusService:
         gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
         # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        variants = []
+        # OTSU threshold: auto-computes optimal binarization; output max value is 255
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(binary)
+        variants.append(cv2.bitwise_not(binary))
+        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
         adaptive = cv2.adaptiveThreshold(
             gray,
             255,
@@ -1316,34 +1283,28 @@ class CharacterStatusService:
             31,
             7,
         )
-        # Keep the attempt list short: this is the hottest OCR path in the app.
-        if key in {"hp", "mana"}:
-            attempts = [
-                (binary, "7"),
-                (cv2.bitwise_not(binary), "7"),
-                (adaptive, "8"),
-            ]
-        else:
-            attempts = [
-                (binary, "7"),
-                (binary, "6"),
-                (cv2.bitwise_not(binary), "7"),
-                (adaptive, "6"),
-            ]
+        variants.append(adaptive)
+        variants.append(cv2.bitwise_not(adaptive))
+        # Morphology closing kernel: 2x2 to connect nearby pixel fragments (odd not required for MORPH_CLOSE)
+        kernel = np.ones((2, 2), np.uint8)
+        variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
+        # HP/Mana use PSM 7+8 (single column); Cap adds PSM 6 (uniform digits) for broader coverage
+        psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6", "8"]
         best_digits = ""
-        for image_variant, psm in attempts:
-            config = f"--psm {psm} -c tessedit_char_whitelist=0123456789"
-            text = pytesseract.image_to_string(image_variant, config=config)
-            groups = [group for group in re.findall(r"\d+", text) if group]
-            # HP/Mana require ≥2 digits (single-digit is noise); Cap accepts ≥1 digit
-            if groups:
-                candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
-                if len(candidate) > len(best_digits):
-                    best_digits = candidate
-                if key in {"hp", "mana"} and len(candidate) >= 2:
-                    return int(candidate)
-                if key == "cap" and len(candidate) >= 1:
-                    return int(candidate)
+        for image_variant in variants:
+            for psm in psm_modes:
+                config = f"--psm {psm} -c tessedit_char_whitelist=0123456789"
+                text = pytesseract.image_to_string(image_variant, config=config)
+                groups = [group for group in re.findall(r"\d+", text) if group]
+                # HP/Mana require ≥2 digits (single-digit is noise); Cap accepts ≥1 digit
+                if groups:
+                    candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
+                    if len(candidate) > len(best_digits):
+                        best_digits = candidate
+                    if key in {"hp", "mana"} and len(candidate) >= 2:
+                        return int(candidate)
+                    if key == "cap" and len(candidate) >= 1:
+                        return int(candidate)
         if best_digits:
             return int(best_digits)
         return None
