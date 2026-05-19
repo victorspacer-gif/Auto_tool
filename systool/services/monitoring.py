@@ -1112,11 +1112,8 @@ class CharacterStatusService:
             return cached, {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
 
         tasks = {
-            "level": self._ocr_level,
             "hp": lambda fr: self._ocr_digits(fr, "hp"),
             "mana": lambda fr: self._ocr_digits(fr, "mana"),
-            "cap": lambda fr: self._ocr_digits(fr, "cap"),
-            "food": self._extract_food_from_roi,
         }
         futures = {
             key: self._ocr_pool.submit(func, frame)
@@ -1133,26 +1130,29 @@ class CharacterStatusService:
         perf = {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
         for key, future in futures.items():
             result = future.result()
-            if key == "food":
-                values["food_seconds"] = result["value"]
-                values["food_text"] = result.get("text", "") if result["value"] is not None else ""
-            else:
-                values[key] = result["value"]
+            values[key] = result["value"]
             perf["preprocess_ms"] += result["preprocess_ms"]
             perf["ocr_ms"] += result["ocr_ms"]
             if result["confidence"] > 0:
                 perf["confidences"].append(result["confidence"])
 
-        missing_text_keys = {key for key in ("level", "hp", "mana", "cap") if values.get(key) is None}
-        if missing_text_keys:
-            fallback = self._extract_values_from_text(frame, required_keys=missing_text_keys)
-            for key, value in fallback["values"].items():
-                if value is not None:
-                    values[key] = value
-            perf["preprocess_ms"] += fallback["preprocess_ms"]
-            perf["ocr_ms"] += fallback["ocr_ms"]
-            if fallback["confidence"] > 0:
-                perf["confidences"].append(fallback["confidence"])
+        context_keys = {"level", "cap", "food_seconds", "food_text"}
+        if values.get("hp") is None:
+            context_keys.add("hp")
+        if values.get("mana") is None:
+            context_keys.add("mana")
+        contextual = self._extract_contextual_stats(frame, required_keys=context_keys)
+        for key, value in contextual["values"].items():
+            if key in {"level", "cap", "food_seconds"} and value is not None:
+                values[key] = value
+            elif key == "food_text" and contextual["values"].get("food_seconds") is not None:
+                values[key] = value
+            elif key in {"hp", "mana"} and values.get(key) is None and value is not None:
+                values[key] = value
+        perf["preprocess_ms"] += contextual["preprocess_ms"]
+        perf["ocr_ms"] += contextual["ocr_ms"]
+        if contextual["confidence"] > 0:
+            perf["confidences"].append(contextual["confidence"])
 
         final_values = values if any(value is not None for value in values.values()) else {}
         if final_values:
@@ -1161,7 +1161,7 @@ class CharacterStatusService:
 
     def _extract_values_from_regions(self, region_frames: dict[str, object]) -> tuple[dict[str, int | None], dict[str, float | list[float]]]:
         futures = {
-            key: self._ocr_pool.submit(self._ocr_digits, frame, key)
+            key: self._ocr_pool.submit(self._ocr_cap_region if key == "cap" else self._ocr_digits, frame, key)
             for key, frame in region_frames.items()
         }
         values: dict[str, int | None] = {}
@@ -1245,10 +1245,11 @@ class CharacterStatusService:
             "ocr_ms": ocr_ms,
         }
 
-    def _extract_values_from_text(self, frame, required_keys: set[str]) -> dict[str, object]:
-        started = time.perf_counter()
+    def _extract_contextual_stats(self, frame, required_keys: set[str]) -> dict[str, object]:
         variants, preprocess_ms = self._build_variants(frame, key="window_text", upscale=2)
-        values: dict[str, int | None] = {key: None for key in required_keys}
+        values: dict[str, int | str | None] = {key: None for key in required_keys}
+        if "food_text" in required_keys:
+            values["food_text"] = ""
         field_patterns = {
             "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],
             "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],
@@ -1269,6 +1270,8 @@ class CharacterStatusService:
             normalized = re.sub(r"[^a-z0-9:\n ]+", " ", read.text.lower())
             best_confidence = max(best_confidence, read.confidence)
             for key in required_keys:
+                if key in {"food_seconds", "food_text"}:
+                    continue
                 if values[key] is not None:
                     continue
                 for pattern in field_patterns[key]:
@@ -1276,15 +1279,35 @@ class CharacterStatusService:
                     if match:
                         values[key] = int(match.group(1))
                         break
+            if "food_seconds" in required_keys and values.get("food_seconds") is None:
+                match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
+                if match:
+                    food_text = match.group(1)
+                    food_seconds = CharacterStatusService._parse_food_seconds(food_text)
+                    if food_seconds is not None:
+                        values["food_seconds"] = food_seconds
+                        if "food_text" in values:
+                            values["food_text"] = food_text
             if all(value is not None for value in values.values()):
                 break
-        _ = started
         return {
             "values": values,
             "preprocess_ms": preprocess_ms,
             "ocr_ms": ocr_ms,
             "confidence": best_confidence,
         }
+
+    def _ocr_cap_region(self, crop, key: str) -> dict[str, float | int | None]:
+        contextual = self._extract_contextual_stats(crop, required_keys={"cap"})
+        cap_value = contextual["values"].get("cap")
+        if cap_value is not None:
+            return {
+                "value": cap_value,
+                "confidence": contextual["confidence"],
+                "preprocess_ms": contextual["preprocess_ms"],
+                "ocr_ms": contextual["ocr_ms"],
+            }
+        return self._ocr_digits(crop, key)
 
     def _update_regen(self, state) -> None:
         now = time.monotonic()
@@ -1388,8 +1411,6 @@ class CharacterStatusService:
         gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY) if len(enlarged.shape) == 3 else enlarged
         gray = cv2.fastNlMeansDenoising(gray, None, h=7, templateWindowSize=7, searchWindowSize=21)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        if key in {"level", "window_text"}:
-            gray = self._deskew(gray)
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         adaptive = cv2.adaptiveThreshold(
             gray,
@@ -1404,19 +1425,6 @@ class CharacterStatusService:
             kernel = np.ones((2, 2), np.uint8)
             variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
         return variants, (time.perf_counter() - started) * 1000.0
-
-    def _deskew(self, gray):
-        coords = np.column_stack(np.where(gray < 200))
-        if coords.size == 0:
-            return gray
-        angle = cv2.minAreaRect(coords)[-1]
-        if angle < -45:
-            angle = 90 + angle
-        if abs(angle) < 0.5:
-            return gray
-        h, w = gray.shape[:2]
-        matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
-        return cv2.warpAffine(gray, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
     def _ocr_digits(self, crop, key: str) -> dict[str, float | int | None]:
         scale = 3 if key == "cap" else 2
