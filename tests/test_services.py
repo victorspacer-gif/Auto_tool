@@ -240,6 +240,50 @@ class TestFoodTimerParsing:
         # release_all pops in reverse order and calls release on each
         assert mock_keyboard.release.call_count == 2
 
+
+class TestCharacterStatusPerf:
+    def test_cached_result_reuses_previous_values(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+
+        with patch.object(service, "_frame_signature", return_value=b"same"):
+            service._store_cached_result("window", frame, {"hp": 123})
+            cached = service._get_cached_result("window", frame)
+
+        assert cached == {"hp": 123}
+        assert service._perf_snapshot["cache_hits"] == 1
+
+    def test_extract_values_returns_cached_path_without_ocr_work(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+
+        with patch.object(service, "_frame_signature", return_value=b"same"):
+            service._store_cached_result("window", frame, {"mana": 45})
+            values, perf = service._extract_values(frame, cache_key="window")
+
+        assert values == {"mana": 45}
+        assert perf["preprocess_ms"] == 0.0
+        assert perf["ocr_ms"] == 0.0
+
+    def test_perf_summary_reports_backend_and_cycle(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        service._perf_snapshot.update({
+            "backend": "tesserocr",
+            "cycle_ms": 123.4,
+            "capture_ms": 10.0,
+            "preprocess_ms": 15.0,
+            "ocr_ms": 20.0,
+            "cache_hits": 3,
+            "cache_misses": 1,
+            "confidence": 0.87,
+        })
+
+        summary = service.get_perf_summary()
+
+        assert "backend=tesserocr" in summary
+        assert "cycle=123.4ms" in summary
+        assert "cache=3/4" in summary
+
     def test_release_lifo_order(self):
         """release_all should pop keys in LIFO (last-in-first-out) order."""
         mock_keyboard = MagicMock()

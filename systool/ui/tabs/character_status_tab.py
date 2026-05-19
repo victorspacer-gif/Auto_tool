@@ -226,7 +226,10 @@ class CharacterStatusTab:
             if state.char_status_last_seen:
                 seen = time.strftime("%H:%M:%S", time.localtime(state.char_status_last_seen))
                 peak_text = f"  |  HP max: {state.char_status_hp_peak}" if state.char_status_hp_peak else ""
-                self.char_status_seen_label.config(text=f"Last update: {seen}  |  Reads: {state.char_status_reads}  |  Misses: {state.char_status_failures}{peak_text}")
+                perf_text = self.services["char_status_service"].get_perf_summary()
+                self.char_status_seen_label.config(
+                    text=f"Last update: {seen}  |  Reads: {state.char_status_reads}  |  Misses: {state.char_status_failures}{peak_text}\n{perf_text}"
+                )
             else:
                 self.char_status_seen_label.config(text="Last update: —")
         if self.char_status_error_label:

@@ -8,5 +8,6 @@ pygame-ce>=2.5.7
 pyautogui 
 opencv-python
 pytesseract
+tesserocr
 psutil
 pymem
