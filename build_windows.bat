@@ -92,7 +92,7 @@ if not errorlevel 1 (
 
 echo [3/6] Checking runtime and build dependencies...
 if "%FORCE_DEPS%"=="1" goto install_deps
-py -c "import importlib.util, sys; mods=['PyInstaller','pynput','win32api','pystray','PIL','mss','numpy','pygame','pyautogui','pytesseract','psutil','pymem','cv2']; missing=[m for m in mods if importlib.util.find_spec(m) is None]; print('Dependencies already installed.' if not missing else 'Missing modules: ' + ', '.join(missing)); sys.exit(0 if not missing else 1)"
+py -c "import importlib.util, sys; mods=['PyInstaller','pynput','win32api','pystray','PIL','mss','numpy','pygame','pyautogui','pytesseract','psutil','pymem','cv2','cysignals','tesserocr']; missing=[m for m in mods if importlib.util.find_spec(m) is None]; print('Dependencies already installed.' if not missing else 'Missing modules: ' + ', '.join(missing)); sys.exit(0 if not missing else 1)"
 if not errorlevel 1 goto deps_done
 
 :install_deps
@@ -102,7 +102,24 @@ if "%UPGRADE_PIP%"=="1" (
     if errorlevel 1 exit /b 1
 )
 echo Installing missing dependencies...
-py -m pip install -r requirements.txt pyinstaller
+py -m pip install -r requirements.txt pyinstaller cysignals
+if errorlevel 1 exit /b 1
+
+set "TESSEROCR_WHEEL="
+for %%F in ("vendor\python-wheels\tesserocr-*-cp312-cp312-win_amd64.whl") do (
+    if exist "%%~fF" (
+        set "TESSEROCR_WHEEL=%%~fF"
+        goto install_tesserocr_wheel
+    )
+)
+echo WARNING: No bundled tesserocr cp312 wheel was found in vendor\python-wheels.
+echo          The build will continue, but OCR will fall back to pytesseract unless tesserocr is installed manually.
+goto deps_done
+
+:install_tesserocr_wheel
+echo Installing bundled tesserocr wheel:
+echo   %TESSEROCR_WHEEL%
+py -m pip install --upgrade "%TESSEROCR_WHEEL%"
 if errorlevel 1 exit /b 1
 
 :deps_done
