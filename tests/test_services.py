@@ -240,6 +240,39 @@ class TestFoodTimerParsing:
         # release_all pops in reverse order and calls release on each
         assert mock_keyboard.release.call_count == 2
 
+
+class TestCharacterStatusExtraction:
+    def test_extract_values_prefers_roi_before_full_text(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+
+        with patch.object(service, "_crop", return_value=MagicMock(size=1)), \
+             patch.object(service, "_ocr_digits", side_effect=[111, 222, 333]) as ocr_digits, \
+             patch.object(service, "_extract_food_from_roi", return_value={"food_seconds": None, "food_text": ""}), \
+             patch.object(service, "_extract_values_from_text") as extract_text:
+            values = service._extract_values(frame, required_keys={"hp", "mana", "cap"})
+
+        assert values["hp"] == 111
+        assert values["mana"] == 222
+        assert values["cap"] == 333
+        assert ocr_digits.call_count == 3
+        extract_text.assert_not_called()
+
+    def test_extract_values_uses_full_text_only_for_missing_fields(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+
+        with patch.object(service, "_crop", return_value=MagicMock(size=1)), \
+             patch.object(service, "_ocr_digits", side_effect=[111, None, None, 333]), \
+             patch.object(service, "_extract_food_from_roi", return_value={"food_seconds": None, "food_text": ""}), \
+             patch.object(service, "_extract_values_from_text", return_value={"mana": 222}) as extract_text:
+            values = service._extract_values(frame, required_keys={"hp", "mana", "cap"})
+
+        assert values["hp"] == 111
+        assert values["mana"] == 222
+        assert values["cap"] == 333
+        extract_text.assert_called_once_with(frame, required_keys={"mana"})
+
     def test_release_lifo_order(self):
         """release_all should pop keys in LIFO (last-in-first-out) order."""
         mock_keyboard = MagicMock()
