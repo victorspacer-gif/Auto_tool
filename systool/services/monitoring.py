@@ -47,6 +47,7 @@ from ..runtime import (
     NUMPY_IMPORT_ERROR,
     TESSERACT_IMPORT_ERROR,
     create_ocr_engine,
+    describe_ocr_environment,
     cv2,
     mss,
     np,
@@ -935,6 +936,9 @@ class CharacterStatusService:
             f"cache={int(snapshot.get('cache_hits', 0))}/{int(snapshot.get('cache_hits', 0)) + int(snapshot.get('cache_misses', 0)) if int(snapshot.get('cache_hits', 0)) + int(snapshot.get('cache_misses', 0)) else 0} "
             f"conf={snapshot.get('confidence', 0.0):.2f}"
         )
+
+    def get_backend_diagnostic(self) -> str:
+        return describe_ocr_environment()
 
     def start(self) -> None:
         state = self.runtime.state

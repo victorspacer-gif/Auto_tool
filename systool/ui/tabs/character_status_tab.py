@@ -193,16 +193,17 @@ class CharacterStatusTab:
         self._refresh_region_label(self.char_status_cap_region_label, "Cap area", state.char_status_cap_region)
         if self.char_status_tesseract_label:
             dependency_error = self.services["char_status_service"].get_dependency_error()
+            backend_diag = self.services["char_status_service"].get_backend_diagnostic()
             if dependency_error == "Tesseract executable not found":
                 self.char_status_tesseract_label.config(
-                    text="Tesseract: not found automatically. Set the full path to tesseract.exe here.",
+                    text=f"Tesseract: not found automatically. Set the full path to tesseract.exe here.\n{backend_diag}",
                     fg=ORANGE,
                 )
             elif dependency_error:
-                self.char_status_tesseract_label.config(text=f"Tesseract: {dependency_error}", fg=ORANGE)
+                self.char_status_tesseract_label.config(text=f"Tesseract: {dependency_error}\n{backend_diag}", fg=ORANGE)
             else:
                 active_path = self.runtime.state.char_status_tesseract_path.strip() or "auto-detected"
-                self.char_status_tesseract_label.config(text=f"Tesseract: ready ({active_path})", fg=TEAL)
+                self.char_status_tesseract_label.config(text=f"Tesseract: ready ({active_path})\n{backend_diag}", fg=TEAL)
         if self.char_status_watch_label:
             watch_text = "Watcher: active" if state.char_status_active else "Watcher: idle"
             watch_color = GREEN if state.char_status_active else ORANGE

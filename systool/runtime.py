@@ -515,3 +515,16 @@ def create_ocr_engine(explicit_path: str = "") -> TesseractOCREngine:
         detail = " | ".join(parts) if parts else "no backend imports succeeded"
         raise RuntimeError(f"OCR engine unavailable: {detail}")
     return TesseractOCREngine(tesseract_cmd)
+
+
+def describe_ocr_environment() -> str:
+    parts = [f"Python {sys.version.split()[0]}"]
+    if HAS_TESSEROCR:
+        parts.append("tesserocr=ready")
+    else:
+        parts.append(f"tesserocr=missing ({TESSEROCR_IMPORT_ERROR or 'not installed'})")
+    if HAS_PYTESSERACT:
+        parts.append("pytesseract=ready")
+    else:
+        parts.append(f"pytesseract=missing ({TESSERACT_IMPORT_ERROR or 'not installed'})")
+    return " | ".join(parts)
