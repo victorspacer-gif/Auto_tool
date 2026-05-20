@@ -38,6 +38,7 @@ set "CLEAN_BUILD=0"
 set "FORCE_DEPS=0"
 set "UPGRADE_PIP=0"
 set "OPEN_DIST=1"
+set "PYTHON_EXE=py -3.12-64"
 
 if "%~1"=="" goto show_menu
 
@@ -81,6 +82,12 @@ if errorlevel 1 (
     echo Python launcher ^("py"^) was not found. Install Python for Windows first.
     exit /b 1
 )
+%PYTHON_EXE% -c "import platform, sys; ok=sys.version_info[:2] == (3, 12) and platform.architecture()[0] == '64bit'; print(f'Using Python {sys.version.split()[0]} {platform.architecture()[0]} at {sys.executable}'); sys.exit(0 if ok else 1)"
+if errorlevel 1 (
+    echo This build requires 64-bit Python 3.12 because the bundled tesserocr/cysignals wheels are cp312-win_amd64.
+    echo Install Python 3.12 x64 from python.org, then rerun this script.
+    exit /b 1
+)
 
 echo [2/6] Checking for running SystemMonitor instances...
 tasklist /FI "IMAGENAME eq SystemMonitor.exe" | find /I "SystemMonitor.exe" >nul
@@ -92,17 +99,17 @@ if not errorlevel 1 (
 
 echo [3/6] Checking runtime and build dependencies...
 if "%FORCE_DEPS%"=="1" goto install_deps
-py -c "import importlib.util, sys; mods=['PyInstaller','pynput','win32api','pystray','PIL','mss','numpy','pygame','pyautogui','pytesseract','psutil','pymem','cv2','cysignals','tesserocr']; missing=[m for m in mods if importlib.util.find_spec(m) is None]; print('Dependencies already installed.' if not missing else 'Missing modules: ' + ', '.join(missing)); sys.exit(0 if not missing else 1)"
+%PYTHON_EXE% -c "import importlib.util, sys; mods=['PyInstaller','pynput','win32api','pystray','PIL','mss','numpy','pygame','pyautogui','pytesseract','psutil','pymem','cv2','cysignals','tesserocr']; missing=[m for m in mods if importlib.util.find_spec(m) is None]; print('Dependencies already installed.' if not missing else 'Missing modules: ' + ', '.join(missing)); sys.exit(0 if not missing else 1)"
 if not errorlevel 1 goto deps_done
 
 :install_deps
 if "%UPGRADE_PIP%"=="1" (
     echo Upgrading pip...
-    py -m pip install --upgrade pip
+    %PYTHON_EXE% -m pip install --upgrade pip
     if errorlevel 1 exit /b 1
 )
 echo Installing missing dependencies...
-py -m pip install --upgrade --find-links "vendor\python-wheels" --prefer-binary --only-binary=tesserocr,cysignals -r requirements.txt pyinstaller pyinstaller-hooks-contrib
+%PYTHON_EXE% -m pip install --upgrade --find-links "vendor\python-wheels" --prefer-binary --only-binary=tesserocr,cysignals -r requirements.txt pyinstaller pyinstaller-hooks-contrib
 if errorlevel 1 exit /b 1
 
 set "CYSIGNALS_WHEEL="
@@ -119,13 +126,13 @@ goto install_cysignals_pip
 :install_cysignals_wheel
 echo Installing bundled cysignals wheel:
 echo   %CYSIGNALS_WHEEL%
-py -m pip install --upgrade "%CYSIGNALS_WHEEL%"
+%PYTHON_EXE% -m pip install --upgrade "%CYSIGNALS_WHEEL%"
 if errorlevel 1 exit /b 1
 goto install_tesserocr
 
 :install_cysignals_pip
 echo Installing cysignals from pip...
-py -m pip install --upgrade cysignals
+%PYTHON_EXE% -m pip install --upgrade cysignals
 if errorlevel 1 exit /b 1
 
 :install_tesserocr
@@ -143,7 +150,7 @@ goto deps_done
 :install_tesserocr_wheel
 echo Installing bundled tesserocr wheel:
 echo   %TESSEROCR_WHEEL%
-py -m pip install --upgrade "%TESSEROCR_WHEEL%"
+%PYTHON_EXE% -m pip install --upgrade "%TESSEROCR_WHEEL%"
 if errorlevel 1 exit /b 1
 
 :deps_done
@@ -174,7 +181,7 @@ if errorlevel 8 exit /b 1
 echo [6/6] Building executable with PyInstaller...
 set "PYINSTALLER_FLAGS=--noconfirm"
 if "%CLEAN_BUILD%"=="1" set "PYINSTALLER_FLAGS=%PYINSTALLER_FLAGS% --clean"
-py -m PyInstaller %PYINSTALLER_FLAGS% "SystemMonitor.spec"
+%PYTHON_EXE% -m PyInstaller %PYINSTALLER_FLAGS% "SystemMonitor.spec"
 if errorlevel 1 exit /b 1
 
 REM Remove stray bootloader exe (COLLECT output has the correct bundled version)
