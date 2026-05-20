@@ -77,21 +77,22 @@ def _collect_package(pkg_name):
             return
         for fname in sorted(entries):
             fpath = os.path.join(directory, fname)
-            if fname.endswith((".pyd", ".so", ".dll")):
+            if fname.endswith((".pyd", ".so")):
                 # Strip platform tag for the base module name.
                 # e.g. tesserocr.cp312-win_amd64.pyd -> tesserocr
                 mod_name = fname.rsplit(".", 1)[0]
+                tag_suffix = f".{_platform_tag}"
+                if mod_name.endswith(tag_suffix):
+                    mod_name = mod_name[: -len(tag_suffix)]
                 base_name = f"{dotted_name}.{mod_name}"
-                tagged_name = f"{base_name}.{_platform_tag}"
 
-                # Add BOTH names so PyInstaller's binary scanner
-                # (which reads PE import tables with the tagged name)
-                # can resolve them.
                 hiddenimports.append(base_name)
-                hiddenimports.append(tagged_name)
 
                 # Destination is the package directory with dots
                 # replaced by slashes (PyInstaller normalises).
+                dest = dotted_name.replace(".", "/")
+                binaries.append((fpath, dest))
+            elif fname.endswith(".dll"):
                 dest = dotted_name.replace(".", "/")
                 binaries.append((fpath, dest))
             elif os.path.isdir(fpath):

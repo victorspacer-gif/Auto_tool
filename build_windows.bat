@@ -102,11 +102,11 @@ if "%UPGRADE_PIP%"=="1" (
     if errorlevel 1 exit /b 1
 )
 echo Installing missing dependencies...
-py -m pip install -r requirements.txt pyinstaller
+py -m pip install --upgrade --find-links "vendor\python-wheels" --prefer-binary --only-binary=tesserocr,cysignals -r requirements.txt pyinstaller pyinstaller-hooks-contrib
 if errorlevel 1 exit /b 1
 
 set "CYSIGNALS_WHEEL="
-for %%F in ("vendor\python-wheels\cysignals-cp312-cp312-win_amd64.whl") do (
+for %%F in ("vendor\python-wheels\cysignals-*-cp312-cp312-win_amd64.whl") do (
     if exist "%%~fF" (
         set "CYSIGNALS_WHEEL=%%~fF"
         goto install_cysignals_wheel
