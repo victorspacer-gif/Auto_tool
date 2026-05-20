@@ -20,16 +20,21 @@ Without this hook the frozen .exe crashes with:
 import importlib
 import os
 import sys
-import sysconfig
+
+# Use packaging.tags to build the interpreter tag, since
+# sysconfig.get_python_tag() was removed in Python 3.12.
+import packaging.tags as _tags
 
 hiddenimports = []
 binaries = []
 
 # Build platform-tagged suffix that PyInstaller's binary scanner
 # extracts from .pyd PE import tables (e.g. "cp312-win_amd64").
+# packaging.tags.interpreter_name()  → "cp" (for CPython)
+# packaging.tags.interpreter_version() → "14" (for 3.14)
 # sysconfig.get_platform() returns "win-amd64" (dash), but .pyd
 # filenames use "win_amd64" (underscore), so we normalise.
-_platform_tag = f"{sysconfig.get_python_tag()}-{sysconfig.get_platform().replace('-', '_')}"
+_platform_tag = f"{_tags.interpreter_name()}{_tags.interpreter_version()}-{__import__('sysconfig').get_platform().replace('-', '_')}"
 
 
 def _collect_package(pkg_name):
