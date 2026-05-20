@@ -37,6 +37,9 @@ hiddenimports = [
     # OCR modules (dynamically imported in systool/runtime.py inside try/except)
     "pytesseract",
     "tesserocr",
+    "tesserocr.cysignals",
+    "tesserocr.cysignals.signals",
+    "tesserocr.tesseract",
     "cysignals",
 ]
 
