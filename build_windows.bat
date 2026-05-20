@@ -102,9 +102,33 @@ if "%UPGRADE_PIP%"=="1" (
     if errorlevel 1 exit /b 1
 )
 echo Installing missing dependencies...
-py -m pip install -r requirements.txt pyinstaller cysignals
+py -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 exit /b 1
 
+set "CYSIGNALS_WHEEL="
+for %%F in ("vendor\python-wheels\cysignals-cp312-cp312-win_amd64.whl") do (
+    if exist "%%~fF" (
+        set "CYSIGNALS_WHEEL=%%~fF"
+        goto install_cysignals_wheel
+    )
+)
+echo WARNING: No bundled cysignals cp312 wheel was found in vendor\python-wheels.
+echo          Falling back to pip...
+goto install_cysignals_pip
+
+:install_cysignals_wheel
+echo Installing bundled cysignals wheel:
+echo   %CYSIGNALS_WHEEL%
+py -m pip install --upgrade "%CYSIGNALS_WHEEL%"
+if errorlevel 1 exit /b 1
+goto install_tesserocr
+
+:install_cysignals_pip
+echo Installing cysignals from pip...
+py -m pip install --upgrade cysignals
+if errorlevel 1 exit /b 1
+
+:install_tesserocr
 set "TESSEROCR_WHEEL="
 for %%F in ("vendor\python-wheels\tesserocr-*-cp312-cp312-win_amd64.whl") do (
     if exist "%%~fF" (
