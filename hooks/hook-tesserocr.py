@@ -1,12 +1,17 @@
 """PyInstaller hook for tesserocr.
 
 tesserocr is a Cython extension that internally depends on:
-  - tesserocr.cysignals.pyd    (Cython runtime, bundled inside tesserocr/cysignals/)
-  - cysignals.pyd               (standalone cysignals, separate package)
+  - tesserocr.tesserocr.cp312-win_amd64.pyd  (Cython extension)
+  - tesserocr/cysignals/signals.cp312-win_amd64.pyd  (Cython runtime)
+  - cysignals/signals.cp312-win_amd64.pyd  (standalone cysignals)
 
 PyInstaller's static analysis cannot detect C-level imports of .pyd
-files (no .py stub exists), so we must explicitly bundle them as
-binaries here.  Without this hook the frozen .exe crashes with:
+files (no .py stub exists) and will warn about hidden imports it
+can't resolve from the .pyd PE import tables.  This hook explicitly
+bundles the .pyd binaries and their DLL dependencies so the frozen
+.exe works at runtime.
+
+Without this hook the frozen .exe crashes with:
 
     ImportError: No module named tesserocr.tesserocr
     ImportError: No module named cysignals.signals
@@ -15,19 +20,27 @@ binaries here.  Without this hook the frozen .exe crashes with:
 import importlib
 import os
 import sys
+import sysconfig
 
 hiddenimports = []
 binaries = []
 
+# Build platform-tagged suffix that PyInstaller's binary scanner
+# extracts from .pyd PE import tables (e.g. "cp312-win_amd64").
+# sysconfig.get_platform() returns "win-amd64" (dash), but .pyd
+# filenames use "win_amd64" (underscore), so we normalise.
+_platform_tag = f"{sysconfig.get_python_tag()}-{sysconfig.get_platform().replace('-', '_')}"
 
-def _collect_pyds(pkg_name, dest_dir=None):
-    """Collect .pyd/.so files from a package's directory.
+
+def _collect_package(pkg_name, dest_dir=None):
+    """Collect .pyd/.so/.dll files from a package's directory tree.
 
     Cython extensions have no .py stub, so PyInstaller cannot resolve
     them via the normal import graph.  We must:
-      1. Add the module as a hidden import so PyInstaller's loader
-         knows to look for it at runtime.
-      2. Add the .pyd file to the binaries list so PyInstaller
+      1. Add the module as a hidden import (name WITHOUT platform tag)
+         AND with the platform-tagged name so PyInstaller's binary
+         scanner matches the PE import table entries.
+      2. Add every .pyd/.so/.dll to the binaries list so PyInstaller
          copies it into the build output.
     """
     try:
@@ -37,28 +50,38 @@ def _collect_pyds(pkg_name, dest_dir=None):
     if mod is None:
         return
 
-    # Walk the entire package tree (packages can nest sub-dirs)
-    def _walk(pkg_dir, pkg_dotted):
-        try:
-            entries = os.listdir(pkg_dir)
-        except OSError:
-            return
-        for fname in entries:
-            fpath = os.path.join(pkg_dir, fname)
-            if fname.endswith((".pyd", ".so")):
-                mod_name = fname.rsplit(".", 1)[0]
-                hiddenimports.append(f"{pkg_dotted}.{mod_name}")
-                dest = dest_dir or "."
-                binaries.append((fpath, dest))
-            elif os.path.isdir(fpath):
-                # Recurse into sub-packages (e.g. tesserocr/cysignals/)
-                _walk(fpath, f"{pkg_dotted}.{fname}")
-
     pkg_path = getattr(mod, "__path__", None)
     if not pkg_path:
         return
-    _walk(pkg_path[0], pkg_name)
+    pkg_dir = pkg_path[0]
+
+    dest = dest_dir or "."
+
+    def _walk(directory, dotted_name):
+        try:
+            entries = os.listdir(directory)
+        except OSError:
+            return
+        for fname in sorted(entries):
+            fpath = os.path.join(directory, fname)
+            if fname.endswith((".pyd", ".so", ".dll")):
+                # Strip platform tag for the base module name.
+                # e.g. tesserocr.cp312-win_amd64.pyd -> tesserocr
+                mod_name = fname.rsplit(".", 1)[0]
+                base_name = f"{dotted_name}.{mod_name}"
+                tagged_name = f"{base_name}.{_platform_tag}"
+
+                # Add BOTH names so PyInstaller's binary scanner
+                # (which reads PE import tables with the tagged name)
+                # can resolve them.
+                hiddenimports.append(base_name)
+                hiddenimports.append(tagged_name)
+                binaries.append((fpath, dest))
+            elif os.path.isdir(fpath):
+                _walk(fpath, f"{dotted_name}.{fname}")
+
+    _walk(pkg_dir, pkg_name)
 
 
-_collect_pyds("tesserocr")
-_collect_pyds("cysignals")
+_collect_package("tesserocr")
+_collect_package("cysignals")
