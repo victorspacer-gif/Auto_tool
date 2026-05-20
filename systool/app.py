@@ -173,6 +173,7 @@ class SystemMonitorApp:
             "label_entry": self._label_entry,
             "monotonic": time.monotonic,
             "ms_to_display": self._ms_to_display,
+            "register_mousewheel_target": self._register_mousewheel_target,
             "register_module_indicator": self._register_module_indicator,
             "select_region": self._select_region,
             "set_stat_label": self._set_stat_label,
@@ -194,6 +195,9 @@ class SystemMonitorApp:
         self.root.bind("<F11>", lambda _event: self.toggle_fullscreen())
         self.root.bind("<Escape>", self._exit_fullscreen)
         self.root.bind("<Configure>", self._on_root_resize)
+        self.root.bind_all("<MouseWheel>", self._route_mousewheel)
+        self.root.bind_all("<Button-4>", self._route_mousewheel)
+        self.root.bind_all("<Button-5>", self._route_mousewheel)
 
         self.runtime.ui.configure(
             dispatch=lambda fn: self.root.after(0, fn),
@@ -392,7 +396,9 @@ class SystemMonitorApp:
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        self._register_mousewheel_target(jobs_frame, canvas)
+        self._register_mousewheel_target(canvas, canvas)
+        self._register_mousewheel_target(self.jobs_frame, canvas)
 
         self._build_afk_panel(right)
         self._build_right_click_panel(right)
@@ -1159,8 +1165,63 @@ class SystemMonitorApp:
 
         outer.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=event.width))
-        canvas.bind("<MouseWheel>", lambda event: canvas.yview_scroll(int(-1 * (event.delta / 120)), "units"))
+        self._register_mousewheel_target(parent, canvas)
+        self._register_mousewheel_target(canvas, canvas)
+        self._register_mousewheel_target(outer, canvas)
+        self._register_mousewheel_target(content_frame, canvas)
         return content_frame
+
+    def _register_mousewheel_target(self, widget: tk.Widget, target: tk.Widget) -> None:
+        setattr(widget, "_system_monitor_wheel_target", target)
+
+    def _route_mousewheel(self, event) -> str | None:
+        if not self.root:
+            return None
+
+        try:
+            widget = self.root.winfo_containing(event.x_root, event.y_root)
+        except tk.TclError:
+            return None
+
+        target = self._find_mousewheel_target(widget)
+        if target is None:
+            return None
+
+        direction = self._mousewheel_direction(event)
+        if direction == 0:
+            return None
+
+        try:
+            target.yview_scroll(direction, "units")
+        except tk.TclError:
+            return None
+
+        return "break"
+
+    def _find_mousewheel_target(self, widget: tk.Widget | None) -> tk.Widget | None:
+        while widget is not None:
+            target = getattr(widget, "_system_monitor_wheel_target", None)
+            if target is not None:
+                return target
+
+            parent_name = widget.winfo_parent()
+            if not parent_name:
+                return None
+            try:
+                widget = widget.nametowidget(parent_name)
+            except KeyError:
+                return None
+        return None
+
+    def _mousewheel_direction(self, event) -> int:
+        if getattr(event, "num", None) == 4:
+            return -3
+        if getattr(event, "num", None) == 5:
+            return 3
+        delta = getattr(event, "delta", 0)
+        if delta == 0:
+            return 0
+        return -1 * max(-3, min(3, int(delta / 120)))
 
     def _apply_responsive_layout(self, container, widgets) -> None:
         width = container.winfo_width()

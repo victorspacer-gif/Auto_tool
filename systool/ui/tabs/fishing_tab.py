@@ -71,9 +71,8 @@ class FishingTab:
         self.spots_listbox.configure(yscrollcommand=scrollbar.set)
         self.spots_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        list_frame.bind("<MouseWheel>", lambda e: self.spots_listbox.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        list_frame.bind("<Button-4>", lambda e: self.spots_listbox.yview_scroll(1, "units"))
-        list_frame.bind("<Button-5>", lambda e: self.spots_listbox.yview_scroll(-1, "units"))
+        self.helpers["register_mousewheel_target"](list_frame, self.spots_listbox)
+        self.helpers["register_mousewheel_target"](self.spots_listbox, self.spots_listbox)
 
         spot_jitter = tk.StringVar(value=str(self.runtime.state.fish_spot_jitter))
         self.ui_vars["fish_spot_jit_var"] = spot_jitter
