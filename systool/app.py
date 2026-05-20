@@ -156,6 +156,7 @@ class SystemMonitorApp:
         # Background stats polling (HP/MP/Cap pointer reads)
         self._stats_poll_timer_id: int | None = None
         self._prev_stats_values: tuple[float | None, float | None, float | None] = (None, None, None)
+        self._fullscreen_enabled = False
 
     def _build_tab_helpers(self) -> dict[str, object]:
         return {
@@ -187,6 +188,9 @@ class SystemMonitorApp:
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
         self.root.minsize(APP_WINDOW_MIN_WIDTH, APP_WINDOW_MIN_HEIGHT)
+        self.root.protocol("WM_DELETE_WINDOW", self.exit_app)
+        self.root.bind("<F11>", lambda _event: self.toggle_fullscreen())
+        self.root.bind("<Escape>", self._exit_fullscreen)
         self.root.bind("<Configure>", self._on_root_resize)
 
         self.runtime.ui.configure(
@@ -240,10 +244,23 @@ class SystemMonitorApp:
         header = tk.Frame(self.root, bg=PANEL, pady=10)
         header.pack(fill="x")
         header_top = tk.Frame(header, bg=PANEL)
-        header_top.pack()
-        tk.Label(header_top, text="⚡  SystemMonitor", font=HEADER, bg=PANEL, fg=FG).pack(side="left", padx=(0, 16))
-        self.pause_label = tk.Label(header_top, text="Running", font=BOLD, bg=PANEL, fg=GREEN)
+        header_top.pack(fill="x", padx=14)
+        header_top.grid_columnconfigure(0, weight=1, uniform="header")
+        header_top.grid_columnconfigure(1, weight=1, uniform="header")
+        header_top.grid_columnconfigure(2, weight=1, uniform="header")
+
+        title_group = tk.Frame(header_top, bg=PANEL)
+        title_group.grid(row=0, column=1)
+        tk.Label(title_group, text="⚡  SystemMonitor", font=HEADER, bg=PANEL, fg=FG).pack(side="left", padx=(0, 16))
+        self.pause_label = tk.Label(title_group, text="Running", font=BOLD, bg=PANEL, fg=GREEN)
         self.pause_label.pack(side="left")
+
+        window_controls = tk.Frame(header_top, bg=PANEL)
+        window_controls.grid(row=0, column=2, sticky="e")
+        self._window_control_button(window_controls, "−", self.minimize_window, "Minimize").pack(side="left", padx=(0, 4))
+        self._window_control_button(window_controls, "□", self.toggle_maximize_window, "Maximize").pack(side="left", padx=(0, 4))
+        self._window_control_button(window_controls, "⛶", self.toggle_fullscreen, "Full screen").pack(side="left")
+
         tk.Label(
             header,
             text="F5 Pause/Resume  |  F8 Activity Monitor  |  F7 Right-Click Monitor  |  F6 Screen Watch  |  F12 Record positions  |  HOME Stop all",
@@ -355,7 +372,7 @@ class SystemMonitorApp:
 
     def _build_automation_tab(self, parent: tk.Frame) -> None:
         content_frame = self._create_scrollable_content(parent)
-        left, right = self._create_responsive_columns(content_frame, threshold=1180)
+        left, right = self._create_responsive_columns(content_frame, threshold=1360)
 
         jobs_frame = tk.LabelFrame(left, text=" 🎮  Hotkey Tasks — independent threads ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=6, padx=8)
         jobs_frame.pack(fill="both", expand=True)
@@ -1019,6 +1036,29 @@ class SystemMonitorApp:
     def _btn(self, parent, text, command, bg=GREEN, **kwargs):
         return tk.Button(parent, text=text, command=command, font=BOLD, bg=bg, fg="white", activebackground=bg, activeforeground="white", bd=0, relief="flat", cursor="hand2", pady=6, **kwargs)
 
+    def _window_control_button(self, parent, text, command, tooltip):
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            font=("Segoe UI", 10, "bold"),
+            bg="#333333",
+            fg=FG,
+            activebackground=BLUE,
+            activeforeground="white",
+            bd=0,
+            relief="flat",
+            cursor="hand2",
+            width=3,
+            height=1,
+            padx=0,
+            pady=0,
+            takefocus=False,
+        )
+        button.bind("<Enter>", lambda _event: self._set_status(tooltip, TEAL))
+        button.bind("<Leave>", lambda _event: self._set_status("Ready", TEAL))
+        return button
+
     def _entry(self, parent, var, width=8):
         return tk.Entry(parent, textvariable=var, width=width, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2)
 
@@ -1081,7 +1121,15 @@ class SystemMonitorApp:
 
         def relayout(_event=None) -> None:
             width = parent.winfo_width()
-            if width and width < threshold:
+            content_threshold = threshold
+            try:
+                parent.update_idletasks()
+                requested_width = left.winfo_reqwidth() + right.winfo_reqwidth() + 36
+                content_threshold = max(threshold, requested_width)
+            except tk.TclError:
+                pass
+
+            if width and width < content_threshold:
                 left.grid_forget()
                 right.grid_forget()
                 left.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 3))
@@ -2028,6 +2076,7 @@ class SystemMonitorApp:
 
 
     def on_close(self) -> None:
+        self._set_fullscreen(False)
         try:
             self.light_service.detach()
         except Exception:
@@ -2049,6 +2098,28 @@ class SystemMonitorApp:
             logger.debug("Cap service detach failed")
         self._hide_log_window()
         self.root.withdraw()
+
+    def minimize_window(self) -> None:
+        self._set_fullscreen(False)
+        self.root.iconify()
+
+    def toggle_maximize_window(self) -> None:
+        self._set_fullscreen(False)
+        try:
+            self.root.state("normal" if self.root.state() == "zoomed" else "zoomed")
+        except tk.TclError:
+            self.root.attributes("-zoomed", not bool(self.root.attributes("-zoomed")))
+
+    def toggle_fullscreen(self) -> None:
+        self._set_fullscreen(not self._fullscreen_enabled)
+
+    def _exit_fullscreen(self, _event=None) -> None:
+        if self._fullscreen_enabled:
+            self._set_fullscreen(False)
+
+    def _set_fullscreen(self, enabled: bool) -> None:
+        self._fullscreen_enabled = enabled
+        self.root.attributes("-fullscreen", enabled)
 
     def _make_tray_image(self, color: tuple[int, int, int] = (48, 209, 88)) -> Image.Image:
         """Create the tray icon image with a colored circle and white 'M' overlay.
