@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import hashlib
+import ctypes
 import threading
 import time
 import tkinter as tk
@@ -182,12 +183,13 @@ class SystemMonitorApp:
         self.root.mainloop()
 
     def build_ui(self) -> None:
+        self._enable_dpi_awareness()
         self.root = tk.Tk()
         self.root.wm_attributes("-toolwindow", True)
         self.root.title("SystemMonitor")
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
-        self.root.minsize(APP_WINDOW_MIN_WIDTH, APP_WINDOW_MIN_HEIGHT)
+        self._configure_screen_aware_window()
         self.root.protocol("WM_DELETE_WINDOW", self.exit_app)
         self.root.bind("<F11>", lambda _event: self.toggle_fullscreen())
         self.root.bind("<Escape>", self._exit_fullscreen)
@@ -223,6 +225,8 @@ class SystemMonitorApp:
         self.runtime_timer_service.start()
         if HAS_TRAY:
             self._start_tray()
+
+        self.root.after(0, self._center_window_on_screen)
 
         missing = [
             name
@@ -1058,6 +1062,62 @@ class SystemMonitorApp:
         button.bind("<Enter>", lambda _event: self._set_status(tooltip, TEAL))
         button.bind("<Leave>", lambda _event: self._set_status("Ready", TEAL))
         return button
+
+    def _enable_dpi_awareness(self) -> None:
+        if os.name != "nt":
+            return
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                logger.debug("Could not set process DPI awareness")
+
+    def _configure_screen_aware_window(self) -> None:
+        work_x, work_y, work_width, work_height = self._get_work_area()
+        margin_x = 80 if work_width >= 900 else 24
+        margin_y = 100 if work_height >= 700 else 24
+
+        min_width = min(APP_WINDOW_MIN_WIDTH, max(720, work_width - margin_x))
+        min_height = min(APP_WINDOW_MIN_HEIGHT, max(520, work_height - margin_y))
+        start_width = min(max(1280, min_width), max(min_width, work_width - margin_x))
+        start_height = min(max(820, min_height), max(min_height, work_height - margin_y))
+
+        self.root.minsize(min_width, min_height)
+        self.root.geometry(f"{start_width}x{start_height}+{work_x}+{work_y}")
+
+    def _center_window_on_screen(self) -> None:
+        try:
+            self.root.update_idletasks()
+            work_x, work_y, work_width, work_height = self._get_work_area()
+            width = min(self.root.winfo_width(), work_width)
+            height = min(self.root.winfo_height(), work_height)
+            x_pos = work_x + max(0, (work_width - width) // 2)
+            y_pos = work_y + max(0, (work_height - height) // 2)
+            self.root.geometry(f"{width}x{height}+{x_pos}+{y_pos}")
+        except tk.TclError:
+            logger.debug("Could not center main window")
+
+    def _get_work_area(self) -> tuple[int, int, int, int]:
+        if os.name == "nt":
+            try:
+                class RECT(ctypes.Structure):
+                    _fields_ = [
+                        ("left", ctypes.c_long),
+                        ("top", ctypes.c_long),
+                        ("right", ctypes.c_long),
+                        ("bottom", ctypes.c_long),
+                    ]
+
+                rect = RECT()
+                spi_getworkarea = 0x0030
+                if ctypes.windll.user32.SystemParametersInfoW(spi_getworkarea, 0, ctypes.byref(rect), 0):
+                    return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+            except Exception:
+                logger.debug("Could not read Windows work area")
+
+        return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight()
 
     def _entry(self, parent, var, width=8):
         return tk.Entry(parent, textvariable=var, width=width, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2)
