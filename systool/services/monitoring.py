@@ -7,6 +7,7 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -45,12 +46,12 @@ from ..runtime import (
     MSS_IMPORT_ERROR,
     NUMPY_IMPORT_ERROR,
     TESSERACT_IMPORT_ERROR,
+    create_ocr_engine,
+    describe_ocr_environment,
     cv2,
-    configure_tesseract_runtime,
     mss,
     np,
     pygame,
-    pytesseract,
     resolve_tesseract_cmd,
     win32con,
     win32gui,
@@ -869,6 +870,10 @@ class CharacterStatusService:
     # ROI (Region of Interest) coordinates for stat extraction — each tuple is (left, top, right, bottom)
     # Coordinates are relative to BASE_SIZE and scaled dynamically per actual frame size.
     ROI_MAP = {
+        "level": [
+            (0, 18, 169, 40),
+            (0, 14, 169, 44),
+        ],
         "hp": [
             (132, 1, 169, 19),   # HP box A: left=132, top=1, right=169, bottom=19
             (124, 0, 169, 21),   # HP box B (fallback): left=124, top=0, right=169, bottom=21
@@ -890,6 +895,21 @@ class CharacterStatusService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self._regen_history: dict[str, list[tuple[float, int]]] = {"hp": [], "mana": []}
+        self._ocr_engine = None
+        physical_cores = os.cpu_count() or 1
+        worker_count = max(1, min(physical_cores, 4))
+        self._ocr_pool = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="char-ocr")
+        self._frame_cache: dict[str, tuple[bytes, dict[str, int | None | str]]] = {}
+        self._perf_snapshot: dict[str, float | int | str] = {
+            "backend": "uninitialized",
+            "cycle_ms": 0.0,
+            "capture_ms": 0.0,
+            "preprocess_ms": 0.0,
+            "ocr_ms": 0.0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "confidence": 0.0,
+        }
 
     def get_dependency_error(self) -> str | None:
         state = self.runtime.state
@@ -900,13 +920,25 @@ class CharacterStatusService:
         if not HAS_CV2:
             return "opencv-python import failed" + (f": {CV2_IMPORT_ERROR}" if CV2_IMPORT_ERROR else "")
         if not HAS_TESSERACT:
-            return "pytesseract import failed" + (f": {TESSERACT_IMPORT_ERROR}" if TESSERACT_IMPORT_ERROR else "")
-        tesseract_cmd = resolve_tesseract_cmd(state.char_status_tesseract_path)
-        if not tesseract_cmd:
+            return "OCR backend import failed" + (f": {TESSERACT_IMPORT_ERROR}" if TESSERACT_IMPORT_ERROR else "")
+        if not resolve_tesseract_cmd(state.char_status_tesseract_path):
             return "Tesseract executable not found"
-        configure_tesseract_runtime(tesseract_cmd)
-        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
         return None
+
+    def get_perf_summary(self) -> str:
+        snapshot = dict(self._perf_snapshot)
+        return (
+            f"OCR backend={snapshot.get('backend', 'n/a')} "
+            f"cycle={snapshot.get('cycle_ms', 0.0):.1f}ms "
+            f"capture={snapshot.get('capture_ms', 0.0):.1f}ms "
+            f"pre={snapshot.get('preprocess_ms', 0.0):.1f}ms "
+            f"ocr={snapshot.get('ocr_ms', 0.0):.1f}ms "
+            f"cache={int(snapshot.get('cache_hits', 0))}/{int(snapshot.get('cache_hits', 0)) + int(snapshot.get('cache_misses', 0)) if int(snapshot.get('cache_hits', 0)) + int(snapshot.get('cache_misses', 0)) else 0} "
+            f"conf={snapshot.get('confidence', 0.0):.2f}"
+        )
+
+    def get_backend_diagnostic(self) -> str:
+        return describe_ocr_environment()
 
     def start(self) -> None:
         state = self.runtime.state
@@ -917,6 +949,14 @@ class CharacterStatusService:
             state.char_status_last_error = dependency_error
             self.runtime.ui.log(f"❌ Character status OCR unavailable: {dependency_error}")
             self.runtime.ui.set_status(f"Character status OCR unavailable: {dependency_error}", RED)
+            return
+        try:
+            self._ocr_engine = create_ocr_engine(state.char_status_tesseract_path)
+            self._perf_snapshot["backend"] = getattr(self._ocr_engine, "backend", "unknown")
+        except Exception as exc:
+            state.char_status_last_error = str(exc)
+            self.runtime.ui.log(f"❌ Character status OCR unavailable: {exc}")
+            self.runtime.ui.set_status(f"Character status OCR unavailable: {exc}", RED)
             return
         has_window = bool(state.char_status_region)
         has_field_regions = all([state.char_status_hp_region, state.char_status_mana_region, state.char_status_cap_region])
@@ -952,57 +992,68 @@ class CharacterStatusService:
         try:
             with mss.mss() as sct:
                 while not self.runtime.char_status_stop.is_set():
+                    cycle_started = time.perf_counter()
                     with self.runtime.settings_lock:
                         region = state.char_status_region
                         hp_region = state.char_status_hp_region
                         mana_region = state.char_status_mana_region
                         cap_region = state.char_status_cap_region
                         poll_ms = max(CHAR_STATUS_POLL_MS_MIN, state.char_status_poll_ms)
+                        sample_count = max(1, state.char_status_samples)
+                        sample_delay_ms = max(0, state.char_status_sample_delay_ms)
                     if not region and not all([hp_region, mana_region, cap_region]):
                         break
                     try:
                         samples = []
-                        for _ in range(state.char_status_samples):
-                            parsed_sample: dict[str, int | None] = {}
+                        cycle_perf = {
+                            "capture_ms": 0.0,
+                            "preprocess_ms": 0.0,
+                            "ocr_ms": 0.0,
+                            "confidence": 0.0,
+                        }
+                        sample_confidences: list[float] = []
+                        for sample_index in range(sample_count):
+                            parsed_sample: dict[str, int | None | str] = {}
+                            region_confidences: list[float] = []
                             if region:
-                                monitor = {
-                                    "left": region[0],  # x-coordinate (index 0)
-                                    "top": region[1],   # y-coordinate (index 1)
-                                    "width": region[2], # width (index 2)
-                                    "height": region[3],# height (index 3)
-                                    "mon": 1,           # Monitor index: primary display
-                                }
-                                frame = np.array(sct.grab(monitor))[:, :, :3]
-                                parsed_sample = self._extract_values(frame)
+                                capture_started = time.perf_counter()
+                                frame = self._capture_region(sct, region)
+                                cycle_perf["capture_ms"] += (time.perf_counter() - capture_started) * 1000.0
+                                extracted, perf = self._extract_values(frame, cache_key="window")
+                                parsed_sample.update(extracted)
+                                cycle_perf["preprocess_ms"] += perf["preprocess_ms"]
+                                cycle_perf["ocr_ms"] += perf["ocr_ms"]
+                                region_confidences.extend(perf["confidences"])
                             if all([hp_region, mana_region, cap_region]):
-                                parsed_sample.update(
-                                    self._extract_values_from_regions(
-                                        sct,
-                                        {
-                                            "hp": hp_region,
-                                            "mana": mana_region,
-                                            "cap": cap_region,
-                                        },
-                                    )
-                                )
+                                capture_started = time.perf_counter()
+                                region_frames = {
+                                    "hp": self._capture_region(sct, hp_region),
+                                    "mana": self._capture_region(sct, mana_region),
+                                    "cap": self._capture_region(sct, cap_region),
+                                }
+                                cycle_perf["capture_ms"] += (time.perf_counter() - capture_started) * 1000.0
+                                extracted_regions, perf = self._extract_values_from_regions(region_frames)
+                                parsed_sample.update(extracted_regions)
+                                cycle_perf["preprocess_ms"] += perf["preprocess_ms"]
+                                cycle_perf["ocr_ms"] += perf["ocr_ms"]
+                                region_confidences.extend(perf["confidences"])
                             samples.append(parsed_sample)
-                            if _ < state.char_status_samples - 1:
+                            if region_confidences:
+                                sample_confidences.append(sum(region_confidences) / len(region_confidences))
+                            if sample_index < sample_count - 1:
                                 # Convert ms sample delay to seconds for time.sleep() (seconds)
-                                time.sleep(state.char_status_sample_delay_ms / 1000.0)
+                                time.sleep(sample_delay_ms / 1000.0)
                         parsed = self._aggregate_samples(samples)
-                    except pytesseract.TesseractNotFoundError:
-                        with self.runtime.settings_lock:
-                            state.char_status_last_error = "Tesseract executable not found"
-                        self.runtime.ui.log("❌ Tesseract executable not found for character status OCR")
-                        self.runtime.ui.set_status("Configure a Tesseract path in Character Status", RED)
-                        self.runtime.char_status_stop.set()
-                        break
                     except Exception as exc:
                         with self.runtime.settings_lock:
                             state.char_status_failures += 1
                             state.char_status_last_error = str(exc)
                         time.sleep(MONITOR_ERROR_RETRY_SLEEP)
                         continue
+
+                    cycle_perf["cycle_ms"] = (time.perf_counter() - cycle_started) * 1000.0
+                    cycle_perf["confidence"] = (sum(sample_confidences) / len(sample_confidences)) if sample_confidences else 0.0
+                    self._perf_snapshot.update(cycle_perf)
 
                     if parsed:
                         with self.runtime.settings_lock:
@@ -1027,101 +1078,240 @@ class CharacterStatusService:
             self.runtime.ui.module_state_changed("char_status", False)
             self.runtime.ui.log("⏹ Character status watcher end")
 
-    def _extract_food_from_roi(self, frame) -> dict[str, int | None | str]:
-        """Extract food timer from a cropped ROI region using OCR + regex.
+    @staticmethod
+    def _region_to_monitor(region: tuple[int, int, int, int]) -> dict[str, int]:
+        return {
+            "left": region[0],
+            "top": region[1],
+            "width": region[2],
+            "height": region[3],
+            "mon": 1,
+        }
 
-        Uses time-only pattern (no 'food' keyword dependency) for ROI extraction.
-        Falls back to full-frame OCR with 'food' keyword if ROI extraction fails.
-        """
+    def _capture_region(self, sct, region: tuple[int, int, int, int]):
+        return np.array(sct.grab(self._region_to_monitor(region)))[:, :, :3]
+
+    def _frame_signature(self, frame) -> bytes:
+        if frame is None or frame.size == 0:
+            return b""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+        thumb = cv2.resize(gray, (24, 24), interpolation=cv2.INTER_AREA)
+        return thumb.tobytes()
+
+    def _get_cached_result(self, cache_key: str, frame):
+        signature = self._frame_signature(frame)
+        cached = self._frame_cache.get(cache_key)
+        if cached and cached[0] == signature:
+            self._perf_snapshot["cache_hits"] = int(self._perf_snapshot["cache_hits"]) + 1
+            return dict(cached[1])
+        self._perf_snapshot["cache_misses"] = int(self._perf_snapshot["cache_misses"]) + 1
+        return None
+
+    def _store_cached_result(self, cache_key: str, frame, values: dict[str, int | None | str]) -> None:
+        self._frame_cache[cache_key] = (self._frame_signature(frame), dict(values))
+
+    def _extract_values(self, frame, cache_key: str = "window") -> tuple[dict[str, int | None | str], dict[str, float | list[float]]]:
+        cached = self._get_cached_result(cache_key, frame)
+        if cached is not None:
+            return cached, {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
+
+        tasks = {
+            "hp": lambda fr: self._ocr_digits(fr, "hp"),
+            "mana": lambda fr: self._ocr_digits(fr, "mana"),
+        }
+        futures = {
+            key: self._ocr_pool.submit(func, frame)
+            for key, func in tasks.items()
+        }
         values: dict[str, int | None | str] = {
+            "level": None,
+            "hp": None,
+            "mana": None,
+            "cap": None,
             "food_seconds": None,
             "food_text": "",
         }
+        perf = {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
+        for key, future in futures.items():
+            result = future.result()
+            values[key] = result["value"]
+            perf["preprocess_ms"] += result["preprocess_ms"]
+            perf["ocr_ms"] += result["ocr_ms"]
+            if result["confidence"] > 0:
+                perf["confidences"].append(result["confidence"])
 
-        # ── Phase 1: ROI extraction (time-only regex, no 'food' dependency) ──
+        context_keys = {"level", "cap", "food_seconds", "food_text"}
+        if values.get("hp") is None:
+            context_keys.add("hp")
+        if values.get("mana") is None:
+            context_keys.add("mana")
+        contextual = self._extract_contextual_stats(frame, required_keys=context_keys)
+        for key, value in contextual["values"].items():
+            if key in {"level", "cap", "food_seconds"} and value is not None:
+                values[key] = value
+            elif key == "food_text" and contextual["values"].get("food_seconds") is not None:
+                values[key] = value
+            elif key in {"hp", "mana"} and values.get(key) is None and value is not None:
+                values[key] = value
+        perf["preprocess_ms"] += contextual["preprocess_ms"]
+        perf["ocr_ms"] += contextual["ocr_ms"]
+        if contextual["confidence"] > 0:
+            perf["confidences"].append(contextual["confidence"])
+
+        final_values = values if any(value is not None for value in values.values()) else {}
+        if final_values:
+            self._store_cached_result(cache_key, frame, final_values)
+        return final_values, perf
+
+    def _extract_values_from_regions(self, region_frames: dict[str, object]) -> tuple[dict[str, int | None], dict[str, float | list[float]]]:
+        futures = {
+            key: self._ocr_pool.submit(self._ocr_cap_region if key == "cap" else self._ocr_digits, frame, key)
+            for key, frame in region_frames.items()
+        }
+        values: dict[str, int | None] = {}
+        perf = {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
+        for key, future in futures.items():
+            result = future.result()
+            values[key] = result["value"]
+            perf["preprocess_ms"] += result["preprocess_ms"]
+            perf["ocr_ms"] += result["ocr_ms"]
+            if result["confidence"] > 0:
+                perf["confidences"].append(result["confidence"])
+        return values if any(value is not None for value in values.values()) else {}, perf
+
+    def _extract_food_from_roi(self, frame) -> dict[str, float | int | str | None]:
+        best_value: int | None = None
+        best_text = ""
+        best_confidence = 0.0
+        preprocess_ms = 0.0
+        ocr_ms = 0.0
         for box in self.ROI_MAP["food"]:
             crop = self._crop(frame, box)
             if crop.size == 0:
                 continue
-            # Enlarge crop 3x to improve OCR accuracy on small text regions
-            enlarged = cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-            # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            variants = []
-            # OTSU threshold: auto-computes optimal binarization; output max value is 255
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            variants.append(binary)
-            variants.append(cv2.bitwise_not(binary))
-            # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
-            adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
-            variants.append(adaptive)
-            variants.append(cv2.bitwise_not(adaptive))
+            variants, prep_elapsed = self._build_variants(crop, key="food", upscale=2)
+            preprocess_ms += prep_elapsed
             for image_variant in variants:
-                text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
-                normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-                match = re.search(r"(\d{1,2}:\d{2})", normalized)
+                started = time.perf_counter()
+                read = self._ocr_engine.recognize(image_variant, psm="7", oem="1", whitelist="0123456789:")
+                ocr_ms += (time.perf_counter() - started) * 1000.0
+                normalized = re.sub(r"[^0-9:]+", " ", read.text.lower())
+                match = re.search(r"(\d{1,2}:\d{2}|\d{1,3})", normalized)
+                if not match:
+                    continue
+                candidate_text = match.group(1)
+                candidate_value = CharacterStatusService._parse_food_seconds(candidate_text)
+                if candidate_value is None:
+                    continue
+                best_value = candidate_value
+                best_text = candidate_text
+                best_confidence = max(best_confidence, read.confidence)
+                break
+            if best_value is not None:
+                break
+        return {
+            "value": best_value,
+            "text": best_text,
+            "confidence": best_confidence,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+        }
+
+    def _ocr_level(self, frame) -> dict[str, float | int | None]:
+        preprocess_ms = 0.0
+        ocr_ms = 0.0
+        best_value: int | None = None
+        best_confidence = 0.0
+        for box in self.ROI_MAP["level"]:
+            crop = self._crop(frame, box)
+            if crop.size == 0:
+                continue
+            variants, prep_elapsed = self._build_variants(crop, key="level", upscale=2)
+            preprocess_ms += prep_elapsed
+            for image_variant in variants:
+                started = time.perf_counter()
+                read = self._ocr_engine.recognize(image_variant, psm="6", oem="1", whitelist="Levellevel0123456789 ")
+                ocr_ms += (time.perf_counter() - started) * 1000.0
+                normalized = re.sub(r"[^a-z0-9 ]+", " ", read.text.lower())
+                match = re.search(r"level\s+(\d+)", normalized)
+                if not match:
+                    match = re.search(r"\b(\d+)\b", normalized)
+                if match:
+                    best_value = int(match.group(1))
+                    best_confidence = max(best_confidence, read.confidence)
+                    break
+            if best_value is not None:
+                break
+        return {
+            "value": best_value,
+            "confidence": best_confidence,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+        }
+
+    def _extract_contextual_stats(self, frame, required_keys: set[str]) -> dict[str, object]:
+        variants, preprocess_ms = self._build_variants(frame, key="window_text", upscale=2)
+        values: dict[str, int | str | None] = {key: None for key in required_keys}
+        if "food_text" in required_keys:
+            values["food_text"] = ""
+        field_patterns = {
+            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],
+            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],
+            "mana": [r"mana\s+(\d+)"],
+            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],
+        }
+        best_confidence = 0.0
+        ocr_ms = 0.0
+        for image_variant in variants:
+            ocr_started = time.perf_counter()
+            read = self._ocr_engine.recognize(
+                image_variant,
+                psm="6",
+                oem="1",
+                whitelist="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 :",
+            )
+            ocr_ms += (time.perf_counter() - ocr_started) * 1000.0
+            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", read.text.lower())
+            best_confidence = max(best_confidence, read.confidence)
+            for key in required_keys:
+                if key in {"food_seconds", "food_text"}:
+                    continue
+                if values[key] is not None:
+                    continue
+                for pattern in field_patterns[key]:
+                    match = re.search(pattern, normalized)
+                    if match:
+                        values[key] = int(match.group(1))
+                        break
+            if "food_seconds" in required_keys and values.get("food_seconds") is None:
+                match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
                 if match:
                     food_text = match.group(1)
-                    values["food_text"] = food_text
-                    values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
-                    break
-            if values["food_seconds"] is not None:
+                    food_seconds = CharacterStatusService._parse_food_seconds(food_text)
+                    if food_seconds is not None:
+                        values["food_seconds"] = food_seconds
+                        if "food_text" in values:
+                            values["food_text"] = food_text
+            if all(value is not None for value in values.values()):
                 break
+        return {
+            "values": values,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+            "confidence": best_confidence,
+        }
 
-        # ── Phase 2: Fallback to full-frame OCR (with 'food' keyword) ──
-        if values["food_seconds"] is None:
-            enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            text = pytesseract.image_to_string(binary, config="--psm 6")
-            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-            match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
-            if match:
-                food_text = match.group(1)
-                values["food_text"] = food_text
-                values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
-
-        return values
-
-    def _extract_values(self, frame) -> dict[str, int | None]:
-        values: dict[str, int | None] = self._extract_values_from_text(frame)
-        for key, boxes in self.ROI_MAP.items():
-            if key == "food":
-                # Food is handled separately via ROI crop + regex (not _ocr_digits)
-                continue
-            if values.get(key) is not None:
-                continue
-            for box in boxes:
-                crop = self._crop(frame, box)
-                value = self._ocr_digits(crop, key)
-                if value is not None:
-                    values[key] = value
-                    break
-        # Extract food from ROI (separate path — cropped region + regex)
-        food_values = self._extract_food_from_roi(frame)
-        # Only distribute food fields when they are consistent together.
-        # _parse_food_seconds can return None even when OCR succeeds,
-        # so we must not set food_text if food_seconds is None (and vice versa).
-        if food_values.get("food_seconds") is not None:
-            values["food_seconds"] = food_values["food_seconds"]
-            values["food_text"] = food_values["food_text"]
-        return values if any(value is not None for value in values.values()) else {}
-
-    def _extract_values_from_regions(self, sct, regions: dict[str, tuple[int, int, int, int]]) -> dict[str, int | None]:
-        values: dict[str, int | None] = {}
-        for key, region in regions.items():
-            monitor = {
-                "left": region[0],  # x-coordinate (index 0)
-                "top": region[1],   # y-coordinate (index 1)
-                "width": region[2], # width (index 2)
-                "height": region[3],# height (index 3)
-                "mon": 1,           # Monitor index: primary display
+    def _ocr_cap_region(self, crop, key: str) -> dict[str, float | int | None]:
+        contextual = self._extract_contextual_stats(crop, required_keys={"cap"})
+        cap_value = contextual["values"].get("cap")
+        if cap_value is not None:
+            return {
+                "value": cap_value,
+                "confidence": contextual["confidence"],
+                "preprocess_ms": contextual["preprocess_ms"],
+                "ocr_ms": contextual["ocr_ms"],
             }
-            frame = np.array(sct.grab(monitor))[:, :, :3]
-            values[key] = self._ocr_digits(frame, key)
-        return values if any(value is not None for value in values.values()) else {}
+        return self._ocr_digits(crop, key)
 
     def _update_regen(self, state) -> None:
         now = time.monotonic()
@@ -1179,48 +1369,6 @@ class CharacterStatusService:
                     aggregated[key] = Counter(text_values).most_common(1)[0][0]
         return aggregated
 
-    def _extract_values_from_text(self, frame) -> dict[str, int | None | str]:
-        values: dict[str, int | None] = {
-            "level": None,
-            "hp": None,
-            "mana": None,
-            "cap": None,
-        }
-        # Enlarge frame 3x to improve OCR accuracy on small text regions
-        enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-        # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        variants = []
-        # OTSU threshold: auto-computes optimal binarization; output max value is 255
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        variants.append(binary)
-        variants.append(cv2.bitwise_not(binary))
-        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
-        adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
-        variants.append(adaptive)
-        variants.append(cv2.bitwise_not(adaptive))
-        # Regex patterns for extracting stat values from OCR text output (field → list of patterns)
-        field_patterns = {
-            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],  # English or localized "level/levele/l evel"
-            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],  # "hit points" with optional plural
-            "mana": [r"mana\s+(\d+)"],  # Simple "mana <number>" pattern
-            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],  # "capacity/capacity" variants
-        }
-        for image_variant in variants:
-            text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
-            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-            for key, patterns in field_patterns.items():
-                if values[key] is not None:
-                    continue
-                for pattern in patterns:
-                    match = re.search(pattern, normalized)
-                    if not match:
-                        continue
-                    values[key] = int(match.group(1))
-                    break
-        return values
-
     @staticmethod
     def _parse_food_seconds(text: str) -> int | None:
         normalized = text.strip()
@@ -1259,52 +1407,58 @@ class CharacterStatusService:
         y2 = min(frame_h, int(round(box[3] / base_h * frame_h)))  # Bottom edge from box index 3
         return frame[y1:y2, x1:x2]
 
-    @staticmethod
-    def _ocr_digits(crop, key: str) -> int | None:
+    def _build_variants(self, crop, *, key: str, upscale: int = 2) -> tuple[list[object], float]:
+        started = time.perf_counter()
         if crop is None or crop.size == 0:  # Empty frame check (OpenCV array size = 0)
-            return None
-        # Cap digits are smaller — use 7x scale; HP/Mana use 6x scale
-        scale = 7 if key == "cap" else 6
-        enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-        # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
+            return [], 0.0
+        enlarged = cv2.resize(crop, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC) if upscale > 1 else crop
+        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY) if len(enlarged.shape) == 3 else enlarged
+        gray = cv2.fastNlMeansDenoising(gray, None, h=7, templateWindowSize=7, searchWindowSize=21)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        variants = []
-        # OTSU threshold: auto-computes optimal binarization; output max value is 255
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        variants.append(binary)
-        variants.append(cv2.bitwise_not(binary))
-        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
         adaptive = cv2.adaptiveThreshold(
             gray,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            31,
-            7,
+            25,
+            5,
         )
-        variants.append(adaptive)
-        variants.append(cv2.bitwise_not(adaptive))
-        # Morphology closing kernel: 2x2 to connect nearby pixel fragments (odd not required for MORPH_CLOSE)
-        kernel = np.ones((2, 2), np.uint8)
-        variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
-        # HP/Mana use PSM 7+8 (single column); Cap adds PSM 6 (uniform digits) for broader coverage
-        psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6", "8"]
-        best_digits = ""
+        variants = [binary, cv2.bitwise_not(binary), adaptive]
+        if key in {"hp", "mana", "cap"}:
+            kernel = np.ones((2, 2), np.uint8)
+            variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
+        return variants, (time.perf_counter() - started) * 1000.0
+
+    def _ocr_digits(self, crop, key: str) -> dict[str, float | int | None]:
+        scale = 3 if key == "cap" else 2
+        variants, preprocess_ms = self._build_variants(crop, key=key, upscale=scale)
+        psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6"]
+        best_value: int | None = None
+        best_confidence = 0.0
+        ocr_ms = 0.0
         for image_variant in variants:
             for psm in psm_modes:
-                config = f"--psm {psm} -c tessedit_char_whitelist=0123456789"
-                text = pytesseract.image_to_string(image_variant, config=config)
-                groups = [group for group in re.findall(r"\d+", text) if group]
-                # HP/Mana require ≥2 digits (single-digit is noise); Cap accepts ≥1 digit
-                if groups:
-                    candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
-                    if len(candidate) > len(best_digits):
-                        best_digits = candidate
-                    if key in {"hp", "mana"} and len(candidate) >= 2:
-                        return int(candidate)
-                    if key == "cap" and len(candidate) >= 1:
-                        return int(candidate)
-        if best_digits:
-            return int(best_digits)
-        return None
+                started = time.perf_counter()
+                read = self._ocr_engine.recognize(image_variant, psm=psm, oem="1", whitelist="0123456789")
+                ocr_ms += (time.perf_counter() - started) * 1000.0
+                groups = [group for group in re.findall(r"\d+", read.text) if group]
+                if not groups:
+                    continue
+                candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
+                if key in {"hp", "mana"} and len(candidate) < 2:
+                    continue
+                best_value = int(candidate)
+                best_confidence = max(best_confidence, read.confidence)
+                return {
+                    "value": best_value,
+                    "confidence": best_confidence,
+                    "preprocess_ms": preprocess_ms,
+                    "ocr_ms": ocr_ms,
+                }
+        return {
+            "value": best_value,
+            "confidence": best_confidence,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+        }
