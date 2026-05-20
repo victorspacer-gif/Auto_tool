@@ -14,6 +14,41 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# ── Ensure tesseract DLLs are findable on Windows before any C extensions load ─
+def _ensure_tesseract_dll_path() -> None:
+    """Add the bundled tesseract binary directory to the Windows DLL search path.
+
+    On Windows, C extensions (tesserocr.pyd, cysignals.pyd) resolve their native
+    dependencies via the Windows DLL search path, which includes the PATH
+    environment variable.  The tesseract directory is bundled inside the
+    PyInstaller archive (sys._MEIPASS/tesseract) or at vendor/tesseract for
+    development.  We add it to PATH *before* any optional-import try/except
+    blocks so that tesserocr's libtesseract40.dll and liblept*.dll are found.
+    """
+    if sys.platform != "win32":
+        return
+    tess_dir: str | None = None
+    # Frozen PyInstaller: tesseract files are at _MEIPASS/tesseract/
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidate = os.path.join(meipass, "tesseract")
+        if os.path.isdir(candidate):
+            tess_dir = candidate
+    # Development / unbundled layout
+    if tess_dir is None:
+        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        candidate = os.path.join(app_root, "vendor", "tesseract")
+        if os.path.isdir(candidate):
+            tess_dir = candidate
+    if tess_dir is not None:
+        existing = os.environ.get("PATH", "")
+        if tess_dir not in existing.split(os.pathsep):
+            os.environ["PATH"] = tess_dir + os.pathsep + existing
+
+
+_ensure_tesseract_dll_path()
+del _ensure_tesseract_dll_path  # no longer needed after one-shot setup
+
 from .models import AppState, HotkeyJob
 
 try:
