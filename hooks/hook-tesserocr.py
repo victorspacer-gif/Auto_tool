@@ -32,7 +32,7 @@ binaries = []
 _platform_tag = f"{sysconfig.get_python_tag()}-{sysconfig.get_platform().replace('-', '_')}"
 
 
-def _collect_package(pkg_name, dest_dir=None):
+def _collect_package(pkg_name):
     """Collect .pyd/.so/.dll files from a package's directory tree.
 
     Cython extensions have no .py stub, so PyInstaller cannot resolve
@@ -41,7 +41,7 @@ def _collect_package(pkg_name, dest_dir=None):
          AND with the platform-tagged name so PyInstaller's binary
          scanner matches the PE import table entries.
       2. Add every .pyd/.so/.dll to the binaries list so PyInstaller
-         copies it into the build output.
+         copies it into the build output, in the correct subdirectory.
     """
     try:
         mod = importlib.import_module(pkg_name)
@@ -55,9 +55,8 @@ def _collect_package(pkg_name, dest_dir=None):
         return
     pkg_dir = pkg_path[0]
 
-    dest = dest_dir or "."
-
     def _walk(directory, dotted_name):
+        """Recursively walk the package directory tree."""
         try:
             entries = os.listdir(directory)
         except OSError:
@@ -76,6 +75,10 @@ def _collect_package(pkg_name, dest_dir=None):
                 # can resolve them.
                 hiddenimports.append(base_name)
                 hiddenimports.append(tagged_name)
+
+                # Destination is the package directory with dots
+                # replaced by slashes (PyInstaller normalises).
+                dest = dotted_name.replace(".", "/")
                 binaries.append((fpath, dest))
             elif os.path.isdir(fpath):
                 _walk(fpath, f"{dotted_name}.{fname}")
