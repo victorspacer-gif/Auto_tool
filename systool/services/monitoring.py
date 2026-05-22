@@ -475,6 +475,13 @@ class HpService(StatPointerService):
             return self.runtime.state.char_status_hp_peak
 
     def _read_all_stats(self) -> tuple[float | None, float | None, float | None]:
+        """Read HP/MP/Cap/Food from pointers, falling back to OCR when unavailable.
+
+        Returns (hp_val, mp_val, cap_val) from pointers (may be None).  When a
+        pointer read fails the corresponding state attribute is populated from the
+        OCR channel so that downstream consumers (healer, fishing, runes, alarm)
+        always have a numeric value to work with instead of None.
+        """
         state = self.runtime.state
         hp_val = None
         mp_val = None
@@ -484,28 +491,66 @@ class HpService(StatPointerService):
         if self.pointer_reader is not None:
             try:
                 hp_val = float(self.pointer_reader.read_hp())
+                with self.runtime.settings_lock:
+                    state.hp_source = "pointer"
             except Exception:
                 logger.debug("HP pointer read failed")
 
         if getattr(state, "_mp_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
                 mp_val = self.pointer_reader.read_mp()
+                with self.runtime.settings_lock:
+                    state.mp_source = "pointer"
             except Exception:
                 logger.debug("MP pointer read failed")
 
         if getattr(state, "_cap_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
                 cap_val = self.pointer_reader.read_cap()
+                with self.runtime.settings_lock:
+                    state.cap_source = "pointer"
             except Exception:
                 logger.debug("Cap pointer read failed")
 
         if getattr(state, "_food_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
                 food_val = self.pointer_reader.read_food()
+                with self.runtime.settings_lock:
+                    state.food_source = "pointer"
             except Exception:
                 logger.debug("Food pointer read failed")
 
+        # Promote OCR fallback values when pointer reads are unavailable.
+        # This ensures auto-heal, auto-food, runes, alarm etc. always have a
+        # numeric value to work with instead of None when pointers fail
+        # (client update, game restart, etc.).
         with self.runtime.settings_lock:
+            if hp_val is None:
+                ocr_hp = getattr(state, "char_status_hp", None)
+                if ocr_hp is not None and ocr_hp > 0:
+                    hp_val = float(ocr_hp)
+                    state.hp_value = hp_val
+                    state.hp_source = "ocr"
+            if mp_val is None:
+                ocr_mp = getattr(state, "char_status_mana", None)
+                if ocr_mp is not None and ocr_mp > 0:
+                    mp_val = float(ocr_mp)
+                    state.mp_value = mp_val
+                    state.mp_source = "ocr"
+            if cap_val is None:
+                ocr_cap = getattr(state, "char_status_cap", None)
+                if ocr_cap is not None and ocr_cap > 0:
+                    cap_val = float(ocr_cap)
+                    state.cap_value = cap_val
+                    state.cap_source = "ocr"
+            if food_val is None:
+                ocr_food = getattr(state, "char_status_food_seconds", None)
+                if ocr_food is not None and ocr_food > 0:
+                    food_val = int(ocr_food)
+                    state.food_value = food_val
+                    state.food_source = "ocr"
+
+            # Always write whatever we have (pointer or OCR) to state attrs
             if hp_val is not None:
                 state.hp_value = hp_val
             if mp_val is not None:
