@@ -36,33 +36,42 @@ class LightPointerProfile:
 
 
 DEFAULT_HP_PROFILE = StatPointerProfile(
-    process_name="miracle_gl.exe",
+    process_name="miracle_gl-1779392082.exe",
     module_name="miracle_gl",
-    pointer_chains=[[0x00A783E0, 0x4A0]],
+    pointer_chains=[
+        [0x00A6DA60, 0x4A0],
+        [0x00A6DA6C, 0x4A0, 0x11C],
+    ],
     structure_value_offset=0,
     read_method="read_double",
-    description="HP pointer imported from HP pointer.CT.",
-    ct_filename="HP pointer.CT",
+    description="HP pointer imported from HP Pointers.CT.",
+    ct_filename="HP Pointers.CT",
 )
 
 DEFAULT_MP_PROFILE = StatPointerProfile(
-    process_name="miracle_gl.exe",
+    process_name="miracle_gl-1779392082.exe",
     module_name="miracle_gl",
-    pointer_chains=[[0x00A783E0, 0x4F8]],
+    pointer_chains=[
+        [0x00A6DA60, 0x4F8],
+        [0x00A6DA6C, 0x4F8, 0x11C],
+    ],
     structure_value_offset=0,
     read_method="read_double",
-    description="MP pointer imported from MP pointer.CT.",
-    ct_filename="MP pointer.CT",
+    description="MP pointer imported from MP Pointers.CT.",
+    ct_filename="MP Pointers.CT",
 )
 
 DEFAULT_CAP_PROFILE = StatPointerProfile(
-    process_name="miracle_gl.exe",
+    process_name="miracle_gl-1779392082.exe",
     module_name="miracle_gl",
-    pointer_chains=[[0x00A783E0, 0x4B8]],
+    pointer_chains=[
+        [0x00A6DA6C, 0x4B8, 0x11C],
+        [0x00A6DA60, 0x4B8],
+    ],
     structure_value_offset=0,
     read_method="read_double",
-    description="Cap pointer imported from CAP pointer.CT.",
-    ct_filename="CAP pointer.CT",
+    description="Cap pointer imported from CAP Pointers.CT.",
+    ct_filename="CAP Pointers.CT",
 )
 
 DEFAULT_FOOD_PROFILE = StatPointerProfile(
