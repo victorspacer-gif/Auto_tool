@@ -269,7 +269,10 @@ class LightControlService:
 
     @staticmethod
     def _find_game_process_name() -> str | None:
-        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        # Match names that start with "miracle_dx" or "miracle_gl" and
+        # allow zero or more hyphen-number suffix segments before the .exe
+        # (e.g. miracle_gl-123.exe or miracle_gl-123-456.exe)
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)*\.exe$", re.IGNORECASE)
         for proc in psutil.process_iter(attrs=["name"]):
             name = (proc.info.get("name") or "").strip()
             if pattern.fullmatch(name):
@@ -303,25 +306,39 @@ class StatPointerService:
         setattr(self, self.local_ttl_attr, 60.0)
 
     def attach(self) -> tuple[bool, str]:
-        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl"
+
         try:
             self.controller = LightMemoryController(process_name)
             self.controller.attach()
-            self.pointer_reader = PointerReader(self.controller, cache_ttl=getattr(self, self.local_ttl_attr))
+            self.pointer_reader = PointerReader(
+                self.controller,
+                cache_ttl=getattr(self, self.local_ttl_attr)
+            )
+
         except ProcessNotFoundError as exc:
             fallback_name = self._find_game_process_name()
+
             if not fallback_name:
                 return False, str(exc)
+
             try:
                 self.controller = LightMemoryController(fallback_name)
                 self.controller.attach()
-                self.pointer_reader = PointerReader(self.controller, cache_ttl=getattr(self, self.local_ttl_attr))
+                self.pointer_reader = PointerReader(
+                    self.controller,
+                    cache_ttl=getattr(self, self.local_ttl_attr)
+                )
+
                 self.runtime.state.light_process_name = fallback_name
+
             except Exception as fallback_exc:
                 return False, f"{exc} | fallback attach failed: {fallback_exc}"
+
         except Exception as exc:
             return False, f"Attach failed: {exc}"
 
+        # After successful attach, try to resolve pointer and read initial value
         address = self._resolve_pointer()
         parts = []
         if address is not None:
@@ -414,7 +431,10 @@ class StatPointerService:
 
     @staticmethod
     def _find_game_process_name() -> str | None:
-        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        # Match names that start with "miracle_dx" or "miracle_gl" and
+        # allow zero or more hyphen-number suffix segments before the .exe
+        # (e.g. miracle_gl-123.exe or miracle_gl-123-456.exe)
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)*\.exe$", re.IGNORECASE)
         for proc in psutil.process_iter(attrs=["name"]):
             name = (proc.info.get("name") or "").strip()
             if pattern.fullmatch(name):
@@ -764,7 +784,12 @@ class AlarmService:
             return False
         try:
             pyautogui.keyDown("ctrl")
-            pyautogui.press("q")
+            time.sleep(0.02)
+
+            pyautogui.keyDown("q")
+            time.sleep(0.05)
+
+            pyautogui.keyUp("q")
             return True
         except Exception as exc:
             self.runtime.ui.log(f"Battle CTRL+Q failed: {exc}")

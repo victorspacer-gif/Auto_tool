@@ -36,7 +36,7 @@ class LightPointerProfile:
 
 
 DEFAULT_HP_PROFILE = StatPointerProfile(
-    process_name="miracle_gl-1779392082.exe",
+    process_name="miracle_gl.exe",
     module_name="miracle_gl",
     pointer_chains=[
         [0x00A6DA60, 0x4A0],
@@ -49,7 +49,7 @@ DEFAULT_HP_PROFILE = StatPointerProfile(
 )
 
 DEFAULT_MP_PROFILE = StatPointerProfile(
-    process_name="miracle_gl-1779392082.exe",
+    process_name="miracle_gl.exe",
     module_name="miracle_gl",
     pointer_chains=[
         [0x00A6DA60, 0x4F8],
@@ -62,7 +62,7 @@ DEFAULT_MP_PROFILE = StatPointerProfile(
 )
 
 DEFAULT_CAP_PROFILE = StatPointerProfile(
-    process_name="miracle_gl-1779392082.exe",
+    process_name="miracle_gl.exe",
     module_name="miracle_gl",
     pointer_chains=[
         [0x00A6DA6C, 0x4B8, 0x11C],
