@@ -98,6 +98,7 @@ class SystemMonitorApp:
         self.fishing_service = self.container.fishing_service
         self.healer_service = self.container.healer_service
         self.light_service = self.container.light_service
+        self.runtime.light_service = self.light_service
         self.hp_service = self.container.hp_service
         # Wire HP service into runtime so alarm/healer services can access it
         self.runtime.hp_service = self.hp_service
@@ -120,6 +121,7 @@ class SystemMonitorApp:
         self.pause_label: tk.Label | None = None
         self.pos_label: tk.Label | None = None
         self.alarm_region_label: tk.Label | None = None
+        self.battle_region_label: tk.Label | None = None
         self.light_status_label: tk.Label | None = None
         self.jobs_frame: tk.Frame | None = None
         self.notebook_widget: ttk.Notebook | None = None
@@ -216,6 +218,13 @@ class SystemMonitorApp:
         self._start_global_hotkeys()
         self._poll_settings()
         self._refresh_stats()
+        state = self.runtime.state
+        if self.battle_region_label:
+            if state.alarm_battle_region:
+                x_val, y_val, width, height = state.alarm_battle_region
+                self.battle_region_label.config(text=f"Battle Area: ({x_val},{y_val}) {width}Ã—{height} px")
+            else:
+                self.battle_region_label.config(text="Battle Area: not selected")
         if self.character_status_tab_ui:
             self.character_status_tab_ui.refresh_display()
         self._refresh_variables_display()
@@ -570,6 +579,32 @@ class SystemMonitorApp:
         buttons.pack(fill="x", pady=(0, 8))
         self._btn(buttons, "🖼  Select Area (drag)", self.select_alarm_area, BLUE).pack(side="left", padx=(0, 6))
         self._btn(buttons, "↺ Reset", self.reset_alarm_area, ORANGE).pack(side="left")
+
+        battle_section = tk.LabelFrame(panel, text=" Battle Window Reaction ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10)
+        battle_section.pack(fill="x", pady=(6, 10))
+        battle_enabled = tk.BooleanVar(value=self.runtime.state.alarm_battle_enabled)
+        self.ui_vars["battle_enabled_var"] = battle_enabled
+        tk.Checkbutton(
+            battle_section,
+            text="Enable Battle Window Reaction (CTRL+Q)",
+            variable=battle_enabled,
+            font=BOLD,
+            bg=PANEL,
+            fg=TEAL,
+            selectcolor=PANEL,
+            activebackground=PANEL,
+            activeforeground=TEAL,
+        ).pack(anchor="w")
+        battle_area_row = tk.Frame(battle_section, bg=PANEL)
+        battle_area_row.pack(fill="x", pady=(6, 4))
+        self.battle_region_label = tk.Label(battle_area_row, text="Battle Area: not selected", font=MONO, fg=TEAL, bg=PANEL)
+        self.battle_region_label.pack(side="left")
+        battle_buttons = tk.Frame(battle_section, bg=PANEL)
+        battle_buttons.pack(fill="x", pady=(0, 6))
+        self._btn(battle_buttons, "Select Battle Area", self.select_battle_area, BLUE).pack(side="left", padx=(0, 6))
+        battle_threshold = tk.StringVar(value=str(int(self.runtime.state.alarm_battle_threshold * 100)))
+        self.ui_vars["battle_thresh_var"] = battle_threshold
+        self._label_entry(battle_section, "Battle Change Threshold (%):", battle_threshold, width=6)
 
         mp3_row = tk.Frame(panel, bg=PANEL)
         mp3_row.pack(fill="x", pady=4)
@@ -1740,6 +1775,9 @@ class SystemMonitorApp:
     def select_alarm_area(self) -> None:
         self._select_region("alarm_region", self.alarm_region_label, "Click & drag to select alarm area")
 
+    def select_battle_area(self) -> None:
+        self._select_region("alarm_battle_region", self.battle_region_label, "Click & drag to select battle area")
+
     def _select_region(self, state_attr: str, label, title: str) -> None:
         def on_done(region: tuple[int, int, int, int]) -> None:
             setattr(self.runtime.state, state_attr, region)
@@ -1750,6 +1788,14 @@ class SystemMonitorApp:
                     label.config(text=text)
                 self.runtime.ui.log(f"✅ Screen watch area: {text}")
                 self.runtime.ui.set_status(f"Screen watch area: {text}", TEAL)
+                return
+            if state_attr == "alarm_battle_region":
+                x_val, y_val, width, height = region
+                text = f"Battle Area: ({x_val},{y_val})  {width}Ã—{height} px"
+                if label:
+                    label.config(text=text)
+                self.runtime.ui.log(f"Battle area selected: {text}")
+                self.runtime.ui.set_status(f"Battle area selected: {text}", TEAL)
                 return
 
             if self.character_status_tab_ui:
@@ -1896,6 +1942,7 @@ class SystemMonitorApp:
             "alarm_hp_value_var": state.alarm_hp_value,
             "alarm_mp_value_var": state.alarm_mp_value,
             "alarm_cap_value_var": state.alarm_cap_value,
+            "battle_thresh_var": int(state.alarm_battle_threshold * 100),
             "alarm_flash_var": bool(state.alarm_flash_window),
             "alarm_sys_sound_var": bool(state.alarm_system_sound),
             "char_status_tesseract_var": state.char_status_tesseract_path,
@@ -1934,6 +1981,8 @@ class SystemMonitorApp:
                 self.ui_vars[name].set(str(value))
         if "alarm_auto_pause_var" in self.ui_vars:
             self.ui_vars["alarm_auto_pause_var"].set(state.alarm_auto_pause)
+        if "battle_enabled_var" in self.ui_vars:
+            self.ui_vars["battle_enabled_var"].set(state.alarm_battle_enabled)
         if "healer_use_percent_var" in self.ui_vars:
             self.ui_vars["healer_use_percent_var"].set(state.healer_use_percent)
         if "light_freeze_enabled_var" in self.ui_vars:
@@ -1945,6 +1994,12 @@ class SystemMonitorApp:
             self.rune_tab_ui.refresh_from_state()
         if self.healer_tab_ui:
             self.healer_tab_ui.refresh_from_state()
+        if self.battle_region_label:
+            if state.alarm_battle_region:
+                x_val, y_val, width, height = state.alarm_battle_region
+                self.battle_region_label.config(text=f"Battle Area: ({x_val},{y_val}) {width}x{height} px")
+            else:
+                self.battle_region_label.config(text="Battle Area: not selected")
         if self.alarm_region_label:
             if state.alarm_region:
                 x_val, y_val, width, height = state.alarm_region
@@ -2034,6 +2089,11 @@ class SystemMonitorApp:
             state.alarm_flash_window = bool(self.ui_vars["alarm_flash_var"].get())
         if "alarm_sys_sound_var" in self.ui_vars:
             state.alarm_system_sound = bool(self.ui_vars["alarm_sys_sound_var"].get())
+        if "battle_enabled_var" in self.ui_vars:
+            state.alarm_battle_enabled = bool(self.ui_vars["battle_enabled_var"].get())
+        if "battle_thresh_var" in self.ui_vars:
+            battle_threshold_percent = self._get_ui_int("battle_thresh_var", int(state.alarm_battle_threshold * 100))
+            state.alarm_battle_threshold = max(0, min(100, battle_threshold_percent)) / 100.0
 
     def _poll_light_settings(self, state) -> None:
         if "light_process_name_var" in self.ui_vars:

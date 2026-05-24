@@ -25,6 +25,7 @@ HOTKEY_JOB_BURST_INTERVAL_MS_DEFAULT: int = 80
 
 ALARM_THRESHOLD_RATIO_DEFAULT: float = 0.80
 ALARM_COOLDOWN_SECONDS_DEFAULT: int = 10
+BATTLE_CHANGE_THRESHOLD_RATIO_DEFAULT: float = 0.15
 
 CHAR_STATUS_POLL_MS_DEFAULT: int = 800
 CHAR_STATUS_SAMPLES_DEFAULT: int = 3
@@ -211,6 +212,8 @@ class ConfigSerializer:
             result["rclick_pos_y"] = rclick_pos[1]
         if state.alarm.region is not None:
             result["alarm_region"] = ConfigSerializer._to_json_compatible(state.alarm.region)
+        if state.alarm.battle_region is not None:
+            result["battle_region"] = ConfigSerializer._to_json_compatible(state.alarm.battle_region)
         if state.char_status.region is not None:
             result["char_status_region"] = ConfigSerializer._to_json_compatible(state.char_status.region)
         if state.char_status.hp_region is not None:
@@ -288,6 +291,7 @@ class ConfigSerializer:
             "jobs": raw.get("jobs", []),
             "spots": [tuple(item) for item in raw.get("fish_spots", [])],
             "alarm_region": tuple(raw["alarm_region"]) if raw.get("alarm_region") else None,
+            "battle_region": tuple(raw["battle_region"]) if raw.get("battle_region") else None,
             "char_status_region": tuple(raw["char_status_region"]) if raw.get("char_status_region") else None,
             "char_status_hp_region": tuple(raw["char_status_hp_region"]) if raw.get("char_status_hp_region") else None,
             "char_status_mana_region": tuple(raw["char_status_mana_region"]) if raw.get("char_status_mana_region") else None,
@@ -304,6 +308,7 @@ class ConfigSerializer:
         jobs = payload["jobs"]
         spots = payload["spots"]
         alarm_region = payload["alarm_region"]
+        battle_region = payload.get("battle_region")
         char_status_region = payload.get("char_status_region")
         char_status_hp_region = payload.get("char_status_hp_region")
         char_status_mana_region = payload.get("char_status_mana_region")
@@ -415,6 +420,20 @@ class ConfigSerializer:
             get_int_any(("alarm.cap_value", "alarm_cap_value"), state.alarm_cap_value),
         )
         state.alarm.region = alarm_region
+        state.alarm.battle_region = battle_region
+        if state.alarm.battle_region is None:
+            raw_battle_region = cfg.get("alarm.battle_region")
+            if raw_battle_region and raw_battle_region not in ("None", ""):
+                try:
+                    values = json.loads(raw_battle_region) if isinstance(raw_battle_region, str) else raw_battle_region
+                    state.alarm.battle_region = tuple(int(value) for value in values)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    state.alarm.battle_region = None
+        state.alarm.battle_enabled = get_bool("alarm.battle_enabled", state.alarm.battle_enabled)
+        state.alarm.battle_threshold = max(
+            0.0,
+            min(1.0, get_float("alarm.battle_threshold", state.alarm.battle_threshold)),
+        )
 
         # ── Char-status ───────────────────────────────────────────────
         state.char_status.region = char_status_region

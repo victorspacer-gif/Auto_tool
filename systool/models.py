@@ -47,6 +47,9 @@ class AlarmState:
     threshold: float = app_config.ALARM_THRESHOLD_RATIO_DEFAULT
     cooldown: int = app_config.ALARM_COOLDOWN_SECONDS_DEFAULT
     region: tuple[int, int, int, int] | None = None
+    battle_enabled: bool = False
+    battle_threshold: float = app_config.BATTLE_CHANGE_THRESHOLD_RATIO_DEFAULT
+    battle_region: tuple[int, int, int, int] | None = None
     auto_pause: bool = False
     hp_percent: int = 0
     hp_value: int = 0
@@ -267,6 +270,9 @@ class AppState:
     alarm_threshold = _group_property("alarm", "threshold")
     alarm_cooldown = _group_property("alarm", "cooldown")
     alarm_region = _group_property("alarm", "region")
+    alarm_battle_enabled = _group_property("alarm", "battle_enabled")
+    alarm_battle_threshold = _group_property("alarm", "battle_threshold")
+    alarm_battle_region = _group_property("alarm", "battle_region")
     alarm_auto_pause = _group_property("alarm", "auto_pause")
     alarm_hp_percent = _group_property("alarm", "hp_percent")
     alarm_hp_value = _group_property("alarm", "hp_value")

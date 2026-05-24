@@ -39,6 +39,7 @@ from ..runtime import (
     HAS_CV2,
     HAS_MSS,
     HAS_NUMPY,
+    HAS_PYAUTOGUI,
     HAS_PYGAME,
     HAS_TESSERACT,
     HAS_WIN32,
@@ -51,6 +52,7 @@ from ..runtime import (
     cv2,
     mss,
     np,
+    pyautogui,
     pygame,
     resolve_tesseract_cmd,
     win32con,
@@ -623,6 +625,8 @@ class FoodService(StatPointerService):
 
 
 class AlarmService:
+    BATTLE_COOLDOWN_SECONDS = 3.0
+
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
 
@@ -726,6 +730,51 @@ class AlarmService:
         except Exception:
             pass
 
+    def _has_attached_game_window(self) -> bool:
+        light_service = getattr(self.runtime, "light_service", None)
+        controller = getattr(light_service, "controller", None) if light_service is not None else None
+        return controller is not None
+
+    def _prepare_battle_frame(self, frame):
+        if frame is None or frame.size == 0:
+            return None
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if HAS_CV2 else frame.mean(axis=2).astype(np.uint8)
+        else:
+            gray = frame
+        height, width = gray.shape[:2]
+        scale = min(1.0, 96.0 / max(width, height))
+        if scale < 1.0:
+            gray = cv2.resize(
+                gray,
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                interpolation=cv2.INTER_AREA,
+            )
+        return gray
+
+    def _battle_changed_ratio(self, previous, current) -> float:
+        if previous is None or current is None or previous.shape != current.shape:
+            return 0.0
+        diff = np.abs(current.astype(np.int16) - previous.astype(np.int16))
+        return float(np.mean(diff > 18))
+
+    def _execute_battle_hotkey(self) -> bool:
+        if not HAS_PYAUTOGUI:
+            self.runtime.ui.log("Battle reaction needs pyautogui")
+            return False
+        try:
+            pyautogui.keyDown("ctrl")
+            pyautogui.press("q")
+            return True
+        except Exception as exc:
+            self.runtime.ui.log(f"Battle CTRL+Q failed: {exc}")
+            return False
+        finally:
+            try:
+                pyautogui.keyUp("ctrl")
+            except Exception:
+                logger.debug("Battle CTRL key release failed")
+
     def play_alarm(self) -> None:
         path = self._resolve_alarm_sound_path()
         if path:
@@ -786,6 +835,11 @@ class AlarmService:
                 return {"top": screen_h // 2 - size // 2, "left": screen_w // 2 - size // 2, "width": size, "height": size, "mon": 1}
 
             last_frame = None
+            battle_last_frame = None
+            battle_was_changed = False
+            battle_cooldown_until = 0.0
+            battle_cooldown_log_at = 0.0
+            battle_started_logged = False
             cooldown_until = 0.0
             while not self.runtime.alarm_stop.is_set():
                 time.sleep(MONITOR_POLL_SLEEP)
@@ -798,6 +852,9 @@ class AlarmService:
                     alarm_hp_value = state.alarm_hp_value
                     alarm_mp_value = state.alarm_mp_value
                     alarm_cap_value = state.alarm_cap_value
+                    battle_enabled = state.alarm_battle_enabled
+                    battle_region = state.alarm_battle_region
+                    battle_threshold = state.alarm_battle_threshold
                 # Try pointer-based HP first, fall back to OCR
                 hp_value = None
                 if self.runtime.hp_service is not None:
@@ -902,6 +959,53 @@ class AlarmService:
                                 self.runtime.ui.log("⏸  Auto-pausing all activities due to screen watch event")
                                 self.runtime.ui.dispatch(self.runtime.pause.toggle)
                 last_frame = frame
+
+                if not battle_enabled:
+                    battle_last_frame = None
+                    battle_was_changed = False
+                    battle_started_logged = False
+                    continue
+                if (
+                    not state.alarm_active
+                    or self.runtime.pause.paused
+                    or not battle_region
+                    or not self._has_attached_game_window()
+                ):
+                    battle_last_frame = None
+                    battle_was_changed = False
+                    continue
+                if not battle_started_logged:
+                    self.runtime.ui.log("Battle monitor started")
+                    battle_started_logged = True
+                try:
+                    battle_frame = np.array(sct.grab({
+                        "top": battle_region[1],
+                        "left": battle_region[0],
+                        "width": battle_region[2],
+                        "height": battle_region[3],
+                        "mon": 1,
+                    }))[:, :, :3]
+                except Exception as exc:
+                    self.runtime.ui.log(f"Battle capture: {exc}")
+                    continue
+                prepared_battle_frame = self._prepare_battle_frame(battle_frame)
+                current_changed = False
+                if battle_last_frame is not None:
+                    changed_ratio = self._battle_changed_ratio(battle_last_frame, prepared_battle_frame)
+                    threshold_ratio = max(0.0, min(1.0, battle_threshold))
+                    current_changed = changed_ratio >= threshold_ratio
+                    if current_changed and not battle_was_changed:
+                        if now >= battle_cooldown_until:
+                            self.runtime.ui.log(f"Battle change detected: {changed_ratio * 100:.1f}%")
+                            if self._execute_battle_hotkey():
+                                battle_cooldown_until = now + self.BATTLE_COOLDOWN_SECONDS
+                                self.runtime.ui.log("CTRL+Q executed")
+                        elif now >= battle_cooldown_log_at:
+                            remaining = max(0.0, battle_cooldown_until - now)
+                            self.runtime.ui.log(f"Battle cooldown active ({remaining:.1f}s)")
+                            battle_cooldown_log_at = now + 1.0
+                battle_was_changed = current_changed
+                battle_last_frame = prepared_battle_frame
         self.runtime.state.alarm_active = False
         self.runtime.ui.module_state_changed("alarm", False)
         self.runtime.ui.log("⏹ Screen watch end")
