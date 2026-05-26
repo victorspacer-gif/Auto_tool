@@ -160,6 +160,8 @@ class SystemMonitorApp:
         self._stats_poll_timer_id: int | None = None
         self._prev_stats_values: tuple[float | None, float | None, float | None] = (None, None, None)
         self._fullscreen_enabled = False
+        self.battle_logout_popup: tk.Toplevel | None = None
+        self._battle_logout_popup_after_id: str | None = None
 
     def _build_tab_helpers(self) -> dict[str, object]:
         return {
@@ -209,6 +211,7 @@ class SystemMonitorApp:
             set_pause_label=self._sync_pause_state,
             job_state_changed=self._refresh_job_indicator,
             module_state_changed=self._refresh_module_indicator,
+            show_logout_popup=self._show_battle_logout_popup,
         )
 
         self.sandbox_sbie_info = find_installation() if HAS_SANDBOX_LAUNCHER and find_installation else None
@@ -605,6 +608,9 @@ class SystemMonitorApp:
         battle_threshold = tk.StringVar(value=str(int(self.runtime.state.alarm_battle_threshold * 100)))
         self.ui_vars["battle_thresh_var"] = battle_threshold
         self._label_entry(battle_section, "Battle Change Threshold (%):", battle_threshold, width=6)
+        battle_popup_timeout = tk.StringVar(value=str(self.runtime.state.alarm.battle_logout_popup_timeout_sec))
+        self.ui_vars["battle_popup_timeout_var"] = battle_popup_timeout
+        self._label_entry(battle_section, "Logout popup timeout (sec, 0=manual):", battle_popup_timeout, width=8)
 
         mp3_row = tk.Frame(panel, bg=PANEL)
         mp3_row.pack(fill="x", pady=4)
@@ -1943,6 +1949,7 @@ class SystemMonitorApp:
             "alarm_mp_value_var": state.alarm_mp_value,
             "alarm_cap_value_var": state.alarm_cap_value,
             "battle_thresh_var": int(state.alarm_battle_threshold * 100),
+            "battle_popup_timeout_var": int(state.alarm.battle_logout_popup_timeout_sec),
             "alarm_flash_var": bool(state.alarm_flash_window),
             "alarm_sys_sound_var": bool(state.alarm_system_sound),
             "char_status_tesseract_var": state.char_status_tesseract_path,
@@ -2094,6 +2101,49 @@ class SystemMonitorApp:
         if "battle_thresh_var" in self.ui_vars:
             battle_threshold_percent = self._get_ui_int("battle_thresh_var", int(state.alarm_battle_threshold * 100))
             state.alarm_battle_threshold = max(0, min(100, battle_threshold_percent)) / 100.0
+        if "battle_popup_timeout_var" in self.ui_vars:
+            state.alarm.battle_logout_popup_timeout_sec = max(0, self._get_ui_int("battle_popup_timeout_var", state.alarm.battle_logout_popup_timeout_sec))
+
+    def _close_battle_logout_popup(self) -> None:
+        if self.root is not None and self._battle_logout_popup_after_id is not None:
+            try:
+                self.root.after_cancel(self._battle_logout_popup_after_id)
+            except Exception:
+                logger.debug("Failed to cancel battle logout popup timeout", exc_info=True)
+        self._battle_logout_popup_after_id = None
+        if self.battle_logout_popup is not None:
+            try:
+                self.battle_logout_popup.destroy()
+            except Exception:
+                logger.debug("Failed to destroy battle logout popup", exc_info=True)
+        self.battle_logout_popup = None
+
+    def _show_battle_logout_popup(self, title: str, message: str, timeout_seconds: int) -> None:
+        if self.root is None:
+            return
+
+        self._close_battle_logout_popup()
+        popup = tk.Toplevel(self.root)
+        popup.title(title)
+        popup.configure(bg=PANEL)
+        popup.attributes("-topmost", True)
+        popup.transient(self.root)
+        popup.resizable(False, False)
+        popup.protocol("WM_DELETE_WINDOW", self._close_battle_logout_popup)
+
+        frame = tk.Frame(popup, bg=PANEL, padx=16, pady=14)
+        frame.pack(fill="both", expand=True)
+        tk.Label(frame, text=title, font=HEADER, fg=TEAL, bg=PANEL, justify="left").pack(anchor="w")
+        tk.Label(frame, text=message, font=BODY, fg=FG, bg=PANEL, justify="left", wraplength=420).pack(anchor="w", pady=(8, 12))
+        self._btn(frame, "Close", self._close_battle_logout_popup, ORANGE).pack(fill="x")
+
+        popup.update_idletasks()
+        popup.lift()
+        popup.focus_force()
+        self.battle_logout_popup = popup
+
+        if timeout_seconds > 0:
+            self._battle_logout_popup_after_id = self.root.after(timeout_seconds * 1000, self._close_battle_logout_popup)
 
     def _poll_light_settings(self, state) -> None:
         if "light_process_name_var" in self.ui_vars:

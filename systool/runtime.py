@@ -173,6 +173,14 @@ except ImportError:
     win32gui = None
     HAS_WIN32 = False
 
+try:
+    import winsound
+
+    HAS_WINSOUND = True
+except ImportError:
+    winsound = None
+    HAS_WINSOUND = False
+
 
 class UINotifier:
     """UI-safe communication channel for background workers."""
@@ -185,6 +193,7 @@ class UINotifier:
         self._set_pause_label: Callable[[bool], None] = lambda _paused: None
         self._job_state_changed: Callable[[HotkeyJob], None] = lambda _job: None
         self._module_state_changed: Callable[[str, bool], None] = lambda _module, _running: None
+        self._show_logout_popup: Callable[[str, str, int], None] = lambda _title, _message, _timeout: None
 
     def configure(
         self,
@@ -195,6 +204,7 @@ class UINotifier:
         set_pause_label: Callable[[bool], None],
         job_state_changed: Callable[[HotkeyJob], None],
         module_state_changed: Callable[[str, bool], None],
+        show_logout_popup: Callable[[str, str, int], None],
     ) -> None:
         self._dispatch = dispatch
         self._log = log
@@ -203,6 +213,7 @@ class UINotifier:
         self._set_pause_label = set_pause_label
         self._job_state_changed = job_state_changed
         self._module_state_changed = module_state_changed
+        self._show_logout_popup = show_logout_popup
 
     def dispatch(self, callback: Callable[[], None]) -> None:
         self._dispatch(callback)
@@ -224,6 +235,9 @@ class UINotifier:
 
     def module_state_changed(self, module_id: str, running: bool) -> None:
         self._dispatch(lambda: self._module_state_changed(module_id, running))
+
+    def show_logout_popup(self, title: str, message: str, timeout_seconds: int) -> None:
+        self._dispatch(lambda: self._show_logout_popup(title, message, timeout_seconds))
 
 
 class PauseController:

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,7 @@ from ..runtime import (
     HAS_PYAUTOGUI,
     HAS_PYGAME,
     HAS_TESSERACT,
+    HAS_WINSOUND,
     HAS_WIN32,
     CV2_IMPORT_ERROR,
     MSS_IMPORT_ERROR,
@@ -57,7 +60,9 @@ from ..runtime import (
     resolve_tesseract_cmd,
     win32con,
     win32gui,
+    winsound,
 )
+from ..character_profiles import GAME_CLIENT_PATTERN, ensure_autosave_directory, find_game_window
 
 try:
     import ctypes
@@ -269,13 +274,9 @@ class LightControlService:
 
     @staticmethod
     def _find_game_process_name() -> str | None:
-        # Match names that start with "miracle_dx" or "miracle_gl" and
-        # allow zero or more hyphen-number suffix segments before the .exe
-        # (e.g. miracle_gl-123.exe or miracle_gl-123-456.exe)
-        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)*\.exe$", re.IGNORECASE)
         for proc in psutil.process_iter(attrs=["name"]):
             name = (proc.info.get("name") or "").strip()
-            if pattern.fullmatch(name):
+            if GAME_CLIENT_PATTERN.fullmatch(name):
                 return name
         return None
 
@@ -294,9 +295,12 @@ class StatPointerService:
     value_attr = ""
     fallback_attr = ""
     state_resolved_attr: str | None = None
+    state_invalid_attr: str | None = None
+    state_peak_attr: str | None = None
     local_address_attr = "_resolved_address"
     local_cache_attr = "_cache_time"
     local_ttl_attr = "_CACHE_TTL"
+    hard_max_value: float | None = None
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
@@ -339,13 +343,14 @@ class StatPointerService:
             return False, f"Attach failed: {exc}"
 
         # After successful attach, try to resolve pointer and read initial value
+        self._set_pointer_invalid(False)
         address = self._resolve_pointer()
         parts = []
         if address is not None:
             self._store_resolved_address(address)
             parts.append(f"{self.stat_label} pointer resolved at 0x{address:X}")
             try:
-                value = self._read_pointer_value()
+                value = self._read_valid_pointer_value()
                 with self.runtime.settings_lock:
                     setattr(self.runtime.state, self.value_attr, value)
                 if isinstance(value, int):
@@ -363,6 +368,7 @@ class StatPointerService:
             self.controller.detach()
         self.controller = None
         self.pointer_reader = None
+        self._set_pointer_invalid(False)
         setattr(self, self.local_address_attr, None)
         return True, "Detached"
 
@@ -376,6 +382,8 @@ class StatPointerService:
 
     def _ensure_address_resolved(self) -> bool:
         if self.controller is None:
+            return False
+        if self._is_pointer_invalid():
             return False
         address = self._resolve_pointer()
         if address is None:
@@ -393,12 +401,81 @@ class StatPointerService:
             setattr(state, self.state_resolved_attr, address)
 
     def _resolve_pointer(self) -> int | None:
-        if self.pointer_reader is None or not self.stat_name:
+        if self.pointer_reader is None or not self.stat_name or self._is_pointer_invalid():
             return None
         try:
             return self.pointer_reader.resolve_address(self.stat_name)
         except Exception:
             return None
+
+    def _is_pointer_invalid(self) -> bool:
+        if not self.state_invalid_attr:
+            return False
+        return bool(getattr(self.runtime.state, self.state_invalid_attr, False))
+
+    def _set_pointer_invalid(self, invalid: bool) -> None:
+        if not self.state_invalid_attr:
+            return
+        with self.runtime.settings_lock:
+            setattr(self.runtime.state, self.state_invalid_attr, invalid)
+
+    def _invalidate_pointer(self, reason: str, raw_value: object | None = None) -> None:
+        with self.runtime.settings_lock:
+            state = self.runtime.state
+            if self.state_invalid_attr:
+                setattr(state, self.state_invalid_attr, True)
+            if self.state_resolved_attr:
+                setattr(state, self.state_resolved_attr, None)
+            setattr(state, self.pointer_address_attr, "")
+            setattr(state, self.source_attr, "ocr")
+        setattr(self, self.local_address_attr, None)
+        setattr(self, self.local_cache_attr, 0.0)
+        raw_suffix = f" (raw={raw_value!r})" if raw_value is not None else ""
+        logger.warning("%s pointer invalidated: %s%s", self.stat_label, reason, raw_suffix)
+        try:
+            self.runtime.ui.log(f"{self.stat_label} pointer invalidated: {reason}. Falling back to OCR.")
+        except Exception:
+            logger.debug("Pointer invalidation UI log failed", exc_info=True)
+
+    def _get_validation_context(self) -> tuple[float | None, float | None]:
+        with self.runtime.settings_lock:
+            state = self.runtime.state
+            fallback_value = getattr(state, self.fallback_attr, None) if self.fallback_attr else None
+            peak_value = getattr(state, self.state_peak_attr, None) if self.state_peak_attr else None
+        fallback = float(fallback_value) if isinstance(fallback_value, (int, float)) and fallback_value > 0 else None
+        peak = float(peak_value) if isinstance(peak_value, (int, float)) and peak_value > 0 else None
+        return fallback, peak
+
+    def _validate_pointer_value(self, raw_value: object) -> float | int:
+        if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+            raise ValueError("non-numeric value")
+        numeric_value = float(raw_value)
+        if not math.isfinite(numeric_value):
+            raise ValueError("non-finite value")
+        if numeric_value < 0:
+            raise ValueError("negative value")
+        if self.hard_max_value is not None and numeric_value > self.hard_max_value:
+            raise ValueError(f"value above hard max {self.hard_max_value:.0f}")
+
+        fallback_value, peak_value = self._get_validation_context()
+        if peak_value is not None and numeric_value > (peak_value * 3.0):
+            raise ValueError(f"value above peak tolerance ({peak_value:.0f})")
+        if fallback_value is not None:
+            allowed_delta = max(500.0, fallback_value * 5.0)
+            if abs(numeric_value - fallback_value) > allowed_delta:
+                raise ValueError(f"value inconsistent with OCR ({fallback_value:.0f})")
+
+        if isinstance(raw_value, int):
+            return raw_value
+        return numeric_value
+
+    def _read_valid_pointer_value(self) -> float | int:
+        raw_value = self._read_pointer_value()
+        try:
+            return self._validate_pointer_value(raw_value)
+        except ValueError as exc:
+            self._invalidate_pointer(str(exc), raw_value=raw_value)
+            raise RuntimeError(str(exc)) from exc
 
     def _get_fallback_value(self) -> float | None:
         with self.runtime.settings_lock:
@@ -419,15 +496,20 @@ class StatPointerService:
             self._ensure_address_resolved()
 
         address = getattr(self, self.local_address_attr)
-        if address is not None and self.pointer_reader is not None:
+        if address is not None and self.pointer_reader is not None and not self._is_pointer_invalid():
             try:
-                value = self._read_pointer_value()
+                value = self._read_valid_pointer_value()
                 with self.runtime.settings_lock:
                     setattr(state, self.value_attr, value)
                 return value
             except Exception:
                 logger.debug("Pointer read failed")
-        return self._get_fallback_value()
+        fallback_value = self._get_fallback_value()
+        if fallback_value is not None:
+            with self.runtime.settings_lock:
+                setattr(state, self.value_attr, fallback_value)
+                setattr(state, self.source_attr, "ocr")
+        return fallback_value
 
     @staticmethod
     def _find_game_process_name() -> str | None:
@@ -451,9 +533,12 @@ class HpService(StatPointerService):
     source_attr = "hp_source"
     value_attr = "hp_value"
     fallback_attr = "char_status_hp"
+    state_invalid_attr = "_hp_pointer_invalid"
+    state_peak_attr = "char_status_hp_peak"
     local_address_attr = "_hp_address"
     local_cache_attr = "_hp_cache_time"
     local_ttl_attr = "_HP_CACHE_TTL"
+    hard_max_value = 1_000_000.0
 
     def __init__(self, runtime: AppRuntime) -> None:
         super().__init__(runtime)
@@ -510,29 +595,58 @@ class HpService(StatPointerService):
         cap_val = None
         food_val = None
 
-        if self.pointer_reader is not None:
+        def read_pointer_stat(
+            *,
+            service: StatPointerService,
+            state_invalid_attr: str | None,
+            state_resolved_attr: str | None,
+            read_method_name: str,
+            source_attr: str,
+        ) -> float | int | None:
+            if service.pointer_reader is None:
+                return None
+            if state_invalid_attr and getattr(state, state_invalid_attr, False):
+                return None
+            if state_resolved_attr and getattr(state, state_resolved_attr, None) is None:
+                return None
+            value: float | int | None = None
             try:
-                hp_val = float(self.pointer_reader.read_hp())
+                value = getattr(service.pointer_reader, read_method_name)()
+                validated = service._validate_pointer_value(value)
                 with self.runtime.settings_lock:
-                    state.hp_source = "pointer"
+                    setattr(state, source_attr, "pointer")
+                return validated
+            except ValueError as exc:
+                service._invalidate_pointer(str(exc), raw_value=value)
             except Exception:
-                logger.debug("HP pointer read failed")
+                logger.debug("%s pointer read failed", service.stat_label)
+            return None
 
-        if getattr(state, "_mp_resolved_addr", None) is not None and self.pointer_reader is not None:
-            try:
-                mp_val = self.pointer_reader.read_mp()
-                with self.runtime.settings_lock:
-                    state.mp_source = "pointer"
-            except Exception:
-                logger.debug("MP pointer read failed")
+        hp_val = read_pointer_stat(
+            service=self,
+            state_invalid_attr=self.state_invalid_attr,
+            state_resolved_attr=None,
+            read_method_name="read_hp",
+            source_attr="hp_source",
+        )
+        if hp_val is not None:
+            hp_val = float(hp_val)
 
-        if getattr(state, "_cap_resolved_addr", None) is not None and self.pointer_reader is not None:
-            try:
-                cap_val = self.pointer_reader.read_cap()
-                with self.runtime.settings_lock:
-                    state.cap_source = "pointer"
-            except Exception:
-                logger.debug("Cap pointer read failed")
+        mp_val = read_pointer_stat(
+            service=self.runtime.mp_service if isinstance(self.runtime.mp_service, StatPointerService) else self,
+            state_invalid_attr="_mp_pointer_invalid",
+            state_resolved_attr="_mp_resolved_addr",
+            read_method_name="read_mp",
+            source_attr="mp_source",
+        )
+
+        cap_val = read_pointer_stat(
+            service=self.runtime.cap_service if isinstance(self.runtime.cap_service, StatPointerService) else self,
+            state_invalid_attr="_cap_pointer_invalid",
+            state_resolved_attr="_cap_resolved_addr",
+            read_method_name="read_cap",
+            source_attr="cap_source",
+        )
 
         if getattr(state, "_food_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
@@ -595,9 +709,11 @@ class MpService(StatPointerService):
     value_attr = "mp_value"
     fallback_attr = "char_status_mana"
     state_resolved_attr = "_mp_resolved_addr"
+    state_invalid_attr = "_mp_pointer_invalid"
     local_address_attr = "_mp_address"
     local_cache_attr = "_mp_cache_time"
     local_ttl_attr = "_MP_CACHE_TTL"
+    hard_max_value = 1_000_000.0
 
     def get_mp(self) -> float | None:
         return self._get_value()
@@ -613,9 +729,12 @@ class CapService(StatPointerService):
     value_attr = "cap_value"
     fallback_attr = "char_status_cap"
     state_resolved_attr = "_cap_resolved_addr"
+    state_invalid_attr = "_cap_pointer_invalid"
+    state_peak_attr = "char_status_cap_peak"
     local_address_attr = "_cap_address"
     local_cache_attr = "_cap_cache_time"
     local_ttl_attr = "_CAP_CACHE_TTL"
+    hard_max_value = 1_000_000.0
 
     def get_cap(self) -> float | None:
         return self._get_value()
@@ -709,51 +828,85 @@ class AlarmService:
         return ""
 
     def _flash_game_window(self) -> None:
-        """Flash the game window's taskbar icon using win32gui."""
-        if not HAS_WIN32 or not win32gui or not win32con:
+        """Flash the attached game client's taskbar entry using the attached window metadata."""
+        if not HAS_WIN32 or not win32gui or not win32con or not HAS_CTYPES:
             return
         try:
-            # Try to find the game process window (miracle_gl.exe)
-            def enum_callback(hwnd, results):
-                if win32gui.IsWindowVisible(hwnd):
-                    _, process_name = win32gui.GetWindowText(hwnd), None
-                    # Check process name from window title or class
-                    try:
-                        pid = win32gui.GetWindowThreadProcessId(hwnd)
-                        import psutil
-                        proc = psutil.Process(pid[1])
-                        pname = proc.name().lower()
-                        if "miracle" in pname or "game" in pname.lower():
-                            results.append((hwnd, process_name))
-                    except Exception:
-                        pass
+            hwnd = self._resolve_attached_game_window()
+            if not hwnd:
+                return
 
-            handles = []
-            win32gui.EnumWindows(enum_callback, handles)
-            for hwnd, title in handles[:1]:  # Flash first matching window
-                try:
-                    FLASH_INFO = (win32con.FW_RUNNABLEONCALLBACK |
-                                  win32con.FW_RESTORECONFOFF |
-                                  50)  # flash 5 times
-                    win32gui.FlashWindow(hwnd, True)
-                except Exception:
-                    pass
+            class FLASHWINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_uint),
+                    ("hwnd", ctypes.c_void_p),
+                    ("dwFlags", ctypes.c_uint),
+                    ("uCount", ctypes.c_uint),
+                    ("dwTimeout", ctypes.c_uint),
+                ]
+
+            FLASHW_ALL = 0x00000003
+            FLASHW_TIMERNOFG = 0x0000000C
+            flash_info = FLASHWINFO(
+                cbSize=ctypes.sizeof(FLASHWINFO),
+                hwnd=int(hwnd),
+                dwFlags=FLASHW_ALL | FLASHW_TIMERNOFG,
+                uCount=5,
+                dwTimeout=0,
+            )
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(flash_info))
         except Exception:
-            pass
+            logger.debug("Game window flash failed", exc_info=True)
 
     def _play_system_sound(self) -> None:
         """Play a standard Windows system sound (SystemAsterisk)."""
-        if not HAS_CTYPES:
-            return
         try:
-            ctypes.windll.user32.MessageBeep(0x40)  # MB_OK | MB_ICONASTERISK = SystemAsterisk
+            if HAS_WINSOUND and winsound is not None:
+                winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+                return
+            if HAS_CTYPES:
+                ctypes.windll.user32.MessageBeep(0x40)
         except Exception:
-            pass
+            logger.debug("System sound playback failed", exc_info=True)
 
-    def _has_attached_game_window(self) -> bool:
+    def _resolve_attached_game_window(self) -> int | None:
         light_service = getattr(self.runtime, "light_service", None)
         controller = getattr(light_service, "controller", None) if light_service is not None else None
-        return controller is not None
+        pid = int(getattr(controller, "pid", 0) or 0)
+        return find_game_window(
+            pid=pid,
+            process_name=self.runtime.state.light_process_name,
+            preferred_title=self.runtime.state.attached_window_title,
+        )
+
+    def _save_battle_logout_screenshot(self, battle_frame) -> str | None:
+        if battle_frame is None:
+            return None
+        try:
+            output_dir = ensure_autosave_directory()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            output_path = output_dir / f"battle_logout_{timestamp}.png"
+            if hasattr(mss, "tools") and hasattr(mss.tools, "to_png"):
+                rgb_frame = np.ascontiguousarray(battle_frame[:, :, ::-1])
+                mss.tools.to_png(rgb_frame.tobytes(), (rgb_frame.shape[1], rgb_frame.shape[0]), output=str(output_path))
+                return str(output_path)
+        except Exception:
+            logger.debug("Battle logout screenshot save failed", exc_info=True)
+        return None
+
+    def _notify_logout_success(self, screenshot_path: str | None) -> None:
+        timeout_seconds = max(0, int(getattr(self.runtime.state.alarm, "battle_logout_popup_timeout_sec", 0) or 0))
+        details = ["Control + Q logout was executed successfully."]
+        if screenshot_path:
+            details.append(f"Screenshot saved to: {screenshot_path}")
+        if timeout_seconds > 0:
+            details.append(f"This window will close automatically in {timeout_seconds} second(s).")
+        else:
+            details.append("This window will remain on top until you close it.")
+        self.runtime.ui.show_logout_popup("Battle Logout Executed", "\n".join(details), timeout_seconds)
+
+    def _has_attached_game_window(self) -> bool:
+        return self._resolve_attached_game_window() is not None
 
     def _prepare_battle_frame(self, frame):
         if frame is None or frame.size == 0:
@@ -812,7 +965,7 @@ class AlarmService:
         def play() -> None:
             try:
                 # Play Windows system sound if enabled (non-blocking, instant feedback)
-                if system_sound and HAS_CTYPES:
+                if system_sound:
                     self._play_system_sound()
 
                 # Flash game window taskbar icon if enabled
@@ -1022,9 +1175,14 @@ class AlarmService:
                     if current_changed and not battle_was_changed:
                         if now >= battle_cooldown_until:
                             self.runtime.ui.log(f"Battle change detected: {changed_ratio * 100:.1f}%")
+                            screenshot_path = self._save_battle_logout_screenshot(battle_frame)
                             if self._execute_battle_hotkey():
                                 battle_cooldown_until = now + self.BATTLE_COOLDOWN_SECONDS
-                                self.runtime.ui.log("CTRL+Q executed")
+                                if screenshot_path:
+                                    self.runtime.ui.log(f"CTRL+Q executed | screenshot: {screenshot_path}")
+                                else:
+                                    self.runtime.ui.log("CTRL+Q executed")
+                                self._notify_logout_success(screenshot_path)
                         elif now >= battle_cooldown_log_at:
                             remaining = max(0.0, battle_cooldown_until - now)
                             self.runtime.ui.log(f"Battle cooldown active ({remaining:.1f}s)")

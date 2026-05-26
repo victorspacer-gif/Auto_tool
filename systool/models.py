@@ -57,6 +57,7 @@ class AlarmState:
     cap_value: int = 0
     flash_window: bool = True
     system_sound: bool = False
+    battle_logout_popup_timeout_sec: int = 0
 
 
 @dataclasses.dataclass
@@ -247,6 +248,9 @@ class AppState:
     _prev_ocr_hp: int | None = None
     _prev_ocr_mp: int | None = None
     _prev_ocr_cap: int | None = None
+    _hp_pointer_invalid: bool = False
+    _mp_pointer_invalid: bool = False
+    _cap_pointer_invalid: bool = False
     _mp_resolved_addr: int | None = None
     _cap_resolved_addr: int | None = None
 

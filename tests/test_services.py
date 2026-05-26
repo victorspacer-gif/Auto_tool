@@ -13,7 +13,9 @@ with patch("systool.runtime.pynput_kb"), \
      patch("systool.runtime.pynput_mouse"):
     from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
     from systool.services import input_services
-    from systool.services.monitoring import AlarmService
+    from systool.services import monitoring as monitoring_module
+    from systool.services.monitoring import AlarmService, HpService, MpService
+    from systool.runtime import AppRuntime
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
 try:
@@ -417,6 +419,123 @@ class TestPauseController:
         controller.wait()
         elapsed = time.monotonic() - start
         assert elapsed >= 0.12  # should have waited at least a bit
+
+
+class TestPointerFallbackGuard:
+    def test_hp_invalid_pointer_falls_back_to_ocr_and_stays_disabled(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 321
+
+        service = HpService(runtime)
+        service.controller = MagicMock()
+        service.pointer_reader = MagicMock()
+        service.pointer_reader.read_hp.return_value = -50
+        service._hp_address = 0x123456
+        service._hp_cache_time = time.time()
+        runtime.state.hp_pointer_address_hex = "123456"
+        runtime.state.hp_source = "pointer"
+
+        value = service.get_hp()
+
+        assert value == 321.0
+        assert runtime.state.hp_value == 321.0
+        assert runtime.state.hp_source == "ocr"
+        assert runtime.state._hp_pointer_invalid is True
+        assert runtime.state.hp_pointer_address_hex == ""
+        assert service._hp_address is None
+        service.pointer_reader.read_hp.assert_called_once()
+
+        service.pointer_reader.read_hp.reset_mock()
+        second_value = service.get_hp()
+
+        assert second_value == 321.0
+        service.pointer_reader.read_hp.assert_not_called()
+
+    def test_batch_read_invalidates_mp_pointer_and_shared_state_forces_ocr(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 500
+        runtime.state.char_status_mana = 180
+        runtime.state._mp_resolved_addr = 0xABCDEF
+
+        hp_service = HpService(runtime)
+        mp_service = MpService(runtime)
+        runtime.hp_service = hp_service
+        runtime.mp_service = mp_service
+
+        hp_service.pointer_reader = MagicMock()
+        hp_service.pointer_reader.read_hp.return_value = 500
+        hp_service.pointer_reader.read_mp.return_value = float("inf")
+        mp_service.pointer_reader = hp_service.pointer_reader
+
+        hp_value, mp_value, cap_value = hp_service._read_all_stats()
+
+        assert hp_value == 500.0
+        assert mp_value == 180.0
+        assert cap_value is None
+        assert runtime.state.mp_source == "ocr"
+        assert runtime.state.mp_value == 180.0
+        assert runtime.state._mp_pointer_invalid is True
+        assert runtime.state._mp_resolved_addr is None
+        assert runtime.state.mp_pointer_address_hex == ""
+
+        mp_service.controller = MagicMock()
+        mp_service._mp_address = 0xABCDEF
+        mp_service._mp_cache_time = time.time()
+        mp_service.pointer_reader.read_mp.reset_mock()
+
+        direct_value = mp_service.get_mp()
+
+        assert direct_value == 180.0
+        mp_service.pointer_reader.read_mp.assert_not_called()
+
+
+class TestAlarmEnhancements:
+    def test_play_system_sound_prefers_winsound_alias(self):
+        runtime = AppRuntime()
+        service = AlarmService(runtime)
+
+        with patch.object(monitoring_module, "HAS_WINSOUND", True), \
+             patch.object(monitoring_module, "winsound") as winsound_mock:
+            service._play_system_sound()
+
+        winsound_mock.PlaySound.assert_called_once_with(
+            "SystemAsterisk",
+            winsound_mock.SND_ALIAS | winsound_mock.SND_ASYNC | winsound_mock.SND_NODEFAULT,
+        )
+
+    def test_flash_game_window_uses_attached_window_handle(self):
+        runtime = AppRuntime()
+        service = AlarmService(runtime)
+
+        flash_func = MagicMock()
+        fake_user32 = MagicMock(FlashWindowEx=flash_func)
+
+        with patch.object(monitoring_module, "HAS_WIN32", True), \
+             patch.object(monitoring_module, "HAS_CTYPES", True), \
+             patch.object(monitoring_module, "win32gui", object()), \
+             patch.object(monitoring_module, "win32con", object()), \
+             patch.object(service, "_resolve_attached_game_window", return_value=12345), \
+             patch.object(monitoring_module.ctypes, "windll", MagicMock(user32=fake_user32), create=True):
+            service._flash_game_window()
+
+        assert flash_func.call_count == 1
+
+    def test_notify_logout_success_uses_popup_timeout_and_path(self):
+        runtime = AppRuntime()
+        runtime.ui.show_logout_popup = MagicMock()
+        runtime.state.alarm.battle_logout_popup_timeout_sec = 9
+        service = AlarmService(runtime)
+
+        service._notify_logout_success("C:/tmp/logout.png")
+
+        runtime.ui.show_logout_popup.assert_called_once()
+        args = runtime.ui.show_logout_popup.call_args.args
+        assert args[0] == "Battle Logout Executed"
+        assert "logout was executed successfully" in args[1]
+        assert "C:/tmp/logout.png" in args[1]
+        assert args[2] == 9
 
 
 class TestExecutionGate:

@@ -18,6 +18,7 @@ AUTOSAVE_FOLDER_NAME = "aututu"
 AUTOSAVE_INTERVAL_MS = 120_000
 PROFILE_SCHEMA_VERSION = 1
 UNKNOWN_CHARACTER_NAME = "unknown_character"
+GAME_CLIENT_PATTERN = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)*\.exe$", re.IGNORECASE)
 OCR_REGION_KEYS = (
     "char_status_region",
     "char_status_hp_region",
@@ -306,6 +307,81 @@ def get_window_rect_for_pid(pid: int) -> tuple[int, int, int, int] | None:
 
     user32.EnumWindows(callback, 0)
     return found_rect[0]
+
+
+def find_game_window(
+    *,
+    pid: int = 0,
+    process_name: str = "",
+    preferred_title: str = "",
+) -> int | None:
+    """Locate a visible top-level game client window using attach metadata first."""
+    if os.name != "nt":
+        return None
+
+    user32 = ctypes.windll.user32
+    found_hwnd: list[int | None] = [None]
+    preferred_title_norm = (preferred_title or "").strip().lower()
+    process_name_norm = (process_name or "").strip().lower()
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    get_window_text_length = user32.GetWindowTextLengthW
+    get_window_text_length.argtypes = [wintypes.HWND]
+    get_window_text_length.restype = ctypes.c_int
+
+    get_window_text = user32.GetWindowTextW
+    get_window_text.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    get_window_text.restype = ctypes.c_int
+
+    is_window_visible = user32.IsWindowVisible
+    is_window_visible.argtypes = [wintypes.HWND]
+    is_window_visible.restype = wintypes.BOOL
+
+    get_window_thread_process_id = user32.GetWindowThreadProcessId
+    get_window_thread_process_id.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    get_window_thread_process_id.restype = wintypes.DWORD
+
+    @EnumWindowsProc
+    def callback(hwnd, _lparam):
+        if not is_window_visible(hwnd):
+            return True
+
+        window_pid = wintypes.DWORD()
+        get_window_thread_process_id(hwnd, ctypes.byref(window_pid))
+        if pid > 0 and window_pid.value != pid:
+            return True
+
+        length = get_window_text_length(hwnd)
+        if length <= 0:
+            return True
+
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        get_window_text(hwnd, buffer, len(buffer))
+        title = buffer.value.strip()
+        if not title:
+            return True
+
+        if preferred_title_norm and title.lower() == preferred_title_norm:
+            found_hwnd[0] = int(hwnd)
+            return False
+
+        try:
+            import psutil
+
+            proc_name = psutil.Process(window_pid.value).name().strip().lower()
+        except Exception:
+            proc_name = ""
+
+        if process_name_norm and proc_name == process_name_norm:
+            found_hwnd[0] = int(hwnd)
+            return False
+        if proc_name and GAME_CLIENT_PATTERN.fullmatch(proc_name):
+            found_hwnd[0] = int(hwnd)
+            return False
+        return True
+
+    user32.EnumWindows(callback, 0)
+    return found_hwnd[0]
 
 
 def remap_ocr_regions_from_profile(
