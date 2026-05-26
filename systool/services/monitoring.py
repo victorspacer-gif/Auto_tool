@@ -870,16 +870,29 @@ class AlarmService:
         except Exception:
             logger.debug("Game window flash failed", exc_info=True)
 
-    def _play_system_sound(self) -> None:
-        """Play a standard Windows system sound (SystemAsterisk)."""
-        try:
-            if HAS_WINSOUND and winsound is not None:
-                winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
-                return
-            if HAS_CTYPES:
+def _play_system_sound(self) -> None:
+    """Play multiple Windows alert beeps for stronger user attention."""
+    try:
+        if HAS_WINSOUND and winsound is not None:
+            beep_pattern = [
+                (1200, 120),
+                (1200, 120),
+                (1600, 180),
+            ]
+
+            for frequency, duration in beep_pattern:
+                winsound.Beep(frequency, duration)
+                time.sleep(0.05)
+
+            return
+
+        if HAS_CTYPES:
+            for _ in range(3):
                 ctypes.windll.user32.MessageBeep(0x40)
-        except Exception:
-            logger.debug("System sound playback failed", exc_info=True)
+                time.sleep(0.15)
+
+    except Exception:
+        logger.debug("System sound playback failed", exc_info=True)¼
 
     def _resolve_attached_game_window(self) -> int | None:
         light_service = getattr(self.runtime, "light_service", None)
@@ -947,6 +960,27 @@ class AlarmService:
         if not HAS_PYAUTOGUI:
             self.runtime.ui.log("Battle reaction needs pyautogui")
             return False
+
+        # ============================================================
+        # Rate limit: max 3 executions every 60 seconds
+        # ============================================================
+        now = time.time()
+
+        if not hasattr(self, "_battle_hotkey_window_start"):
+            self._battle_hotkey_window_start = now
+            self._battle_hotkey_count = 0
+
+        # Reset window after 60 seconds
+        if now - self._battle_hotkey_window_start >= 60:
+            self._battle_hotkey_window_start = now
+            self._battle_hotkey_count = 0
+
+        # Block if limit reached
+        if self._battle_hotkey_count >= 3:
+            return False
+
+        self._battle_hotkey_count += 1
+
         try:
             pyautogui.keyDown("ctrl")
             time.sleep(0.02)
@@ -956,9 +990,11 @@ class AlarmService:
 
             pyautogui.keyUp("q")
             return True
+
         except Exception as exc:
             self.runtime.ui.log(f"Battle CTRL+Q failed: {exc}")
             return False
+
         finally:
             try:
                 pyautogui.keyUp("ctrl")
