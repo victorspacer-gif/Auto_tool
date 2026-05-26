@@ -301,6 +301,7 @@ class StatPointerService:
     local_cache_attr = "_cache_time"
     local_ttl_attr = "_CACHE_TTL"
     hard_max_value: float | None = None
+    require_integer_value = True
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
@@ -454,6 +455,8 @@ class StatPointerService:
             raise ValueError("non-finite value")
         if numeric_value < 0:
             raise ValueError("negative value")
+        if self.require_integer_value and not numeric_value.is_integer():
+            raise ValueError("fractional value")
         if self.hard_max_value is not None and numeric_value > self.hard_max_value:
             raise ValueError(f"value above hard max {self.hard_max_value:.0f}")
 
@@ -465,9 +468,23 @@ class StatPointerService:
             if abs(numeric_value - fallback_value) > allowed_delta:
                 raise ValueError(f"value inconsistent with OCR ({fallback_value:.0f})")
 
+        if self.require_integer_value:
+            return int(numeric_value)
         if isinstance(raw_value, int):
             return raw_value
         return numeric_value
+
+    def _normalize_stat_value(self, raw_value: object) -> float | int | None:
+        if raw_value is None:
+            return None
+        if self.require_integer_value:
+            numeric_value = float(raw_value)
+            if numeric_value <= 0:
+                return None
+            return int(numeric_value)
+        if isinstance(raw_value, (int, float)) and raw_value > 0:
+            return float(raw_value)
+        return None
 
     def _read_valid_pointer_value(self) -> float | int:
         raw_value = self._read_pointer_value()
@@ -477,12 +494,10 @@ class StatPointerService:
             self._invalidate_pointer(str(exc), raw_value=raw_value)
             raise RuntimeError(str(exc)) from exc
 
-    def _get_fallback_value(self) -> float | None:
+    def _get_fallback_value(self) -> float | int | None:
         with self.runtime.settings_lock:
             fallback_value = getattr(self.runtime.state, self.fallback_attr)
-        if fallback_value is not None and fallback_value > 0:
-            return float(fallback_value)
-        return None
+        return self._normalize_stat_value(fallback_value)
 
     def _read_pointer_value(self) -> float | int:
         if self.pointer_reader is None or not self.stat_name:
@@ -490,7 +505,7 @@ class StatPointerService:
         read_method = getattr(self.pointer_reader, f"read_{self.stat_name}")
         return read_method()
 
-    def _get_value(self) -> float | None:
+    def _get_value(self) -> float | int | None:
         state = self.runtime.state
         if not self._is_address_valid():
             self._ensure_address_resolved()
@@ -574,14 +589,14 @@ class HpService(StatPointerService):
         self._light_address = None
         return result
 
-    def get_hp(self) -> float | None:
+    def get_hp(self) -> int | None:
         return self._get_value()
 
     def get_hp_peak(self) -> int:
         with self.runtime.settings_lock:
             return self.runtime.state.char_status_hp_peak
 
-    def _read_all_stats(self) -> tuple[float | None, float | None, float | None]:
+    def _read_all_stats(self) -> tuple[int | None, int | None, int | None]:
         """Read HP/MP/Cap/Food from pointers, falling back to OCR when unavailable.
 
         Returns (hp_val, mp_val, cap_val) from pointers (may be None).  When a
@@ -629,9 +644,6 @@ class HpService(StatPointerService):
             read_method_name="read_hp",
             source_attr="hp_source",
         )
-        if hp_val is not None:
-            hp_val = float(hp_val)
-
         mp_val = read_pointer_stat(
             service=self.runtime.mp_service if isinstance(self.runtime.mp_service, StatPointerService) else self,
             state_invalid_attr="_mp_pointer_invalid",
@@ -663,20 +675,20 @@ class HpService(StatPointerService):
         with self.runtime.settings_lock:
             if hp_val is None:
                 ocr_hp = getattr(state, "char_status_hp", None)
-                if ocr_hp is not None and ocr_hp > 0:
-                    hp_val = float(ocr_hp)
+                hp_val = self._normalize_stat_value(ocr_hp)
+                if hp_val is not None:
                     state.hp_value = hp_val
                     state.hp_source = "ocr"
             if mp_val is None:
                 ocr_mp = getattr(state, "char_status_mana", None)
-                if ocr_mp is not None and ocr_mp > 0:
-                    mp_val = float(ocr_mp)
+                mp_val = self._normalize_stat_value(ocr_mp)
+                if mp_val is not None:
                     state.mp_value = mp_val
                     state.mp_source = "ocr"
             if cap_val is None:
                 ocr_cap = getattr(state, "char_status_cap", None)
-                if ocr_cap is not None and ocr_cap > 0:
-                    cap_val = float(ocr_cap)
+                cap_val = self._normalize_stat_value(ocr_cap)
+                if cap_val is not None:
                     state.cap_value = cap_val
                     state.cap_source = "ocr"
             if food_val is None:
@@ -715,7 +727,7 @@ class MpService(StatPointerService):
     local_ttl_attr = "_MP_CACHE_TTL"
     hard_max_value = 1_000_000.0
 
-    def get_mp(self) -> float | None:
+    def get_mp(self) -> int | None:
         return self._get_value()
 
 
@@ -736,7 +748,7 @@ class CapService(StatPointerService):
     local_ttl_attr = "_CAP_CACHE_TTL"
     hard_max_value = 1_000_000.0
 
-    def get_cap(self) -> float | None:
+    def get_cap(self) -> int | None:
         return self._get_value()
 
     def get_cap_peak(self) -> int:

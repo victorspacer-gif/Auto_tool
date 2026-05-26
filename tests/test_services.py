@@ -438,8 +438,10 @@ class TestPointerFallbackGuard:
 
         value = service.get_hp()
 
-        assert value == 321.0
-        assert runtime.state.hp_value == 321.0
+        assert value == 321
+        assert isinstance(value, int)
+        assert runtime.state.hp_value == 321
+        assert isinstance(runtime.state.hp_value, int)
         assert runtime.state.hp_source == "ocr"
         assert runtime.state._hp_pointer_invalid is True
         assert runtime.state.hp_pointer_address_hex == ""
@@ -449,8 +451,41 @@ class TestPointerFallbackGuard:
         service.pointer_reader.read_hp.reset_mock()
         second_value = service.get_hp()
 
-        assert second_value == 321.0
+        assert second_value == 321
+        assert isinstance(second_value, int)
         service.pointer_reader.read_hp.assert_not_called()
+
+    def test_hp_fractional_pointer_falls_back_to_ocr_and_stays_disabled(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 321
+
+        service = HpService(runtime)
+        service.controller = MagicMock()
+        service.pointer_reader = MagicMock()
+        service.pointer_reader.read_hp.return_value = 5.6823
+        service._hp_address = 0x123456
+        service._hp_cache_time = time.time()
+        runtime.state.hp_pointer_address_hex = "123456"
+        runtime.state.hp_source = "pointer"
+
+        value = service.get_hp()
+
+        assert value == 321
+        assert isinstance(value, int)
+        assert runtime.state.hp_value == 321
+        assert isinstance(runtime.state.hp_value, int)
+        assert runtime.state.hp_source == "ocr"
+        assert runtime.state._hp_pointer_invalid is True
+        assert runtime.state.hp_pointer_address_hex == ""
+
+    def test_integer_float_pointer_is_kept_as_int(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+
+        service = HpService(runtime)
+
+        assert service._validate_pointer_value(500.0) == 500
 
     def test_batch_read_invalidates_mp_pointer_and_shared_state_forces_ocr(self):
         runtime = AppRuntime()
@@ -471,11 +506,14 @@ class TestPointerFallbackGuard:
 
         hp_value, mp_value, cap_value = hp_service._read_all_stats()
 
-        assert hp_value == 500.0
-        assert mp_value == 180.0
+        assert hp_value == 500
+        assert isinstance(hp_value, int)
+        assert mp_value == 180
+        assert isinstance(mp_value, int)
         assert cap_value is None
         assert runtime.state.mp_source == "ocr"
-        assert runtime.state.mp_value == 180.0
+        assert runtime.state.mp_value == 180
+        assert isinstance(runtime.state.mp_value, int)
         assert runtime.state._mp_pointer_invalid is True
         assert runtime.state._mp_resolved_addr is None
         assert runtime.state.mp_pointer_address_hex == ""
@@ -487,8 +525,40 @@ class TestPointerFallbackGuard:
 
         direct_value = mp_service.get_mp()
 
-        assert direct_value == 180.0
+        assert direct_value == 180
+        assert isinstance(direct_value, int)
         mp_service.pointer_reader.read_mp.assert_not_called()
+
+    def test_batch_read_invalidates_fractional_mp_pointer(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 500
+        runtime.state.char_status_mana = 180
+        runtime.state._mp_resolved_addr = 0xABCDEF
+
+        hp_service = HpService(runtime)
+        mp_service = MpService(runtime)
+        runtime.hp_service = hp_service
+        runtime.mp_service = mp_service
+
+        hp_service.pointer_reader = MagicMock()
+        hp_service.pointer_reader.read_hp.return_value = 500
+        hp_service.pointer_reader.read_mp.return_value = 5.6823
+        mp_service.pointer_reader = hp_service.pointer_reader
+
+        hp_value, mp_value, cap_value = hp_service._read_all_stats()
+
+        assert hp_value == 500
+        assert isinstance(hp_value, int)
+        assert mp_value == 180
+        assert isinstance(mp_value, int)
+        assert cap_value is None
+        assert runtime.state.mp_source == "ocr"
+        assert runtime.state.mp_value == 180
+        assert isinstance(runtime.state.mp_value, int)
+        assert runtime.state._mp_pointer_invalid is True
+        assert runtime.state._mp_resolved_addr is None
+        assert runtime.state.mp_pointer_address_hex == ""
 
 
 class TestAlarmEnhancements:

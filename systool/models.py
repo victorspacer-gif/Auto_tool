@@ -231,15 +231,15 @@ class AppState:
 
     hp_pointer_address_hex: str = ""
     hp_source: str = "ocr"
-    hp_value: float | None = None
+    hp_value: int | None = None
 
     mp_pointer_address_hex: str = ""
     mp_source: str = "none"
-    mp_value: float | None = None
+    mp_value: int | None = None
 
     cap_pointer_address_hex: str = ""
     cap_source: str = "none"
-    cap_value: float | None = None
+    cap_value: int | None = None
 
     food_pointer_address_hex: str = ""
     food_source: str = "ocr"

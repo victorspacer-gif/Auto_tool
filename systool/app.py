@@ -1050,6 +1050,8 @@ class SystemMonitorApp:
             return
         title = getattr(label, "_stat_title", label.cget("text").split(":", 1)[0])
         suffix = f" [{source}]" if source == "pointer" and value is not None else ""
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
         label.config(text=f"{title}: {value if value is not None else '—'}{suffix}")
 
     def _toggle_service(self, service_attr: str, state_flag: str) -> None:
