@@ -131,6 +131,9 @@ class SystemMonitorApp:
         self.stats_label: tk.Label | None = None
         self.pause_label: tk.Label | None = None
         self.notebook_widget: ttk.Notebook | None = None
+        self.tab_button_rows: list[tk.Frame] = []
+        self.tab_buttons: dict[str, tk.Button] = {}
+        self.tab_order: list[str] = []
         self.rune_tab_ui: RuneTab | None = None
         self.healer_tab_ui: HealerTab | None = None
         self.fishing_tab_ui: FishingTab | None = None
@@ -319,10 +322,20 @@ class SystemMonitorApp:
         style.configure("TNotebook", background=BG, borderwidth=0)
         style.configure("TNotebook.Tab", background=PANEL, foreground=MUTED, font=BOLD, padding=[8, 4])
         style.map("TNotebook.Tab", background=[("selected", BG)], foreground=[("selected", FG)])
+        style.layout("Tabless.TNotebook.Tab", [])
+        style.configure("Tabless.TNotebook", background=BG, borderwidth=0)
 
         wrapper = tk.Frame(self.root, bg=BG)
         wrapper.pack(fill="both", expand=True, padx=14, pady=6)
-        notebook = ttk.Notebook(wrapper)
+        tab_bar = tk.Frame(wrapper, bg=BG)
+        tab_bar.pack(fill="x", pady=(0, 8))
+        row_top = tk.Frame(tab_bar, bg=BG)
+        row_top.pack(fill="x", pady=(0, 4))
+        row_bottom = tk.Frame(tab_bar, bg=BG)
+        row_bottom.pack(fill="x")
+        self.tab_button_rows = [row_top, row_bottom]
+
+        notebook = ttk.Notebook(wrapper, style="Tabless.TNotebook")
         notebook.pack(fill="both", expand=True)
         self.notebook_widget = notebook
 
@@ -349,16 +362,23 @@ class SystemMonitorApp:
         self.hotkeys_tab = hotkeys_tab
         self.config_tab = config_tab
 
-        notebook.add(automation_tab, text="🎮  Activity Control")
-        notebook.add(rune_tab, text="✨  Rune Session")
-        notebook.add(healer_tab, text="❤️  Auto Healer")
-        notebook.add(light_tab, text="💡  Light Control")
-        notebook.add(alarm_tab, text="👁️  Screen Watch")
-        notebook.add(char_status_tab, text="📊  Character Status")
-        notebook.add(variables_tab, text="🔬  Variables")
-        notebook.add(fish_tab, text="🎣  Fishing Session")
-        notebook.add(hotkeys_tab, text="⌨️  Hotkeys")
-        notebook.add(config_tab, text="💾  Config")
+        tab_specs = [
+            ("automation", automation_tab, "🎮  Activity Control"),
+            ("rune", rune_tab, "✨  Rune Session"),
+            ("healer", healer_tab, "❤️  Auto Healer"),
+            ("light", light_tab, "💡  Light Control"),
+            ("alarm", alarm_tab, "👁️  Screen Watch"),
+            ("char_status", char_status_tab, "📊  Character Status"),
+            ("variables", variables_tab, "🔬  Variables"),
+            ("fish", fish_tab, "🎣  Fishing Session"),
+            ("hotkeys", hotkeys_tab, "⌨️  Hotkeys"),
+            ("config", config_tab, "💾  Config"),
+        ]
+        self.tab_order = [tab_id for tab_id, _frame, _label in tab_specs]
+        for index, (tab_id, frame, label) in enumerate(tab_specs):
+            notebook.add(frame, text=label)
+            row = self.tab_button_rows[0 if index < 5 else 1]
+            self.tab_buttons[tab_id] = self._create_tab_button(row, label, lambda selected=tab_id: self._select_tab(selected))
 
         tab_helpers = self._build_tab_helpers()
 
@@ -451,6 +471,8 @@ class SystemMonitorApp:
             tab_helpers,
             self.ui_vars,
         )
+        notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
+        self._sync_tab_button_states()
 
     def _root_poll_settings_now(self) -> None:
         self._poll_settings(schedule_next=False)
@@ -761,6 +783,51 @@ class SystemMonitorApp:
 
     def _btn(self, parent, text, command, bg=GREEN, **kwargs):
         return tk.Button(parent, text=text, command=command, font=BOLD, bg=bg, fg="white", activebackground=bg, activeforeground="white", bd=0, relief="flat", cursor="hand2", pady=6, **kwargs)
+
+    def _create_tab_button(self, parent, text: str, command) -> tk.Button:
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            font=SMALL_B,
+            bg=PANEL,
+            fg=MUTED,
+            activebackground=BLUE,
+            activeforeground="white",
+            bd=0,
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=6,
+        )
+        button.pack(side="left", padx=(0, 6), fill="x", expand=True)
+        return button
+
+    def _select_tab(self, tab_id: str) -> None:
+        if not self.notebook_widget or tab_id not in self.tab_order:
+            return
+        self.notebook_widget.select(self.tab_order.index(tab_id))
+        self._sync_tab_button_states()
+
+    def _on_notebook_tab_changed(self, _event=None) -> None:
+        self._sync_tab_button_states()
+
+    def _sync_tab_button_states(self) -> None:
+        if not self.notebook_widget:
+            return
+        try:
+            current_index = self.notebook_widget.index(self.notebook_widget.select())
+        except tk.TclError:
+            return
+        current_tab_id = self.tab_order[current_index] if 0 <= current_index < len(self.tab_order) else None
+        for tab_id, button in self.tab_buttons.items():
+            selected = tab_id == current_tab_id
+            button.config(
+                bg=BLUE if selected else PANEL,
+                fg="white" if selected else MUTED,
+                activebackground=BLUE if selected else "#3B82F6",
+                relief="sunken" if selected else "flat",
+            )
 
     def _window_control_button(self, parent, text, command, tooltip):
         button = tk.Button(
