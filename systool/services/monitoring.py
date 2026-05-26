@@ -882,14 +882,14 @@ class AlarmService:
 
                 for frequency, duration in beep_pattern:
                     winsound.Beep(frequency, duration)
-                    time.sleep(0.05)
+                    time.sleep(0.02)
 
                 return
 
             if HAS_CTYPES:
                 for _ in range(3):
                     ctypes.windll.user32.MessageBeep(0x40)
-                    time.sleep(0.15)
+                    time.sleep(0.10)
 
         except Exception:
             logger.debug("System sound playback failed", exc_info=True)
