@@ -870,29 +870,29 @@ class AlarmService:
         except Exception:
             logger.debug("Game window flash failed", exc_info=True)
 
-def _play_system_sound(self) -> None:
-    """Play multiple Windows alert beeps for stronger user attention."""
-    try:
-        if HAS_WINSOUND and winsound is not None:
-            beep_pattern = [
-                (1200, 120),
-                (1200, 120),
-                (1600, 180),
-            ]
+    def _play_system_sound(self) -> None:
+        """Play multiple Windows alert beeps for stronger user attention."""
+        try:
+            if HAS_WINSOUND and winsound is not None:
+                beep_pattern = [
+                    (1200, 120),
+                    (1200, 120),
+                    (1600, 180),
+                ]
 
-            for frequency, duration in beep_pattern:
-                winsound.Beep(frequency, duration)
-                time.sleep(0.05)
+                for frequency, duration in beep_pattern:
+                    winsound.Beep(frequency, duration)
+                    time.sleep(0.05)
 
-            return
+                return
 
-        if HAS_CTYPES:
-            for _ in range(3):
-                ctypes.windll.user32.MessageBeep(0x40)
-                time.sleep(0.15)
+            if HAS_CTYPES:
+                for _ in range(3):
+                    ctypes.windll.user32.MessageBeep(0x40)
+                    time.sleep(0.15)
 
-    except Exception:
-        logger.debug("System sound playback failed", exc_info=True)¼
+        except Exception:
+            logger.debug("System sound playback failed", exc_info=True)
 
     def _resolve_attached_game_window(self) -> int | None:
         light_service = getattr(self.runtime, "light_service", None)
