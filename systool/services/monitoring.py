@@ -154,6 +154,22 @@ class LightControlService:
             self.runtime.state.light_last_mode = "boosted"
         return ok, message
 
+    def apply_custom(self) -> tuple[bool, str]:
+        state = self.runtime.state
+        color_value = self._clamp_byte(state.light_custom_color_value)
+        intensity_value = self._clamp_byte(state.light_custom_intensity_value)
+        ok, message = self._apply(
+            color_value=color_value,
+            intensity_value=intensity_value,
+        )
+        if ok:
+            state.light_custom_color_value = color_value
+            state.light_custom_intensity_value = intensity_value
+            state.light_freeze_color_value = color_value
+            state.light_freeze_intensity_value = intensity_value
+            state.light_last_mode = "custom"
+        return ok, message
+
     def reset_original(self) -> tuple[bool, str]:
         state = self.runtime.state
         if not state.light_last_color_address_hex or not state.light_last_intensity_address_hex:
@@ -284,6 +300,11 @@ class LightControlService:
         if self.controller is None:
             raise ProcessNotFoundError("Attach to the game process first.")
         return self.controller
+
+    @staticmethod
+    def _clamp_byte(value: int) -> int:
+        return max(0, min(255, int(value)))
+
 
 class StatPointerService:
     """Shared pointer-backed stat reader with OCR fallback."""

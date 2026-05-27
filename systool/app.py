@@ -782,7 +782,8 @@ class SystemMonitorApp:
         self.log_widget.configure(state="disabled")
 
     def _btn(self, parent, text, command, bg=GREEN, **kwargs):
-        return tk.Button(parent, text=text, command=command, font=BOLD, bg=bg, fg="white", activebackground=bg, activeforeground="white", bd=0, relief="flat", cursor="hand2", pady=6, **kwargs)
+        kwargs.setdefault("pady", 6)
+        return tk.Button(parent, text=text, command=command, font=BOLD, bg=bg, fg="white", activebackground=bg, activeforeground="white", bd=0, relief="flat", cursor="hand2", **kwargs)
 
     def _create_tab_button(self, parent, text: str, command) -> tk.Button:
         button = tk.Button(
