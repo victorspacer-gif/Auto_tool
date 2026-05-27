@@ -2,23 +2,23 @@
 <CheatTable CheatEngineTableVersion="45">
   <CheatEntries>
     <CheatEntry>
-      <ID>12</ID>
+      <ID>33</ID>
       <Description>"pointerscan result"</Description>
       <ShowAsSigned>0</ShowAsSigned>
-      <VariableType>Byte</VariableType>
-      <Address>"miracle_gl-1776101216-1779602017.exe"+00A6DA60</Address>
+      <VariableType>Double</VariableType>
+      <Address>"miracle_gl-1779392082.exe"+00A6DA60</Address>
       <Offsets>
-        <Offset>AC</Offset>
+        <Offset>4F8</Offset>
       </Offsets>
     </CheatEntry>
     <CheatEntry>
-      <ID>13</ID>
+      <ID>34</ID>
       <Description>"pointerscan result"</Description>
       <ShowAsSigned>0</ShowAsSigned>
-      <VariableType>Byte</VariableType>
-      <Address>"miracle_gl-1776101216-1779602017.exe"+00A6DA6C</Address>
+      <VariableType>Double</VariableType>
+      <Address>"miracle_gl-1779392082.exe"+00A6DA6C</Address>
       <Offsets>
-        <Offset>AC</Offset>
+        <Offset>4F8</Offset>
         <Offset>11C</Offset>
       </Offsets>
     </CheatEntry>

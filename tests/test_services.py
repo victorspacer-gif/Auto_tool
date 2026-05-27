@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import pytest
+from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 # Mock pynput only for tests that need mocked mouse/keyboard objects.
@@ -13,7 +14,9 @@ with patch("systool.runtime.pynput_kb"), \
      patch("systool.runtime.pynput_mouse"):
     from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
     from systool.services import input_services
-    from systool.services.monitoring import AlarmService
+    from systool.services import monitoring as monitoring_module
+    from systool.services.monitoring import AlarmService, HpService, LightControlService, MpService
+    from systool.runtime import AppRuntime
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
 try:
@@ -116,6 +119,61 @@ class TestAlarmAudioPath:
     def test_resolve_alarm_audio_path_normalizes_relative_path(self):
         path = AlarmService._resolve_alarm_audio_path("alerts/test.mp3")
         assert path.endswith("alerts\\test.mp3") or path.endswith("alerts/test.mp3")
+
+
+class TestLightControlReset:
+    @dataclass
+    class _PatchResult:
+        address: int
+        old_value: int
+        new_value: int
+
+    @dataclass
+    class _LightPatchResult:
+        color: object
+        intensity: object
+
+    class _FakeLightController:
+        def __init__(self, color_value=90, intensity_value=4):
+            self.memory = {
+                0x1000: color_value,
+                0x1001: intensity_value,
+            }
+
+        def write_light_pair(self, color_address, color_value, intensity_value):
+            intensity_address = color_address + 1
+            old_color = self.memory[color_address]
+            old_intensity = self.memory[intensity_address]
+            self.memory[color_address] = color_value
+            self.memory[intensity_address] = intensity_value
+            return TestLightControlReset._LightPatchResult(
+                color=TestLightControlReset._PatchResult(color_address, old_color, color_value),
+                intensity=TestLightControlReset._PatchResult(intensity_address, old_intensity, intensity_value),
+            )
+
+    def test_reset_restores_first_game_values_after_multiple_client_applies(self):
+        runtime = AppRuntime()
+        runtime.state.light_direct_address_hex = "1000"
+        service = LightControlService(runtime)
+        service.controller = self._FakeLightController(color_value=90, intensity_value=4)
+
+        runtime.state.light_custom_color_value = 10
+        runtime.state.light_custom_intensity_value = 20
+        ok, _message = service.apply_custom()
+        assert ok is True
+
+        runtime.state.light_custom_color_value = 30
+        runtime.state.light_custom_intensity_value = 40
+        ok, _message = service.apply_custom()
+        assert ok is True
+
+        assert runtime.state.light_original_color_value == 90
+        assert runtime.state.light_original_intensity_value == 4
+
+        ok, _message = service.reset_original()
+        assert ok is True
+        assert service.controller.memory[0x1000] == 90
+        assert service.controller.memory[0x1001] == 4
 
 
 class TestSafeKeyboardSession:
@@ -239,6 +297,50 @@ class TestFoodTimerParsing:
         session.release_all()
         # release_all pops in reverse order and calls release on each
         assert mock_keyboard.release.call_count == 2
+
+
+class TestCharacterStatusPerf:
+    def test_cached_result_reuses_previous_values(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+
+        with patch.object(service, "_frame_signature", return_value=b"same"):
+            service._store_cached_result("window", frame, {"hp": 123})
+            cached = service._get_cached_result("window", frame)
+
+        assert cached == {"hp": 123}
+        assert service._perf_snapshot["cache_hits"] == 1
+
+    def test_extract_values_returns_cached_path_without_ocr_work(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        frame = MagicMock()
+
+        with patch.object(service, "_frame_signature", return_value=b"same"):
+            service._store_cached_result("window", frame, {"mana": 45})
+            values, perf = service._extract_values(frame, cache_key="window")
+
+        assert values == {"mana": 45}
+        assert perf["preprocess_ms"] == 0.0
+        assert perf["ocr_ms"] == 0.0
+
+    def test_perf_summary_reports_backend_and_cycle(self):
+        service = CharacterStatusService(runtime=MagicMock())
+        service._perf_snapshot.update({
+            "backend": "tesserocr",
+            "cycle_ms": 123.4,
+            "capture_ms": 10.0,
+            "preprocess_ms": 15.0,
+            "ocr_ms": 20.0,
+            "cache_hits": 3,
+            "cache_misses": 1,
+            "confidence": 0.87,
+        })
+
+        summary = service.get_perf_summary()
+
+        assert "backend=tesserocr" in summary
+        assert "cycle=123.4ms" in summary
+        assert "cache=3/4" in summary
 
     def test_release_lifo_order(self):
         """release_all should pop keys in LIFO (last-in-first-out) order."""
@@ -373,6 +475,193 @@ class TestPauseController:
         controller.wait()
         elapsed = time.monotonic() - start
         assert elapsed >= 0.12  # should have waited at least a bit
+
+
+class TestPointerFallbackGuard:
+    def test_hp_invalid_pointer_falls_back_to_ocr_and_stays_disabled(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 321
+
+        service = HpService(runtime)
+        service.controller = MagicMock()
+        service.pointer_reader = MagicMock()
+        service.pointer_reader.read_hp.return_value = -50
+        service._hp_address = 0x123456
+        service._hp_cache_time = time.time()
+        runtime.state.hp_pointer_address_hex = "123456"
+        runtime.state.hp_source = "pointer"
+
+        value = service.get_hp()
+
+        assert value == 321
+        assert isinstance(value, int)
+        assert runtime.state.hp_value == 321
+        assert isinstance(runtime.state.hp_value, int)
+        assert runtime.state.hp_source == "ocr"
+        assert runtime.state._hp_pointer_invalid is True
+        assert runtime.state.hp_pointer_address_hex == ""
+        assert service._hp_address is None
+        service.pointer_reader.read_hp.assert_called_once()
+
+        service.pointer_reader.read_hp.reset_mock()
+        second_value = service.get_hp()
+
+        assert second_value == 321
+        assert isinstance(second_value, int)
+        service.pointer_reader.read_hp.assert_not_called()
+
+    def test_hp_fractional_pointer_falls_back_to_ocr_and_stays_disabled(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 321
+
+        service = HpService(runtime)
+        service.controller = MagicMock()
+        service.pointer_reader = MagicMock()
+        service.pointer_reader.read_hp.return_value = 5.6823
+        service._hp_address = 0x123456
+        service._hp_cache_time = time.time()
+        runtime.state.hp_pointer_address_hex = "123456"
+        runtime.state.hp_source = "pointer"
+
+        value = service.get_hp()
+
+        assert value == 321
+        assert isinstance(value, int)
+        assert runtime.state.hp_value == 321
+        assert isinstance(runtime.state.hp_value, int)
+        assert runtime.state.hp_source == "ocr"
+        assert runtime.state._hp_pointer_invalid is True
+        assert runtime.state.hp_pointer_address_hex == ""
+
+    def test_integer_float_pointer_is_kept_as_int(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+
+        service = HpService(runtime)
+
+        assert service._validate_pointer_value(500.0) == 500
+
+    def test_batch_read_invalidates_mp_pointer_and_shared_state_forces_ocr(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 500
+        runtime.state.char_status_mana = 180
+        runtime.state._mp_resolved_addr = 0xABCDEF
+
+        hp_service = HpService(runtime)
+        mp_service = MpService(runtime)
+        runtime.hp_service = hp_service
+        runtime.mp_service = mp_service
+
+        hp_service.pointer_reader = MagicMock()
+        hp_service.pointer_reader.read_hp.return_value = 500
+        hp_service.pointer_reader.read_mp.return_value = float("inf")
+        mp_service.pointer_reader = hp_service.pointer_reader
+
+        hp_value, mp_value, cap_value = hp_service._read_all_stats()
+
+        assert hp_value == 500
+        assert isinstance(hp_value, int)
+        assert mp_value == 180
+        assert isinstance(mp_value, int)
+        assert cap_value is None
+        assert runtime.state.mp_source == "ocr"
+        assert runtime.state.mp_value == 180
+        assert isinstance(runtime.state.mp_value, int)
+        assert runtime.state._mp_pointer_invalid is True
+        assert runtime.state._mp_resolved_addr is None
+        assert runtime.state.mp_pointer_address_hex == ""
+
+        mp_service.controller = MagicMock()
+        mp_service._mp_address = 0xABCDEF
+        mp_service._mp_cache_time = time.time()
+        mp_service.pointer_reader.read_mp.reset_mock()
+
+        direct_value = mp_service.get_mp()
+
+        assert direct_value == 180
+        assert isinstance(direct_value, int)
+        mp_service.pointer_reader.read_mp.assert_not_called()
+
+    def test_batch_read_invalidates_fractional_mp_pointer(self):
+        runtime = AppRuntime()
+        runtime.ui.log = MagicMock()
+        runtime.state.char_status_hp = 500
+        runtime.state.char_status_mana = 180
+        runtime.state._mp_resolved_addr = 0xABCDEF
+
+        hp_service = HpService(runtime)
+        mp_service = MpService(runtime)
+        runtime.hp_service = hp_service
+        runtime.mp_service = mp_service
+
+        hp_service.pointer_reader = MagicMock()
+        hp_service.pointer_reader.read_hp.return_value = 500
+        hp_service.pointer_reader.read_mp.return_value = 5.6823
+        mp_service.pointer_reader = hp_service.pointer_reader
+
+        hp_value, mp_value, cap_value = hp_service._read_all_stats()
+
+        assert hp_value == 500
+        assert isinstance(hp_value, int)
+        assert mp_value == 180
+        assert isinstance(mp_value, int)
+        assert cap_value is None
+        assert runtime.state.mp_source == "ocr"
+        assert runtime.state.mp_value == 180
+        assert isinstance(runtime.state.mp_value, int)
+        assert runtime.state._mp_pointer_invalid is True
+        assert runtime.state._mp_resolved_addr is None
+        assert runtime.state.mp_pointer_address_hex == ""
+
+
+class TestAlarmEnhancements:
+    def test_play_system_sound_prefers_winsound_alias(self):
+        runtime = AppRuntime()
+        service = AlarmService(runtime)
+
+        with patch.object(monitoring_module, "HAS_WINSOUND", True), \
+             patch.object(monitoring_module, "winsound") as winsound_mock:
+            service._play_system_sound()
+
+        winsound_mock.PlaySound.assert_called_once_with(
+            "SystemAsterisk",
+            winsound_mock.SND_ALIAS | winsound_mock.SND_ASYNC | winsound_mock.SND_NODEFAULT,
+        )
+
+    def test_flash_game_window_uses_attached_window_handle(self):
+        runtime = AppRuntime()
+        service = AlarmService(runtime)
+
+        flash_func = MagicMock()
+        fake_user32 = MagicMock(FlashWindowEx=flash_func)
+
+        with patch.object(monitoring_module, "HAS_WIN32", True), \
+             patch.object(monitoring_module, "HAS_CTYPES", True), \
+             patch.object(monitoring_module, "win32gui", object()), \
+             patch.object(monitoring_module, "win32con", object()), \
+             patch.object(service, "_resolve_attached_game_window", return_value=12345), \
+             patch.object(monitoring_module.ctypes, "windll", MagicMock(user32=fake_user32), create=True):
+            service._flash_game_window()
+
+        assert flash_func.call_count == 1
+
+    def test_notify_logout_success_uses_popup_timeout_and_path(self):
+        runtime = AppRuntime()
+        runtime.ui.show_logout_popup = MagicMock()
+        runtime.state.alarm.battle_logout_popup_timeout_sec = 9
+        service = AlarmService(runtime)
+
+        service._notify_logout_success("C:/tmp/logout.png")
+
+        runtime.ui.show_logout_popup.assert_called_once()
+        args = runtime.ui.show_logout_popup.call_args.args
+        assert args[0] == "Battle Logout Executed"
+        assert "logout was executed successfully" in args[1]
+        assert "C:/tmp/logout.png" in args[1]
+        assert args[2] == 9
 
 
 class TestExecutionGate:

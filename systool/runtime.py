@@ -10,8 +10,44 @@ import threading
 import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ── Ensure tesseract DLLs are findable on Windows before any C extensions load ─
+def _ensure_tesseract_dll_path() -> None:
+    """Add the bundled tesseract binary directory to the Windows DLL search path.
+
+    On Windows, C extensions (tesserocr.pyd, cysignals.pyd) resolve their native
+    dependencies via the Windows DLL search path, which includes the PATH
+    environment variable.  The tesseract directory is bundled inside the
+    PyInstaller archive (sys._MEIPASS/tesseract) or at vendor/tesseract for
+    development.  We add it to PATH *before* any optional-import try/except
+    blocks so that tesserocr's libtesseract40.dll and liblept*.dll are found.
+    """
+    if sys.platform != "win32":
+        return
+    tess_dir: str | None = None
+    # Frozen PyInstaller: tesseract files are at _MEIPASS/tesseract/
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidate = os.path.join(meipass, "tesseract")
+        if os.path.isdir(candidate):
+            tess_dir = candidate
+    # Development / unbundled layout
+    if tess_dir is None:
+        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        candidate = os.path.join(app_root, "vendor", "tesseract")
+        if os.path.isdir(candidate):
+            tess_dir = candidate
+    if tess_dir is not None:
+        existing = os.environ.get("PATH", "")
+        if tess_dir not in existing.split(os.pathsep):
+            os.environ["PATH"] = tess_dir + os.pathsep + existing
+
+
+_ensure_tesseract_dll_path()
+del _ensure_tesseract_dll_path  # no longer needed after one-shot setup
 
 from .models import AppState, HotkeyJob
 
@@ -69,15 +105,27 @@ except Exception as exc:
     CV2_IMPORT_ERROR = str(exc)
 
 TESSERACT_IMPORT_ERROR = ""
+TESSEROCR_IMPORT_ERROR = ""
 
 try:
     import pytesseract
 
-    HAS_TESSERACT = True
+    HAS_PYTESSERACT = True
 except Exception as exc:
     pytesseract = None
-    HAS_TESSERACT = False
+    HAS_PYTESSERACT = False
     TESSERACT_IMPORT_ERROR = str(exc)
+
+try:
+    import tesserocr
+
+    HAS_TESSEROCR = True
+except Exception as exc:
+    tesserocr = None
+    HAS_TESSEROCR = False
+    TESSEROCR_IMPORT_ERROR = str(exc)
+
+HAS_TESSERACT = HAS_PYTESSERACT or HAS_TESSEROCR
 
 # ── Constants (needed before pygame init) ────────────────────────────
 from .constants import (  # noqa: E402
@@ -125,6 +173,14 @@ except ImportError:
     win32gui = None
     HAS_WIN32 = False
 
+try:
+    import winsound
+
+    HAS_WINSOUND = True
+except ImportError:
+    winsound = None
+    HAS_WINSOUND = False
+
 
 class UINotifier:
     """UI-safe communication channel for background workers."""
@@ -137,6 +193,7 @@ class UINotifier:
         self._set_pause_label: Callable[[bool], None] = lambda _paused: None
         self._job_state_changed: Callable[[HotkeyJob], None] = lambda _job: None
         self._module_state_changed: Callable[[str, bool], None] = lambda _module, _running: None
+        self._show_logout_popup: Callable[[str, str, int], None] = lambda _title, _message, _timeout: None
 
     def configure(
         self,
@@ -147,6 +204,7 @@ class UINotifier:
         set_pause_label: Callable[[bool], None],
         job_state_changed: Callable[[HotkeyJob], None],
         module_state_changed: Callable[[str, bool], None],
+        show_logout_popup: Callable[[str, str, int], None],
     ) -> None:
         self._dispatch = dispatch
         self._log = log
@@ -155,6 +213,7 @@ class UINotifier:
         self._set_pause_label = set_pause_label
         self._job_state_changed = job_state_changed
         self._module_state_changed = module_state_changed
+        self._show_logout_popup = show_logout_popup
 
     def dispatch(self, callback: Callable[[], None]) -> None:
         self._dispatch(callback)
@@ -176,6 +235,9 @@ class UINotifier:
 
     def module_state_changed(self, module_id: str, running: bool) -> None:
         self._dispatch(lambda: self._module_state_changed(module_id, running))
+
+    def show_logout_popup(self, title: str, message: str, timeout_seconds: int) -> None:
+        self._dispatch(lambda: self._show_logout_popup(title, message, timeout_seconds))
 
 
 class PauseController:
@@ -340,6 +402,119 @@ class AppRuntime:
         self.runtime_timer_stop = threading.Event()
 
 
+@dataclass(slots=True)
+class OCRReadResult:
+    text: str
+    confidence: float = 0.0
+
+
+class TesseractOCREngine:
+    """Thread-local OCR engine that prefers persistent tesserocr instances."""
+
+    _OEM_MAP = {
+        "0": 0,
+        "1": 1,
+        "2": 2,
+        "3": 3,
+    }
+    _PSM_MAP = {
+        "3": 3,
+        "6": 6,
+        "7": 7,
+        "8": 8,
+        "10": 10,
+        "11": 11,
+        "13": 13,
+    }
+
+    def __init__(self, tesseract_cmd: str) -> None:
+        self.tesseract_cmd = tesseract_cmd
+        self.backend = "tesserocr" if HAS_TESSEROCR else "pytesseract"
+        self._thread_local = threading.local()
+
+    def _get_api(self, *, psm: str, oem: str):
+        if not HAS_TESSEROCR or tesserocr is None:
+            return None
+        cache_key = f"api_{psm}_{oem}"
+        api = getattr(self._thread_local, cache_key, None)
+        if api is None:
+            api = tesserocr.PyTessBaseAPI(
+                path=os.environ.get("TESSDATA_PREFIX") or None,
+                psm=self._PSM_MAP.get(psm, 6),
+                oem=self._OEM_MAP.get(oem, 1),
+            )
+            setattr(self._thread_local, cache_key, api)
+        else:
+            api.SetPageSegMode(self._PSM_MAP.get(psm, 6))
+        return api
+
+    def recognize(
+        self,
+        image: Any,
+        *,
+        psm: str = "6",
+        oem: str = "1",
+        whitelist: str = "",
+    ) -> OCRReadResult:
+        if image is None:
+            return OCRReadResult(text="", confidence=0.0)
+        if HAS_TESSEROCR and tesserocr is not None:
+            return self._recognize_tesserocr(image, psm=psm, oem=oem, whitelist=whitelist)
+        if HAS_PYTESSERACT and pytesseract is not None:
+            return self._recognize_pytesseract(image, psm=psm, oem=oem, whitelist=whitelist)
+        raise RuntimeError("No OCR backend is available")
+
+    def _recognize_tesserocr(
+        self,
+        image: Any,
+        *,
+        psm: str,
+        oem: str,
+        whitelist: str,
+    ) -> OCRReadResult:
+        api = self._get_api(psm=psm, oem=oem)
+        if api is None:
+            raise RuntimeError("tesserocr backend unavailable")
+        api.SetVariable("tessedit_char_whitelist", whitelist or "")
+        api.SetVariable("debug_file", os.devnull)
+        height, width = image.shape[:2]
+        bytes_per_pixel = 1 if len(image.shape) == 2 else image.shape[2]
+        bytes_per_line = image.strides[0]
+        api.SetImageBytes(image.tobytes(), width, height, bytes_per_pixel, bytes_per_line)
+        text = (api.GetUTF8Text() or "").strip()
+        confidence = max(0.0, float(api.MeanTextConf() or 0.0)) / 100.0
+        return OCRReadResult(text=text, confidence=confidence)
+
+    def _recognize_pytesseract(
+        self,
+        image: Any,
+        *,
+        psm: str,
+        oem: str,
+        whitelist: str,
+    ) -> OCRReadResult:
+        config_parts = [f"--psm {psm}", f"--oem {oem}"]
+        if whitelist:
+            config_parts.append(f"-c tessedit_char_whitelist={whitelist}")
+        config = " ".join(config_parts)
+        data = pytesseract.image_to_data(
+            image,
+            config=config,
+            output_type=pytesseract.Output.DICT,
+        )
+        text = " ".join(token.strip() for token in data.get("text", []) if token and token.strip()).strip()
+        confidences: list[float] = []
+        for value in data.get("conf", []):
+            try:
+                conf = float(value)
+            except (TypeError, ValueError):
+                continue
+            if conf >= 0:
+                confidences.append(conf)
+        confidence = (sum(confidences) / len(confidences) / 100.0) if confidences else 0.0
+        return OCRReadResult(text=text, confidence=confidence)
+
+
 def resolve_tesseract_cmd(explicit_path: str = "") -> str | None:
     candidates: list[str] = []
     explicit_path = explicit_path.strip()
@@ -371,3 +546,34 @@ def configure_tesseract_runtime(tesseract_cmd: str) -> None:
     path_entries = os.environ.get("PATH", "").split(os.pathsep)
     if tesseract_dir not in path_entries:
         os.environ["PATH"] = tesseract_dir + os.pathsep + os.environ.get("PATH", "")
+    if HAS_PYTESSERACT and pytesseract is not None:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
+
+def create_ocr_engine(explicit_path: str = "") -> TesseractOCREngine:
+    tesseract_cmd = resolve_tesseract_cmd(explicit_path)
+    if not tesseract_cmd:
+        raise RuntimeError("Tesseract executable not found")
+    configure_tesseract_runtime(tesseract_cmd)
+    if not HAS_TESSERACT:
+        parts = []
+        if TESSEROCR_IMPORT_ERROR:
+            parts.append(f"tesserocr: {TESSEROCR_IMPORT_ERROR}")
+        if TESSERACT_IMPORT_ERROR:
+            parts.append(f"pytesseract: {TESSERACT_IMPORT_ERROR}")
+        detail = " | ".join(parts) if parts else "no backend imports succeeded"
+        raise RuntimeError(f"OCR engine unavailable: {detail}")
+    return TesseractOCREngine(tesseract_cmd)
+
+
+def describe_ocr_environment() -> str:
+    parts = [f"Python {sys.version.split()[0]}"]
+    if HAS_TESSEROCR:
+        parts.append("tesserocr=ready")
+    else:
+        parts.append(f"tesserocr=missing ({TESSEROCR_IMPORT_ERROR or 'not installed'})")
+    if HAS_PYTESSERACT:
+        parts.append("pytesseract=ready")
+    else:
+        parts.append(f"pytesseract=missing ({TESSERACT_IMPORT_ERROR or 'not installed'})")
+    return " | ".join(parts)

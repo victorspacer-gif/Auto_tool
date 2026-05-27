@@ -177,10 +177,11 @@ This script will:
 
 1. Check that the Windows Python launcher is available.
 2. Install or update runtime and build dependencies.
-3. Clean previous build artifacts.
-4. Copy a local Tesseract installation into `vendor\tesseract`.
-5. Build the executable with PyInstaller.
-6. Open the `dist` folder.
+3. Install `cysignals` and a bundled `tesserocr` wheel when present.
+4. Clean previous build artifacts.
+5. Copy a local Tesseract installation into `vendor\tesseract`.
+6. Build the executable with PyInstaller.
+7. Open the `dist` folder.
 
 Expected output:
 
@@ -192,11 +193,15 @@ Important:
 
 - The build machine should have Tesseract installed in a standard Windows location such as `C:\Program Files\Tesseract-OCR`.
 - The build bundles that Tesseract copy into the packaged app so end users do not need to install Tesseract manually.
+- For persistent OCR acceleration, place a compatible Windows wheel in `vendor\python-wheels`.
+  The build script looks for `tesserocr-*-cp312-cp312-win_amd64.whl`.
+  If present, it installs that wheel automatically before packaging.
 
 ### Manual build from spec
 
 ```powershell
-py -m pip install pyinstaller pynput pywin32 pystray pillow mss numpy pygame pyautogui opencv-python pytesseract
+py -m pip install pyinstaller pynput pywin32 pystray pillow mss numpy pygame pyautogui opencv-python pytesseract cysignals
+py -m pip install --upgrade .\vendor\python-wheels\tesserocr-2.10.0-cp312-cp312-win_amd64.whl
 py -m PyInstaller --noconfirm --clean SystemMonitor.spec
 ```
 

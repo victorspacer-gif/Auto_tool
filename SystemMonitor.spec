@@ -34,6 +34,10 @@ hiddenimports = [
     "systool.pointers.pointer_chain_ranker",
     # Purecase module (dynamically imported at runtime)
     "purecase_module",
+    # OCR modules (dynamically imported in systool/runtime.py inside try/except)
+    "pytesseract",
+    "tesserocr",
+    "cysignals",
 ]
 
 # Hook and runtime hook paths (ensure these directories exist and are committed)

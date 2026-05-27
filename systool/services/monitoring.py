@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -38,23 +41,28 @@ from ..runtime import (
     HAS_CV2,
     HAS_MSS,
     HAS_NUMPY,
+    HAS_PYAUTOGUI,
     HAS_PYGAME,
     HAS_TESSERACT,
+    HAS_WINSOUND,
     HAS_WIN32,
     CV2_IMPORT_ERROR,
     MSS_IMPORT_ERROR,
     NUMPY_IMPORT_ERROR,
     TESSERACT_IMPORT_ERROR,
+    create_ocr_engine,
+    describe_ocr_environment,
     cv2,
-    configure_tesseract_runtime,
     mss,
     np,
+    pyautogui,
     pygame,
-    pytesseract,
     resolve_tesseract_cmd,
     win32con,
     win32gui,
+    winsound,
 )
+from ..character_profiles import GAME_CLIENT_PATTERN, ensure_autosave_directory, find_game_window
 
 try:
     import ctypes
@@ -144,6 +152,22 @@ class LightControlService:
             self.runtime.state.light_freeze_color_value = profile.color_enabled_value
             self.runtime.state.light_freeze_intensity_value = profile.boosted_intensity_value
             self.runtime.state.light_last_mode = "boosted"
+        return ok, message
+
+    def apply_custom(self) -> tuple[bool, str]:
+        state = self.runtime.state
+        color_value = self._clamp_byte(state.light_custom_color_value)
+        intensity_value = self._clamp_byte(state.light_custom_intensity_value)
+        ok, message = self._apply(
+            color_value=color_value,
+            intensity_value=intensity_value,
+        )
+        if ok:
+            state.light_custom_color_value = color_value
+            state.light_custom_intensity_value = intensity_value
+            state.light_freeze_color_value = color_value
+            state.light_freeze_intensity_value = intensity_value
+            state.light_last_mode = "custom"
         return ok, message
 
     def reset_original(self) -> tuple[bool, str]:
@@ -248,12 +272,19 @@ class LightControlService:
         intensity_address: int | None = None,
     ) -> tuple[bool, str]:
         ctrl = self._require_controller()
-        intensity_address = color_address + 1 if intensity_address is None else intensity_address
-        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
         state = self.runtime.state
+        intensity_address = color_address + 1 if intensity_address is None else intensity_address
+        previous_color_address_hex = state.light_last_color_address_hex
+        previous_intensity_address_hex = state.light_last_intensity_address_hex
+        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
         state.light_last_color_address_hex = f"{color_address:X}"
         state.light_last_intensity_address_hex = f"{intensity_address:X}"
-        if remember_original:
+        if remember_original and self._should_capture_original(
+            previous_color_address_hex=previous_color_address_hex,
+            previous_intensity_address_hex=previous_intensity_address_hex,
+            color_address=color_address,
+            intensity_address=intensity_address,
+        ):
             state.light_original_color_value = result.color.old_value
             state.light_original_intensity_value = result.intensity.old_value
         mode_label = "direct" if state.light_direct_address_hex.strip() else "pointer"
@@ -266,10 +297,9 @@ class LightControlService:
 
     @staticmethod
     def _find_game_process_name() -> str | None:
-        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
         for proc in psutil.process_iter(attrs=["name"]):
             name = (proc.info.get("name") or "").strip()
-            if pattern.fullmatch(name):
+            if GAME_CLIENT_PATTERN.fullmatch(name):
                 return name
         return None
 
@@ -277,6 +307,26 @@ class LightControlService:
         if self.controller is None:
             raise ProcessNotFoundError("Attach to the game process first.")
         return self.controller
+
+    @staticmethod
+    def _clamp_byte(value: int) -> int:
+        return max(0, min(255, int(value)))
+
+    def _should_capture_original(
+        self,
+        previous_color_address_hex: str,
+        previous_intensity_address_hex: str,
+        color_address: int,
+        intensity_address: int,
+    ) -> bool:
+        state = self.runtime.state
+        if state.light_original_color_value is None or state.light_original_intensity_value is None:
+            return True
+        return (
+            previous_color_address_hex != f"{color_address:X}"
+            or previous_intensity_address_hex != f"{intensity_address:X}"
+        )
+
 
 class StatPointerService:
     """Shared pointer-backed stat reader with OCR fallback."""
@@ -288,9 +338,13 @@ class StatPointerService:
     value_attr = ""
     fallback_attr = ""
     state_resolved_attr: str | None = None
+    state_invalid_attr: str | None = None
+    state_peak_attr: str | None = None
     local_address_attr = "_resolved_address"
     local_cache_attr = "_cache_time"
     local_ttl_attr = "_CACHE_TTL"
+    hard_max_value: float | None = None
+    require_integer_value = True
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
@@ -300,32 +354,47 @@ class StatPointerService:
         setattr(self, self.local_ttl_attr, 60.0)
 
     def attach(self) -> tuple[bool, str]:
-        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl.exe"
+        process_name = self.runtime.state.light_process_name.strip() or "miracle_gl"
+
         try:
             self.controller = LightMemoryController(process_name)
             self.controller.attach()
-            self.pointer_reader = PointerReader(self.controller, cache_ttl=getattr(self, self.local_ttl_attr))
+            self.pointer_reader = PointerReader(
+                self.controller,
+                cache_ttl=getattr(self, self.local_ttl_attr)
+            )
+
         except ProcessNotFoundError as exc:
             fallback_name = self._find_game_process_name()
+
             if not fallback_name:
                 return False, str(exc)
+
             try:
                 self.controller = LightMemoryController(fallback_name)
                 self.controller.attach()
-                self.pointer_reader = PointerReader(self.controller, cache_ttl=getattr(self, self.local_ttl_attr))
+                self.pointer_reader = PointerReader(
+                    self.controller,
+                    cache_ttl=getattr(self, self.local_ttl_attr)
+                )
+
                 self.runtime.state.light_process_name = fallback_name
+
             except Exception as fallback_exc:
                 return False, f"{exc} | fallback attach failed: {fallback_exc}"
+
         except Exception as exc:
             return False, f"Attach failed: {exc}"
 
+        # After successful attach, try to resolve pointer and read initial value
+        self._set_pointer_invalid(False)
         address = self._resolve_pointer()
         parts = []
         if address is not None:
             self._store_resolved_address(address)
             parts.append(f"{self.stat_label} pointer resolved at 0x{address:X}")
             try:
-                value = self._read_pointer_value()
+                value = self._read_valid_pointer_value()
                 with self.runtime.settings_lock:
                     setattr(self.runtime.state, self.value_attr, value)
                 if isinstance(value, int):
@@ -343,6 +412,7 @@ class StatPointerService:
             self.controller.detach()
         self.controller = None
         self.pointer_reader = None
+        self._set_pointer_invalid(False)
         setattr(self, self.local_address_attr, None)
         return True, "Detached"
 
@@ -356,6 +426,8 @@ class StatPointerService:
 
     def _ensure_address_resolved(self) -> bool:
         if self.controller is None:
+            return False
+        if self._is_pointer_invalid():
             return False
         address = self._resolve_pointer()
         if address is None:
@@ -373,19 +445,102 @@ class StatPointerService:
             setattr(state, self.state_resolved_attr, address)
 
     def _resolve_pointer(self) -> int | None:
-        if self.pointer_reader is None or not self.stat_name:
+        if self.pointer_reader is None or not self.stat_name or self._is_pointer_invalid():
             return None
         try:
             return self.pointer_reader.resolve_address(self.stat_name)
         except Exception:
             return None
 
-    def _get_fallback_value(self) -> float | None:
+    def _is_pointer_invalid(self) -> bool:
+        if not self.state_invalid_attr:
+            return False
+        return bool(getattr(self.runtime.state, self.state_invalid_attr, False))
+
+    def _set_pointer_invalid(self, invalid: bool) -> None:
+        if not self.state_invalid_attr:
+            return
+        with self.runtime.settings_lock:
+            setattr(self.runtime.state, self.state_invalid_attr, invalid)
+
+    def _invalidate_pointer(self, reason: str, raw_value: object | None = None) -> None:
+        with self.runtime.settings_lock:
+            state = self.runtime.state
+            if self.state_invalid_attr:
+                setattr(state, self.state_invalid_attr, True)
+            if self.state_resolved_attr:
+                setattr(state, self.state_resolved_attr, None)
+            setattr(state, self.pointer_address_attr, "")
+            setattr(state, self.source_attr, "ocr")
+        setattr(self, self.local_address_attr, None)
+        setattr(self, self.local_cache_attr, 0.0)
+        raw_suffix = f" (raw={raw_value!r})" if raw_value is not None else ""
+        logger.warning("%s pointer invalidated: %s%s", self.stat_label, reason, raw_suffix)
+        try:
+            self.runtime.ui.log(f"{self.stat_label} pointer invalidated: {reason}. Falling back to OCR.")
+        except Exception:
+            logger.debug("Pointer invalidation UI log failed", exc_info=True)
+
+    def _get_validation_context(self) -> tuple[float | None, float | None]:
+        with self.runtime.settings_lock:
+            state = self.runtime.state
+            fallback_value = getattr(state, self.fallback_attr, None) if self.fallback_attr else None
+            peak_value = getattr(state, self.state_peak_attr, None) if self.state_peak_attr else None
+        fallback = float(fallback_value) if isinstance(fallback_value, (int, float)) and fallback_value > 0 else None
+        peak = float(peak_value) if isinstance(peak_value, (int, float)) and peak_value > 0 else None
+        return fallback, peak
+
+    def _validate_pointer_value(self, raw_value: object) -> float | int:
+        if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+            raise ValueError("non-numeric value")
+        numeric_value = float(raw_value)
+        if not math.isfinite(numeric_value):
+            raise ValueError("non-finite value")
+        if numeric_value < 0:
+            raise ValueError("negative value")
+        if self.require_integer_value and not numeric_value.is_integer():
+            raise ValueError("fractional value")
+        if self.hard_max_value is not None and numeric_value > self.hard_max_value:
+            raise ValueError(f"value above hard max {self.hard_max_value:.0f}")
+
+        fallback_value, peak_value = self._get_validation_context()
+        if peak_value is not None and numeric_value > (peak_value * 3.0):
+            raise ValueError(f"value above peak tolerance ({peak_value:.0f})")
+        if fallback_value is not None:
+            allowed_delta = max(500.0, fallback_value * 5.0)
+            if abs(numeric_value - fallback_value) > allowed_delta:
+                raise ValueError(f"value inconsistent with OCR ({fallback_value:.0f})")
+
+        if self.require_integer_value:
+            return int(numeric_value)
+        if isinstance(raw_value, int):
+            return raw_value
+        return numeric_value
+
+    def _normalize_stat_value(self, raw_value: object) -> float | int | None:
+        if raw_value is None:
+            return None
+        if self.require_integer_value:
+            numeric_value = float(raw_value)
+            if numeric_value <= 0:
+                return None
+            return int(numeric_value)
+        if isinstance(raw_value, (int, float)) and raw_value > 0:
+            return float(raw_value)
+        return None
+
+    def _read_valid_pointer_value(self) -> float | int:
+        raw_value = self._read_pointer_value()
+        try:
+            return self._validate_pointer_value(raw_value)
+        except ValueError as exc:
+            self._invalidate_pointer(str(exc), raw_value=raw_value)
+            raise RuntimeError(str(exc)) from exc
+
+    def _get_fallback_value(self) -> float | int | None:
         with self.runtime.settings_lock:
             fallback_value = getattr(self.runtime.state, self.fallback_attr)
-        if fallback_value is not None and fallback_value > 0:
-            return float(fallback_value)
-        return None
+        return self._normalize_stat_value(fallback_value)
 
     def _read_pointer_value(self) -> float | int:
         if self.pointer_reader is None or not self.stat_name:
@@ -393,25 +548,33 @@ class StatPointerService:
         read_method = getattr(self.pointer_reader, f"read_{self.stat_name}")
         return read_method()
 
-    def _get_value(self) -> float | None:
+    def _get_value(self) -> float | int | None:
         state = self.runtime.state
         if not self._is_address_valid():
             self._ensure_address_resolved()
 
         address = getattr(self, self.local_address_attr)
-        if address is not None and self.pointer_reader is not None:
+        if address is not None and self.pointer_reader is not None and not self._is_pointer_invalid():
             try:
-                value = self._read_pointer_value()
+                value = self._read_valid_pointer_value()
                 with self.runtime.settings_lock:
                     setattr(state, self.value_attr, value)
                 return value
             except Exception:
                 logger.debug("Pointer read failed")
-        return self._get_fallback_value()
+        fallback_value = self._get_fallback_value()
+        if fallback_value is not None:
+            with self.runtime.settings_lock:
+                setattr(state, self.value_attr, fallback_value)
+                setattr(state, self.source_attr, "ocr")
+        return fallback_value
 
     @staticmethod
     def _find_game_process_name() -> str | None:
-        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)?\.exe$", re.IGNORECASE)
+        # Match names that start with "miracle_dx" or "miracle_gl" and
+        # allow zero or more hyphen-number suffix segments before the .exe
+        # (e.g. miracle_gl-123.exe or miracle_gl-123-456.exe)
+        pattern = re.compile(r"^(miracle_(?:dx|gl))(?:-\d+)*\.exe$", re.IGNORECASE)
         for proc in psutil.process_iter(attrs=["name"]):
             name = (proc.info.get("name") or "").strip()
             if pattern.fullmatch(name):
@@ -428,9 +591,12 @@ class HpService(StatPointerService):
     source_attr = "hp_source"
     value_attr = "hp_value"
     fallback_attr = "char_status_hp"
+    state_invalid_attr = "_hp_pointer_invalid"
+    state_peak_attr = "char_status_hp_peak"
     local_address_attr = "_hp_address"
     local_cache_attr = "_hp_cache_time"
     local_ttl_attr = "_HP_CACHE_TTL"
+    hard_max_value = 1_000_000.0
 
     def __init__(self, runtime: AppRuntime) -> None:
         super().__init__(runtime)
@@ -466,45 +632,116 @@ class HpService(StatPointerService):
         self._light_address = None
         return result
 
-    def get_hp(self) -> float | None:
+    def get_hp(self) -> int | None:
         return self._get_value()
 
     def get_hp_peak(self) -> int:
         with self.runtime.settings_lock:
             return self.runtime.state.char_status_hp_peak
 
-    def _read_all_stats(self) -> tuple[float | None, float | None, float | None]:
+    def _read_all_stats(self) -> tuple[int | None, int | None, int | None]:
+        """Read HP/MP/Cap/Food from pointers, falling back to OCR when unavailable.
+
+        Returns (hp_val, mp_val, cap_val) from pointers (may be None).  When a
+        pointer read fails the corresponding state attribute is populated from the
+        OCR channel so that downstream consumers (healer, fishing, runes, alarm)
+        always have a numeric value to work with instead of None.
+        """
         state = self.runtime.state
         hp_val = None
         mp_val = None
         cap_val = None
         food_val = None
 
-        if self.pointer_reader is not None:
+        def read_pointer_stat(
+            *,
+            service: StatPointerService,
+            state_invalid_attr: str | None,
+            state_resolved_attr: str | None,
+            read_method_name: str,
+            source_attr: str,
+        ) -> float | int | None:
+            if service.pointer_reader is None:
+                return None
+            if state_invalid_attr and getattr(state, state_invalid_attr, False):
+                return None
+            if state_resolved_attr and getattr(state, state_resolved_attr, None) is None:
+                return None
+            value: float | int | None = None
             try:
-                hp_val = float(self.pointer_reader.read_hp())
+                value = getattr(service.pointer_reader, read_method_name)()
+                validated = service._validate_pointer_value(value)
+                with self.runtime.settings_lock:
+                    setattr(state, source_attr, "pointer")
+                return validated
+            except ValueError as exc:
+                service._invalidate_pointer(str(exc), raw_value=value)
             except Exception:
-                logger.debug("HP pointer read failed")
+                logger.debug("%s pointer read failed", service.stat_label)
+            return None
 
-        if getattr(state, "_mp_resolved_addr", None) is not None and self.pointer_reader is not None:
-            try:
-                mp_val = self.pointer_reader.read_mp()
-            except Exception:
-                logger.debug("MP pointer read failed")
+        hp_val = read_pointer_stat(
+            service=self,
+            state_invalid_attr=self.state_invalid_attr,
+            state_resolved_attr=None,
+            read_method_name="read_hp",
+            source_attr="hp_source",
+        )
+        mp_val = read_pointer_stat(
+            service=self.runtime.mp_service if isinstance(self.runtime.mp_service, StatPointerService) else self,
+            state_invalid_attr="_mp_pointer_invalid",
+            state_resolved_attr="_mp_resolved_addr",
+            read_method_name="read_mp",
+            source_attr="mp_source",
+        )
 
-        if getattr(state, "_cap_resolved_addr", None) is not None and self.pointer_reader is not None:
-            try:
-                cap_val = self.pointer_reader.read_cap()
-            except Exception:
-                logger.debug("Cap pointer read failed")
+        cap_val = read_pointer_stat(
+            service=self.runtime.cap_service if isinstance(self.runtime.cap_service, StatPointerService) else self,
+            state_invalid_attr="_cap_pointer_invalid",
+            state_resolved_attr="_cap_resolved_addr",
+            read_method_name="read_cap",
+            source_attr="cap_source",
+        )
 
         if getattr(state, "_food_resolved_addr", None) is not None and self.pointer_reader is not None:
             try:
                 food_val = self.pointer_reader.read_food()
+                with self.runtime.settings_lock:
+                    state.food_source = "pointer"
             except Exception:
                 logger.debug("Food pointer read failed")
 
+        # Promote OCR fallback values when pointer reads are unavailable.
+        # This ensures auto-heal, auto-food, runes, alarm etc. always have a
+        # numeric value to work with instead of None when pointers fail
+        # (client update, game restart, etc.).
         with self.runtime.settings_lock:
+            if hp_val is None:
+                ocr_hp = getattr(state, "char_status_hp", None)
+                hp_val = self._normalize_stat_value(ocr_hp)
+                if hp_val is not None:
+                    state.hp_value = hp_val
+                    state.hp_source = "ocr"
+            if mp_val is None:
+                ocr_mp = getattr(state, "char_status_mana", None)
+                mp_val = self._normalize_stat_value(ocr_mp)
+                if mp_val is not None:
+                    state.mp_value = mp_val
+                    state.mp_source = "ocr"
+            if cap_val is None:
+                ocr_cap = getattr(state, "char_status_cap", None)
+                cap_val = self._normalize_stat_value(ocr_cap)
+                if cap_val is not None:
+                    state.cap_value = cap_val
+                    state.cap_source = "ocr"
+            if food_val is None:
+                ocr_food = getattr(state, "char_status_food_seconds", None)
+                if ocr_food is not None and ocr_food > 0:
+                    food_val = int(ocr_food)
+                    state.food_value = food_val
+                    state.food_source = "ocr"
+
+            # Always write whatever we have (pointer or OCR) to state attrs
             if hp_val is not None:
                 state.hp_value = hp_val
             if mp_val is not None:
@@ -527,11 +764,13 @@ class MpService(StatPointerService):
     value_attr = "mp_value"
     fallback_attr = "char_status_mana"
     state_resolved_attr = "_mp_resolved_addr"
+    state_invalid_attr = "_mp_pointer_invalid"
     local_address_attr = "_mp_address"
     local_cache_attr = "_mp_cache_time"
     local_ttl_attr = "_MP_CACHE_TTL"
+    hard_max_value = 1_000_000.0
 
-    def get_mp(self) -> float | None:
+    def get_mp(self) -> int | None:
         return self._get_value()
 
 
@@ -545,11 +784,14 @@ class CapService(StatPointerService):
     value_attr = "cap_value"
     fallback_attr = "char_status_cap"
     state_resolved_attr = "_cap_resolved_addr"
+    state_invalid_attr = "_cap_pointer_invalid"
+    state_peak_attr = "char_status_cap_peak"
     local_address_attr = "_cap_address"
     local_cache_attr = "_cap_cache_time"
     local_ttl_attr = "_CAP_CACHE_TTL"
+    hard_max_value = 1_000_000.0
 
-    def get_cap(self) -> float | None:
+    def get_cap(self) -> int | None:
         return self._get_value()
 
     def get_cap_peak(self) -> int:
@@ -577,8 +819,13 @@ class FoodService(StatPointerService):
 
 
 class AlarmService:
+    BATTLE_COOLDOWN_SECONDS = 3.0
+    SYSTEM_SOUND_SECONDS = 3.0
+    PIXEL_CHANGE_SOUND_SECONDS = 5.5
+
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
+        self._system_sound_lock = threading.Lock()
 
     @staticmethod
     def _resolve_alarm_audio_path(raw_path: str) -> str:
@@ -639,48 +886,192 @@ class AlarmService:
         return ""
 
     def _flash_game_window(self) -> None:
-        """Flash the game window's taskbar icon using win32gui."""
-        if not HAS_WIN32 or not win32gui or not win32con:
+        """Flash the attached game client's taskbar entry using the attached window metadata."""
+        if not HAS_WIN32 or not win32gui or not win32con or not HAS_CTYPES:
             return
         try:
-            # Try to find the game process window (miracle_gl.exe)
-            def enum_callback(hwnd, results):
-                if win32gui.IsWindowVisible(hwnd):
-                    _, process_name = win32gui.GetWindowText(hwnd), None
-                    # Check process name from window title or class
-                    try:
-                        pid = win32gui.GetWindowThreadProcessId(hwnd)
-                        import psutil
-                        proc = psutil.Process(pid[1])
-                        pname = proc.name().lower()
-                        if "miracle" in pname or "game" in pname.lower():
-                            results.append((hwnd, process_name))
-                    except Exception:
-                        pass
+            hwnd = self._resolve_attached_game_window()
+            if not hwnd:
+                return
 
-            handles = []
-            win32gui.EnumWindows(enum_callback, handles)
-            for hwnd, title in handles[:1]:  # Flash first matching window
+            class FLASHWINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_uint),
+                    ("hwnd", ctypes.c_void_p),
+                    ("dwFlags", ctypes.c_uint),
+                    ("uCount", ctypes.c_uint),
+                    ("dwTimeout", ctypes.c_uint),
+                ]
+
+            FLASHW_ALL = 0x00000003
+            FLASHW_TIMERNOFG = 0x0000000C
+            flash_info = FLASHWINFO(
+                cbSize=ctypes.sizeof(FLASHWINFO),
+                hwnd=int(hwnd),
+                dwFlags=FLASHW_ALL | FLASHW_TIMERNOFG,
+                uCount=5,
+                dwTimeout=0,
+            )
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(flash_info))
+        except Exception:
+            logger.debug("Game window flash failed", exc_info=True)
+
+    def _play_system_sound(self, duration_seconds: float | None = None, stop_event: threading.Event | None = None) -> None:
+        """Play repeated Windows alert beeps for a bounded attention-grabbing period."""
+        if not self._system_sound_lock.acquire(blocking=False):
+            return
+        try:
+            if duration_seconds is None and stop_event is None and HAS_WINSOUND and winsound is not None:
+                winsound.PlaySound(
+                    "SystemAsterisk",
+                    winsound.SND_ALIAS | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+                )
+                return
+
+            duration = max(0.1, float(duration_seconds or self.SYSTEM_SOUND_SECONDS))
+            deadline = time.monotonic() + duration
+            beep_pattern = [
+                (1200, 140),
+                (1200, 140),
+                (1600, 220),
+                (900, 140),
+            ]
+
+            while time.monotonic() < deadline:
+                if stop_event is not None and stop_event.is_set():
+                    return
+
                 try:
-                    FLASH_INFO = (win32con.FW_RUNNABLEONCALLBACK |
-                                  win32con.FW_RESTORECONFOFF |
-                                  50)  # flash 5 times
-                    win32gui.FlashWindow(hwnd, True)
+                    if HAS_WINSOUND and winsound is not None:
+                        for frequency, beep_ms in beep_pattern:
+                            if time.monotonic() >= deadline or (stop_event is not None and stop_event.is_set()):
+                                return
+                            winsound.Beep(frequency, beep_ms)
+                            time.sleep(0.04)
+                    elif HAS_CTYPES:
+                        ctypes.windll.user32.MessageBeep(0x40)
+                        time.sleep(0.25)
+                    else:
+                        return
                 except Exception:
-                    pass
-        except Exception:
-            pass
+                    logger.debug("System sound playback failed", exc_info=True)
+                    return
+        finally:
+            self._system_sound_lock.release()
 
-    def _play_system_sound(self) -> None:
-        """Play a standard Windows system sound (SystemAsterisk)."""
-        if not HAS_CTYPES:
-            return
+    def _resolve_attached_game_window(self) -> int | None:
+        light_service = getattr(self.runtime, "light_service", None)
+        controller = getattr(light_service, "controller", None) if light_service is not None else None
+        pid = int(getattr(controller, "pid", 0) or 0)
+        return find_game_window(
+            pid=pid,
+            process_name=self.runtime.state.light_process_name,
+            preferred_title=self.runtime.state.attached_window_title,
+        )
+
+    def _save_battle_logout_screenshot(self, battle_frame) -> str | None:
+        if battle_frame is None:
+            return None
         try:
-            ctypes.windll.user32.MessageBeep(0x40)  # MB_OK | MB_ICONASTERISK = SystemAsterisk
+            output_dir = ensure_autosave_directory()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            output_path = output_dir / f"battle_logout_{timestamp}.png"
+            if hasattr(mss, "tools") and hasattr(mss.tools, "to_png"):
+                rgb_frame = np.ascontiguousarray(battle_frame[:, :, ::-1])
+                mss.tools.to_png(rgb_frame.tobytes(), (rgb_frame.shape[1], rgb_frame.shape[0]), output=str(output_path))
+                return str(output_path)
         except Exception:
-            pass
+            logger.debug("Battle logout screenshot save failed", exc_info=True)
+        return None
 
-    def play_alarm(self) -> None:
+    def _notify_logout_success(self, screenshot_path: str | None) -> None:
+        timeout_seconds = max(0, int(getattr(self.runtime.state.alarm, "battle_logout_popup_timeout_sec", 0) or 0))
+        details = ["Control + Q logout was executed successfully."]
+        if screenshot_path:
+            details.append(f"Screenshot saved to: {screenshot_path}")
+        if timeout_seconds > 0:
+            details.append(f"This window will close automatically in {timeout_seconds} second(s).")
+        else:
+            details.append("This window will remain on top until you close it.")
+        self.runtime.ui.show_logout_popup("Battle Logout Executed", "\n".join(details), timeout_seconds)
+
+    def _has_attached_game_window(self) -> bool:
+        return self._resolve_attached_game_window() is not None
+
+    def _prepare_battle_frame(self, frame):
+        if frame is None or frame.size == 0:
+            return None
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if HAS_CV2 else frame.mean(axis=2).astype(np.uint8)
+        else:
+            gray = frame
+        height, width = gray.shape[:2]
+        scale = min(1.0, 96.0 / max(width, height))
+        if scale < 1.0:
+            gray = cv2.resize(
+                gray,
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                interpolation=cv2.INTER_AREA,
+            )
+        return gray
+
+    def _battle_changed_ratio(self, previous, current) -> float:
+        if previous is None or current is None or previous.shape != current.shape:
+            return 0.0
+        diff = np.abs(current.astype(np.int16) - previous.astype(np.int16))
+        return float(np.mean(diff > 18))
+
+    def _execute_battle_hotkey(self) -> bool:
+        if not HAS_PYAUTOGUI:
+            self.runtime.ui.log("Battle reaction needs pyautogui")
+            return False
+
+        # ============================================================
+        # Rate limit: max 3 executions every 60 seconds
+        # ============================================================
+        now = time.time()
+
+        if not hasattr(self, "_battle_hotkey_window_start"):
+            self._battle_hotkey_window_start = now
+            self._battle_hotkey_count = 0
+
+        # Reset window after 60 seconds
+        if now - self._battle_hotkey_window_start >= 60:
+            self._battle_hotkey_window_start = now
+            self._battle_hotkey_count = 0
+
+        # Block if limit reached
+        if self._battle_hotkey_count >= 3:
+            return False
+
+        self._battle_hotkey_count += 1
+
+        try:
+            pyautogui.keyDown("ctrl")
+            time.sleep(0.02)
+
+            pyautogui.keyDown("q")
+            time.sleep(0.05)
+
+            pyautogui.keyUp("q")
+            return True
+
+        except Exception as exc:
+            self.runtime.ui.log(f"Battle CTRL+Q failed: {exc}")
+            return False
+
+        finally:
+            try:
+                pyautogui.keyUp("ctrl")
+            except Exception:
+                logger.debug("Battle CTRL key release failed")
+
+    def play_alarm(
+        self,
+        *,
+        system_sound_duration_seconds: float | None = None,
+        system_sound_stop_event: threading.Event | None = None,
+    ) -> None:
         path = self._resolve_alarm_sound_path()
         if path:
             self.runtime.state.alarm_mp3 = path
@@ -692,8 +1083,12 @@ class AlarmService:
         def play() -> None:
             try:
                 # Play Windows system sound if enabled (non-blocking, instant feedback)
-                if system_sound and HAS_CTYPES:
-                    self._play_system_sound()
+                if system_sound:
+                    threading.Thread(
+                        target=self._play_system_sound,
+                        args=(system_sound_duration_seconds, system_sound_stop_event),
+                        daemon=True,
+                    ).start()
 
                 # Flash game window taskbar icon if enabled
                 if flash_window and HAS_WIN32:
@@ -739,7 +1134,15 @@ class AlarmService:
                 size = 200  # Default alarm region side length in pixels (200x200 square)
                 return {"top": screen_h // 2 - size // 2, "left": screen_w // 2 - size // 2, "width": size, "height": size, "mon": 1}
 
-            last_frame = None
+            pixel_baseline_frame = None
+            pixel_was_changed = False
+            pixel_changed_since = None
+            pixel_sound_stop = threading.Event()
+            battle_last_frame = None
+            battle_was_changed = False
+            battle_cooldown_until = 0.0
+            battle_cooldown_log_at = 0.0
+            battle_started_logged = False
             cooldown_until = 0.0
             while not self.runtime.alarm_stop.is_set():
                 time.sleep(MONITOR_POLL_SLEEP)
@@ -752,6 +1155,9 @@ class AlarmService:
                     alarm_hp_value = state.alarm_hp_value
                     alarm_mp_value = state.alarm_mp_value
                     alarm_cap_value = state.alarm_cap_value
+                    battle_enabled = state.alarm_battle_enabled
+                    battle_region = state.alarm_battle_region
+                    battle_threshold = state.alarm_battle_threshold
                 # Try pointer-based HP first, fall back to OCR
                 hp_value = None
                 if self.runtime.hp_service is not None:
@@ -839,23 +1245,101 @@ class AlarmService:
                 except Exception as exc:
                     self.runtime.ui.log(f"❌ Capture: {exc}")
                     continue
-                if last_frame is not None and last_frame.shape == frame.shape:
-                    if now >= cooldown_until:
-                        diff = np.abs(frame.astype(np.int16) - last_frame.astype(np.int16))
-                        # Pixel-level difference: sum channels, then count pixels where diff > 30 (threshold)
-                        changed = float(np.mean(diff.sum(axis=2) > 30))
-                        if changed >= threshold:
+                if pixel_baseline_frame is None or pixel_baseline_frame.shape != frame.shape:
+                    pixel_sound_stop.set()
+                    pixel_sound_stop = threading.Event()
+                    pixel_baseline_frame = frame
+                    pixel_was_changed = False
+                    pixel_changed_since = None
+                else:
+                    diff = np.abs(frame.astype(np.int16) - pixel_baseline_frame.astype(np.int16))
+                    # Pixel-level difference against the stable baseline frame.
+                    changed = float(np.mean(diff.sum(axis=2) > 30))
+                    pixel_changed = changed >= threshold
+                    if pixel_changed and not pixel_was_changed:
+                        pixel_changed_since = now
+                        if now >= cooldown_until:
                             cooldown_until = now + state.alarm_cooldown
+                            pixel_sound_stop.set()
+                            pixel_sound_stop = threading.Event()
                             with self.runtime.record_lock:
                                 state.stats["alarms"] += 1
                             self.runtime.ui.log(f"🚨 ALARM — {changed * 100:.1f}% pixels changed!")
                             self.runtime.ui.set_status(f"⚠️  PIXEL ALARM — {changed * 100:.1f}% changed!", RED)
-                            self.play_alarm()
+                            self.play_alarm(
+                                system_sound_duration_seconds=self.PIXEL_CHANGE_SOUND_SECONDS,
+                                system_sound_stop_event=pixel_sound_stop,
+                            )
                             self.runtime.ui.refresh_stats()
                             if auto_pause and not self.runtime.pause.paused:
                                 self.runtime.ui.log("⏸  Auto-pausing all activities due to screen watch event")
                                 self.runtime.ui.dispatch(self.runtime.pause.toggle)
-                last_frame = frame
+                    elif pixel_changed and pixel_changed_since is not None:
+                        if now - pixel_changed_since >= self.PIXEL_CHANGE_SOUND_SECONDS:
+                            pixel_sound_stop.set()
+                            pixel_baseline_frame = frame
+                            pixel_was_changed = False
+                            pixel_changed_since = None
+                            self.runtime.ui.log("Pixel alarm baseline updated after persistent change")
+                            continue
+                    elif not pixel_changed:
+                        if pixel_was_changed:
+                            pixel_sound_stop.set()
+                        pixel_baseline_frame = frame
+                        pixel_changed_since = None
+                    pixel_was_changed = pixel_changed
+
+                if not battle_enabled:
+                    battle_last_frame = None
+                    battle_was_changed = False
+                    battle_started_logged = False
+                    continue
+                if (
+                    not state.alarm_active
+                    or self.runtime.pause.paused
+                    or not battle_region
+                    or not self._has_attached_game_window()
+                ):
+                    battle_last_frame = None
+                    battle_was_changed = False
+                    continue
+                if not battle_started_logged:
+                    self.runtime.ui.log("Battle monitor started")
+                    battle_started_logged = True
+                try:
+                    battle_frame = np.array(sct.grab({
+                        "top": battle_region[1],
+                        "left": battle_region[0],
+                        "width": battle_region[2],
+                        "height": battle_region[3],
+                        "mon": 1,
+                    }))[:, :, :3]
+                except Exception as exc:
+                    self.runtime.ui.log(f"Battle capture: {exc}")
+                    continue
+                prepared_battle_frame = self._prepare_battle_frame(battle_frame)
+                current_changed = False
+                if battle_last_frame is not None:
+                    changed_ratio = self._battle_changed_ratio(battle_last_frame, prepared_battle_frame)
+                    threshold_ratio = max(0.0, min(1.0, battle_threshold))
+                    current_changed = changed_ratio >= threshold_ratio
+                    if current_changed and not battle_was_changed:
+                        if now >= battle_cooldown_until:
+                            self.runtime.ui.log(f"Battle change detected: {changed_ratio * 100:.1f}%")
+                            screenshot_path = self._save_battle_logout_screenshot(battle_frame)
+                            if self._execute_battle_hotkey():
+                                battle_cooldown_until = now + self.BATTLE_COOLDOWN_SECONDS
+                                if screenshot_path:
+                                    self.runtime.ui.log(f"CTRL+Q executed | screenshot: {screenshot_path}")
+                                else:
+                                    self.runtime.ui.log("CTRL+Q executed")
+                                self._notify_logout_success(screenshot_path)
+                        elif now >= battle_cooldown_log_at:
+                            remaining = max(0.0, battle_cooldown_until - now)
+                            self.runtime.ui.log(f"Battle cooldown active ({remaining:.1f}s)")
+                            battle_cooldown_log_at = now + 1.0
+                battle_was_changed = current_changed
+                battle_last_frame = prepared_battle_frame
         self.runtime.state.alarm_active = False
         self.runtime.ui.module_state_changed("alarm", False)
         self.runtime.ui.log("⏹ Screen watch end")
@@ -869,6 +1353,10 @@ class CharacterStatusService:
     # ROI (Region of Interest) coordinates for stat extraction — each tuple is (left, top, right, bottom)
     # Coordinates are relative to BASE_SIZE and scaled dynamically per actual frame size.
     ROI_MAP = {
+        "level": [
+            (0, 18, 169, 40),
+            (0, 14, 169, 44),
+        ],
         "hp": [
             (132, 1, 169, 19),   # HP box A: left=132, top=1, right=169, bottom=19
             (124, 0, 169, 21),   # HP box B (fallback): left=124, top=0, right=169, bottom=21
@@ -890,6 +1378,21 @@ class CharacterStatusService:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self._regen_history: dict[str, list[tuple[float, int]]] = {"hp": [], "mana": []}
+        self._ocr_engine = None
+        physical_cores = os.cpu_count() or 1
+        worker_count = max(1, min(physical_cores, 4))
+        self._ocr_pool = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="char-ocr")
+        self._frame_cache: dict[str, tuple[bytes, dict[str, int | None | str]]] = {}
+        self._perf_snapshot: dict[str, float | int | str] = {
+            "backend": "uninitialized",
+            "cycle_ms": 0.0,
+            "capture_ms": 0.0,
+            "preprocess_ms": 0.0,
+            "ocr_ms": 0.0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "confidence": 0.0,
+        }
 
     def get_dependency_error(self) -> str | None:
         state = self.runtime.state
@@ -900,13 +1403,25 @@ class CharacterStatusService:
         if not HAS_CV2:
             return "opencv-python import failed" + (f": {CV2_IMPORT_ERROR}" if CV2_IMPORT_ERROR else "")
         if not HAS_TESSERACT:
-            return "pytesseract import failed" + (f": {TESSERACT_IMPORT_ERROR}" if TESSERACT_IMPORT_ERROR else "")
-        tesseract_cmd = resolve_tesseract_cmd(state.char_status_tesseract_path)
-        if not tesseract_cmd:
+            return "OCR backend import failed" + (f": {TESSERACT_IMPORT_ERROR}" if TESSERACT_IMPORT_ERROR else "")
+        if not resolve_tesseract_cmd(state.char_status_tesseract_path):
             return "Tesseract executable not found"
-        configure_tesseract_runtime(tesseract_cmd)
-        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
         return None
+
+    def get_perf_summary(self) -> str:
+        snapshot = dict(self._perf_snapshot)
+        return (
+            f"OCR backend={snapshot.get('backend', 'n/a')} "
+            f"cycle={snapshot.get('cycle_ms', 0.0):.1f}ms "
+            f"capture={snapshot.get('capture_ms', 0.0):.1f}ms "
+            f"pre={snapshot.get('preprocess_ms', 0.0):.1f}ms "
+            f"ocr={snapshot.get('ocr_ms', 0.0):.1f}ms "
+            f"cache={int(snapshot.get('cache_hits', 0))}/{int(snapshot.get('cache_hits', 0)) + int(snapshot.get('cache_misses', 0)) if int(snapshot.get('cache_hits', 0)) + int(snapshot.get('cache_misses', 0)) else 0} "
+            f"conf={snapshot.get('confidence', 0.0):.2f}"
+        )
+
+    def get_backend_diagnostic(self) -> str:
+        return describe_ocr_environment()
 
     def start(self) -> None:
         state = self.runtime.state
@@ -917,6 +1432,14 @@ class CharacterStatusService:
             state.char_status_last_error = dependency_error
             self.runtime.ui.log(f"❌ Character status OCR unavailable: {dependency_error}")
             self.runtime.ui.set_status(f"Character status OCR unavailable: {dependency_error}", RED)
+            return
+        try:
+            self._ocr_engine = create_ocr_engine(state.char_status_tesseract_path)
+            self._perf_snapshot["backend"] = getattr(self._ocr_engine, "backend", "unknown")
+        except Exception as exc:
+            state.char_status_last_error = str(exc)
+            self.runtime.ui.log(f"❌ Character status OCR unavailable: {exc}")
+            self.runtime.ui.set_status(f"Character status OCR unavailable: {exc}", RED)
             return
         has_window = bool(state.char_status_region)
         has_field_regions = all([state.char_status_hp_region, state.char_status_mana_region, state.char_status_cap_region])
@@ -952,57 +1475,68 @@ class CharacterStatusService:
         try:
             with mss.mss() as sct:
                 while not self.runtime.char_status_stop.is_set():
+                    cycle_started = time.perf_counter()
                     with self.runtime.settings_lock:
                         region = state.char_status_region
                         hp_region = state.char_status_hp_region
                         mana_region = state.char_status_mana_region
                         cap_region = state.char_status_cap_region
                         poll_ms = max(CHAR_STATUS_POLL_MS_MIN, state.char_status_poll_ms)
+                        sample_count = max(1, state.char_status_samples)
+                        sample_delay_ms = max(0, state.char_status_sample_delay_ms)
                     if not region and not all([hp_region, mana_region, cap_region]):
                         break
                     try:
                         samples = []
-                        for _ in range(state.char_status_samples):
-                            parsed_sample: dict[str, int | None] = {}
+                        cycle_perf = {
+                            "capture_ms": 0.0,
+                            "preprocess_ms": 0.0,
+                            "ocr_ms": 0.0,
+                            "confidence": 0.0,
+                        }
+                        sample_confidences: list[float] = []
+                        for sample_index in range(sample_count):
+                            parsed_sample: dict[str, int | None | str] = {}
+                            region_confidences: list[float] = []
                             if region:
-                                monitor = {
-                                    "left": region[0],  # x-coordinate (index 0)
-                                    "top": region[1],   # y-coordinate (index 1)
-                                    "width": region[2], # width (index 2)
-                                    "height": region[3],# height (index 3)
-                                    "mon": 1,           # Monitor index: primary display
-                                }
-                                frame = np.array(sct.grab(monitor))[:, :, :3]
-                                parsed_sample = self._extract_values(frame)
+                                capture_started = time.perf_counter()
+                                frame = self._capture_region(sct, region)
+                                cycle_perf["capture_ms"] += (time.perf_counter() - capture_started) * 1000.0
+                                extracted, perf = self._extract_values(frame, cache_key="window")
+                                parsed_sample.update(extracted)
+                                cycle_perf["preprocess_ms"] += perf["preprocess_ms"]
+                                cycle_perf["ocr_ms"] += perf["ocr_ms"]
+                                region_confidences.extend(perf["confidences"])
                             if all([hp_region, mana_region, cap_region]):
-                                parsed_sample.update(
-                                    self._extract_values_from_regions(
-                                        sct,
-                                        {
-                                            "hp": hp_region,
-                                            "mana": mana_region,
-                                            "cap": cap_region,
-                                        },
-                                    )
-                                )
+                                capture_started = time.perf_counter()
+                                region_frames = {
+                                    "hp": self._capture_region(sct, hp_region),
+                                    "mana": self._capture_region(sct, mana_region),
+                                    "cap": self._capture_region(sct, cap_region),
+                                }
+                                cycle_perf["capture_ms"] += (time.perf_counter() - capture_started) * 1000.0
+                                extracted_regions, perf = self._extract_values_from_regions(region_frames)
+                                parsed_sample.update(extracted_regions)
+                                cycle_perf["preprocess_ms"] += perf["preprocess_ms"]
+                                cycle_perf["ocr_ms"] += perf["ocr_ms"]
+                                region_confidences.extend(perf["confidences"])
                             samples.append(parsed_sample)
-                            if _ < state.char_status_samples - 1:
+                            if region_confidences:
+                                sample_confidences.append(sum(region_confidences) / len(region_confidences))
+                            if sample_index < sample_count - 1:
                                 # Convert ms sample delay to seconds for time.sleep() (seconds)
-                                time.sleep(state.char_status_sample_delay_ms / 1000.0)
+                                time.sleep(sample_delay_ms / 1000.0)
                         parsed = self._aggregate_samples(samples)
-                    except pytesseract.TesseractNotFoundError:
-                        with self.runtime.settings_lock:
-                            state.char_status_last_error = "Tesseract executable not found"
-                        self.runtime.ui.log("❌ Tesseract executable not found for character status OCR")
-                        self.runtime.ui.set_status("Configure a Tesseract path in Character Status", RED)
-                        self.runtime.char_status_stop.set()
-                        break
                     except Exception as exc:
                         with self.runtime.settings_lock:
                             state.char_status_failures += 1
                             state.char_status_last_error = str(exc)
                         time.sleep(MONITOR_ERROR_RETRY_SLEEP)
                         continue
+
+                    cycle_perf["cycle_ms"] = (time.perf_counter() - cycle_started) * 1000.0
+                    cycle_perf["confidence"] = (sum(sample_confidences) / len(sample_confidences)) if sample_confidences else 0.0
+                    self._perf_snapshot.update(cycle_perf)
 
                     if parsed:
                         with self.runtime.settings_lock:
@@ -1027,101 +1561,240 @@ class CharacterStatusService:
             self.runtime.ui.module_state_changed("char_status", False)
             self.runtime.ui.log("⏹ Character status watcher end")
 
-    def _extract_food_from_roi(self, frame) -> dict[str, int | None | str]:
-        """Extract food timer from a cropped ROI region using OCR + regex.
+    @staticmethod
+    def _region_to_monitor(region: tuple[int, int, int, int]) -> dict[str, int]:
+        return {
+            "left": region[0],
+            "top": region[1],
+            "width": region[2],
+            "height": region[3],
+            "mon": 1,
+        }
 
-        Uses time-only pattern (no 'food' keyword dependency) for ROI extraction.
-        Falls back to full-frame OCR with 'food' keyword if ROI extraction fails.
-        """
+    def _capture_region(self, sct, region: tuple[int, int, int, int]):
+        return np.array(sct.grab(self._region_to_monitor(region)))[:, :, :3]
+
+    def _frame_signature(self, frame) -> bytes:
+        if frame is None or frame.size == 0:
+            return b""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+        thumb = cv2.resize(gray, (24, 24), interpolation=cv2.INTER_AREA)
+        return thumb.tobytes()
+
+    def _get_cached_result(self, cache_key: str, frame):
+        signature = self._frame_signature(frame)
+        cached = self._frame_cache.get(cache_key)
+        if cached and cached[0] == signature:
+            self._perf_snapshot["cache_hits"] = int(self._perf_snapshot["cache_hits"]) + 1
+            return dict(cached[1])
+        self._perf_snapshot["cache_misses"] = int(self._perf_snapshot["cache_misses"]) + 1
+        return None
+
+    def _store_cached_result(self, cache_key: str, frame, values: dict[str, int | None | str]) -> None:
+        self._frame_cache[cache_key] = (self._frame_signature(frame), dict(values))
+
+    def _extract_values(self, frame, cache_key: str = "window") -> tuple[dict[str, int | None | str], dict[str, float | list[float]]]:
+        cached = self._get_cached_result(cache_key, frame)
+        if cached is not None:
+            return cached, {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
+
+        tasks = {
+            "hp": lambda fr: self._ocr_digits(fr, "hp"),
+            "mana": lambda fr: self._ocr_digits(fr, "mana"),
+        }
+        futures = {
+            key: self._ocr_pool.submit(func, frame)
+            for key, func in tasks.items()
+        }
         values: dict[str, int | None | str] = {
+            "level": None,
+            "hp": None,
+            "mana": None,
+            "cap": None,
             "food_seconds": None,
             "food_text": "",
         }
+        perf = {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
+        for key, future in futures.items():
+            result = future.result()
+            values[key] = result["value"]
+            perf["preprocess_ms"] += result["preprocess_ms"]
+            perf["ocr_ms"] += result["ocr_ms"]
+            if result["confidence"] > 0:
+                perf["confidences"].append(result["confidence"])
 
-        # ── Phase 1: ROI extraction (time-only regex, no 'food' dependency) ──
+        context_keys = {"level", "cap", "food_seconds", "food_text"}
+        if values.get("hp") is None:
+            context_keys.add("hp")
+        if values.get("mana") is None:
+            context_keys.add("mana")
+        contextual = self._extract_contextual_stats(frame, required_keys=context_keys)
+        for key, value in contextual["values"].items():
+            if key in {"level", "cap", "food_seconds"} and value is not None:
+                values[key] = value
+            elif key == "food_text" and contextual["values"].get("food_seconds") is not None:
+                values[key] = value
+            elif key in {"hp", "mana"} and values.get(key) is None and value is not None:
+                values[key] = value
+        perf["preprocess_ms"] += contextual["preprocess_ms"]
+        perf["ocr_ms"] += contextual["ocr_ms"]
+        if contextual["confidence"] > 0:
+            perf["confidences"].append(contextual["confidence"])
+
+        final_values = values if any(value is not None for value in values.values()) else {}
+        if final_values:
+            self._store_cached_result(cache_key, frame, final_values)
+        return final_values, perf
+
+    def _extract_values_from_regions(self, region_frames: dict[str, object]) -> tuple[dict[str, int | None], dict[str, float | list[float]]]:
+        futures = {
+            key: self._ocr_pool.submit(self._ocr_cap_region if key == "cap" else self._ocr_digits, frame, key)
+            for key, frame in region_frames.items()
+        }
+        values: dict[str, int | None] = {}
+        perf = {"preprocess_ms": 0.0, "ocr_ms": 0.0, "confidences": []}
+        for key, future in futures.items():
+            result = future.result()
+            values[key] = result["value"]
+            perf["preprocess_ms"] += result["preprocess_ms"]
+            perf["ocr_ms"] += result["ocr_ms"]
+            if result["confidence"] > 0:
+                perf["confidences"].append(result["confidence"])
+        return values if any(value is not None for value in values.values()) else {}, perf
+
+    def _extract_food_from_roi(self, frame) -> dict[str, float | int | str | None]:
+        best_value: int | None = None
+        best_text = ""
+        best_confidence = 0.0
+        preprocess_ms = 0.0
+        ocr_ms = 0.0
         for box in self.ROI_MAP["food"]:
             crop = self._crop(frame, box)
             if crop.size == 0:
                 continue
-            # Enlarge crop 3x to improve OCR accuracy on small text regions
-            enlarged = cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-            # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            variants = []
-            # OTSU threshold: auto-computes optimal binarization; output max value is 255
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            variants.append(binary)
-            variants.append(cv2.bitwise_not(binary))
-            # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
-            adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
-            variants.append(adaptive)
-            variants.append(cv2.bitwise_not(adaptive))
+            variants, prep_elapsed = self._build_variants(crop, key="food", upscale=2)
+            preprocess_ms += prep_elapsed
             for image_variant in variants:
-                text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
-                normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-                match = re.search(r"(\d{1,2}:\d{2})", normalized)
+                started = time.perf_counter()
+                read = self._ocr_engine.recognize(image_variant, psm="7", oem="1", whitelist="0123456789:")
+                ocr_ms += (time.perf_counter() - started) * 1000.0
+                normalized = re.sub(r"[^0-9:]+", " ", read.text.lower())
+                match = re.search(r"(\d{1,2}:\d{2}|\d{1,3})", normalized)
+                if not match:
+                    continue
+                candidate_text = match.group(1)
+                candidate_value = CharacterStatusService._parse_food_seconds(candidate_text)
+                if candidate_value is None:
+                    continue
+                best_value = candidate_value
+                best_text = candidate_text
+                best_confidence = max(best_confidence, read.confidence)
+                break
+            if best_value is not None:
+                break
+        return {
+            "value": best_value,
+            "text": best_text,
+            "confidence": best_confidence,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+        }
+
+    def _ocr_level(self, frame) -> dict[str, float | int | None]:
+        preprocess_ms = 0.0
+        ocr_ms = 0.0
+        best_value: int | None = None
+        best_confidence = 0.0
+        for box in self.ROI_MAP["level"]:
+            crop = self._crop(frame, box)
+            if crop.size == 0:
+                continue
+            variants, prep_elapsed = self._build_variants(crop, key="level", upscale=2)
+            preprocess_ms += prep_elapsed
+            for image_variant in variants:
+                started = time.perf_counter()
+                read = self._ocr_engine.recognize(image_variant, psm="6", oem="1", whitelist="Levellevel0123456789 ")
+                ocr_ms += (time.perf_counter() - started) * 1000.0
+                normalized = re.sub(r"[^a-z0-9 ]+", " ", read.text.lower())
+                match = re.search(r"level\s+(\d+)", normalized)
+                if not match:
+                    match = re.search(r"\b(\d+)\b", normalized)
+                if match:
+                    best_value = int(match.group(1))
+                    best_confidence = max(best_confidence, read.confidence)
+                    break
+            if best_value is not None:
+                break
+        return {
+            "value": best_value,
+            "confidence": best_confidence,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+        }
+
+    def _extract_contextual_stats(self, frame, required_keys: set[str]) -> dict[str, object]:
+        variants, preprocess_ms = self._build_variants(frame, key="window_text", upscale=2)
+        values: dict[str, int | str | None] = {key: None for key in required_keys}
+        if "food_text" in required_keys:
+            values["food_text"] = ""
+        field_patterns = {
+            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],
+            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],
+            "mana": [r"mana\s+(\d+)"],
+            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],
+        }
+        best_confidence = 0.0
+        ocr_ms = 0.0
+        for image_variant in variants:
+            ocr_started = time.perf_counter()
+            read = self._ocr_engine.recognize(
+                image_variant,
+                psm="6",
+                oem="1",
+                whitelist="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 :",
+            )
+            ocr_ms += (time.perf_counter() - ocr_started) * 1000.0
+            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", read.text.lower())
+            best_confidence = max(best_confidence, read.confidence)
+            for key in required_keys:
+                if key in {"food_seconds", "food_text"}:
+                    continue
+                if values[key] is not None:
+                    continue
+                for pattern in field_patterns[key]:
+                    match = re.search(pattern, normalized)
+                    if match:
+                        values[key] = int(match.group(1))
+                        break
+            if "food_seconds" in required_keys and values.get("food_seconds") is None:
+                match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
                 if match:
                     food_text = match.group(1)
-                    values["food_text"] = food_text
-                    values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
-                    break
-            if values["food_seconds"] is not None:
+                    food_seconds = CharacterStatusService._parse_food_seconds(food_text)
+                    if food_seconds is not None:
+                        values["food_seconds"] = food_seconds
+                        if "food_text" in values:
+                            values["food_text"] = food_text
+            if all(value is not None for value in values.values()):
                 break
+        return {
+            "values": values,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+            "confidence": best_confidence,
+        }
 
-        # ── Phase 2: Fallback to full-frame OCR (with 'food' keyword) ──
-        if values["food_seconds"] is None:
-            enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            text = pytesseract.image_to_string(binary, config="--psm 6")
-            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-            match = re.search(r"food\s+(\d{1,2}:\d{2}|\d{1,3})", normalized)
-            if match:
-                food_text = match.group(1)
-                values["food_text"] = food_text
-                values["food_seconds"] = CharacterStatusService._parse_food_seconds(food_text)
-
-        return values
-
-    def _extract_values(self, frame) -> dict[str, int | None]:
-        values: dict[str, int | None] = self._extract_values_from_text(frame)
-        for key, boxes in self.ROI_MAP.items():
-            if key == "food":
-                # Food is handled separately via ROI crop + regex (not _ocr_digits)
-                continue
-            if values.get(key) is not None:
-                continue
-            for box in boxes:
-                crop = self._crop(frame, box)
-                value = self._ocr_digits(crop, key)
-                if value is not None:
-                    values[key] = value
-                    break
-        # Extract food from ROI (separate path — cropped region + regex)
-        food_values = self._extract_food_from_roi(frame)
-        # Only distribute food fields when they are consistent together.
-        # _parse_food_seconds can return None even when OCR succeeds,
-        # so we must not set food_text if food_seconds is None (and vice versa).
-        if food_values.get("food_seconds") is not None:
-            values["food_seconds"] = food_values["food_seconds"]
-            values["food_text"] = food_values["food_text"]
-        return values if any(value is not None for value in values.values()) else {}
-
-    def _extract_values_from_regions(self, sct, regions: dict[str, tuple[int, int, int, int]]) -> dict[str, int | None]:
-        values: dict[str, int | None] = {}
-        for key, region in regions.items():
-            monitor = {
-                "left": region[0],  # x-coordinate (index 0)
-                "top": region[1],   # y-coordinate (index 1)
-                "width": region[2], # width (index 2)
-                "height": region[3],# height (index 3)
-                "mon": 1,           # Monitor index: primary display
+    def _ocr_cap_region(self, crop, key: str) -> dict[str, float | int | None]:
+        contextual = self._extract_contextual_stats(crop, required_keys={"cap"})
+        cap_value = contextual["values"].get("cap")
+        if cap_value is not None:
+            return {
+                "value": cap_value,
+                "confidence": contextual["confidence"],
+                "preprocess_ms": contextual["preprocess_ms"],
+                "ocr_ms": contextual["ocr_ms"],
             }
-            frame = np.array(sct.grab(monitor))[:, :, :3]
-            values[key] = self._ocr_digits(frame, key)
-        return values if any(value is not None for value in values.values()) else {}
+        return self._ocr_digits(crop, key)
 
     def _update_regen(self, state) -> None:
         now = time.monotonic()
@@ -1179,48 +1852,6 @@ class CharacterStatusService:
                     aggregated[key] = Counter(text_values).most_common(1)[0][0]
         return aggregated
 
-    def _extract_values_from_text(self, frame) -> dict[str, int | None | str]:
-        values: dict[str, int | None] = {
-            "level": None,
-            "hp": None,
-            "mana": None,
-            "cap": None,
-        }
-        # Enlarge frame 3x to improve OCR accuracy on small text regions
-        enlarged = cv2.resize(frame, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-        # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        variants = []
-        # OTSU threshold: auto-computes optimal binarization; output max value is 255
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        variants.append(binary)
-        variants.append(cv2.bitwise_not(binary))
-        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
-        adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 7)
-        variants.append(adaptive)
-        variants.append(cv2.bitwise_not(adaptive))
-        # Regex patterns for extracting stat values from OCR text output (field → list of patterns)
-        field_patterns = {
-            "level": [r"level\s+(\d+)", r"leve[li]\s+(\d+)"],  # English or localized "level/levele/l evel"
-            "hp": [r"hit\s*points\s+(\d+)", r"hit\s*point[s]?\s+(\d+)"],  # "hit points" with optional plural
-            "mana": [r"mana\s+(\d+)"],  # Simple "mana <number>" pattern
-            "cap": [r"capacity\s+(\d+)", r"capacit[yv]\s+(\d+)"],  # "capacity/capacity" variants
-        }
-        for image_variant in variants:
-            text = pytesseract.image_to_string(image_variant, config="--psm 6")  # PSM 6: assume uniform block of text
-            normalized = re.sub(r"[^a-z0-9:\n ]+", " ", text.lower())
-            for key, patterns in field_patterns.items():
-                if values[key] is not None:
-                    continue
-                for pattern in patterns:
-                    match = re.search(pattern, normalized)
-                    if not match:
-                        continue
-                    values[key] = int(match.group(1))
-                    break
-        return values
-
     @staticmethod
     def _parse_food_seconds(text: str) -> int | None:
         normalized = text.strip()
@@ -1259,52 +1890,58 @@ class CharacterStatusService:
         y2 = min(frame_h, int(round(box[3] / base_h * frame_h)))  # Bottom edge from box index 3
         return frame[y1:y2, x1:x2]
 
-    @staticmethod
-    def _ocr_digits(crop, key: str) -> int | None:
+    def _build_variants(self, crop, *, key: str, upscale: int = 2) -> tuple[list[object], float]:
+        started = time.perf_counter()
         if crop is None or crop.size == 0:  # Empty frame check (OpenCV array size = 0)
-            return None
-        # Cap digits are smaller — use 7x scale; HP/Mana use 6x scale
-        scale = 7 if key == "cap" else 6
-        enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-        # Gaussian blur with 3x3 kernel (odd dimensions required for OpenCV filters)
+            return [], 0.0
+        enlarged = cv2.resize(crop, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC) if upscale > 1 else crop
+        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY) if len(enlarged.shape) == 3 else enlarged
+        gray = cv2.fastNlMeansDenoising(gray, None, h=7, templateWindowSize=7, searchWindowSize=21)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        variants = []
-        # OTSU threshold: auto-computes optimal binarization; output max value is 255
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        variants.append(binary)
-        variants.append(cv2.bitwise_not(binary))
-        # Adaptive threshold: 255=max output, 31=block size (odd), 7=C constant subtracted from local mean
         adaptive = cv2.adaptiveThreshold(
             gray,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            31,
-            7,
+            25,
+            5,
         )
-        variants.append(adaptive)
-        variants.append(cv2.bitwise_not(adaptive))
-        # Morphology closing kernel: 2x2 to connect nearby pixel fragments (odd not required for MORPH_CLOSE)
-        kernel = np.ones((2, 2), np.uint8)
-        variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
-        # HP/Mana use PSM 7+8 (single column); Cap adds PSM 6 (uniform digits) for broader coverage
-        psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6", "8"]
-        best_digits = ""
+        variants = [binary, cv2.bitwise_not(binary), adaptive]
+        if key in {"hp", "mana", "cap"}:
+            kernel = np.ones((2, 2), np.uint8)
+            variants.append(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel))
+        return variants, (time.perf_counter() - started) * 1000.0
+
+    def _ocr_digits(self, crop, key: str) -> dict[str, float | int | None]:
+        scale = 3 if key == "cap" else 2
+        variants, preprocess_ms = self._build_variants(crop, key=key, upscale=scale)
+        psm_modes = ["7", "8"] if key in {"hp", "mana"} else ["7", "6"]
+        best_value: int | None = None
+        best_confidence = 0.0
+        ocr_ms = 0.0
         for image_variant in variants:
             for psm in psm_modes:
-                config = f"--psm {psm} -c tessedit_char_whitelist=0123456789"
-                text = pytesseract.image_to_string(image_variant, config=config)
-                groups = [group for group in re.findall(r"\d+", text) if group]
-                # HP/Mana require ≥2 digits (single-digit is noise); Cap accepts ≥1 digit
-                if groups:
-                    candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
-                    if len(candidate) > len(best_digits):
-                        best_digits = candidate
-                    if key in {"hp", "mana"} and len(candidate) >= 2:
-                        return int(candidate)
-                    if key == "cap" and len(candidate) >= 1:
-                        return int(candidate)
-        if best_digits:
-            return int(best_digits)
-        return None
+                started = time.perf_counter()
+                read = self._ocr_engine.recognize(image_variant, psm=psm, oem="1", whitelist="0123456789")
+                ocr_ms += (time.perf_counter() - started) * 1000.0
+                groups = [group for group in re.findall(r"\d+", read.text) if group]
+                if not groups:
+                    continue
+                candidate = max(groups, key=len) if key in {"hp", "mana"} else groups[-1]
+                if key in {"hp", "mana"} and len(candidate) < 2:
+                    continue
+                best_value = int(candidate)
+                best_confidence = max(best_confidence, read.confidence)
+                return {
+                    "value": best_value,
+                    "confidence": best_confidence,
+                    "preprocess_ms": preprocess_ms,
+                    "ocr_ms": ocr_ms,
+                }
+        return {
+            "value": best_value,
+            "confidence": best_confidence,
+            "preprocess_ms": preprocess_ms,
+            "ocr_ms": ocr_ms,
+        }

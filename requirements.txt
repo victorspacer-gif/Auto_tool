@@ -3,10 +3,11 @@ pywin32
 pystray 
 pillow 
 mss 
-numpy>=2.0
+numpy>=2
 pygame-ce>=2.5.7
 pyautogui 
-opencv-python
+opencv-python>=4.13.0.92
 pytesseract
+tesserocr
 psutil
 pymem

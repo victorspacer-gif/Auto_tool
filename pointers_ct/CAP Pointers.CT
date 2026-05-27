@@ -6,7 +6,18 @@
       <Description>"pointerscan result"</Description>
       <ShowAsSigned>0</ShowAsSigned>
       <VariableType>Double</VariableType>
-      <Address>"miracle_gl.exe"+00A783E0</Address>
+      <Address>"miracle_gl-1779392082.exe"+00A6DA6C</Address>
+      <Offsets>
+        <Offset>4B8</Offset>
+        <Offset>11C</Offset>
+      </Offsets>
+    </CheatEntry>
+    <CheatEntry>
+      <ID>5</ID>
+      <Description>"pointerscan result"</Description>
+      <ShowAsSigned>0</ShowAsSigned>
+      <VariableType>Double</VariableType>
+      <Address>"miracle_gl-1779392082.exe"+00A6DA60</Address>
       <Offsets>
         <Offset>4B8</Offset>
       </Offsets>

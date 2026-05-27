@@ -47,6 +47,9 @@ class AlarmState:
     threshold: float = app_config.ALARM_THRESHOLD_RATIO_DEFAULT
     cooldown: int = app_config.ALARM_COOLDOWN_SECONDS_DEFAULT
     region: tuple[int, int, int, int] | None = None
+    battle_enabled: bool = False
+    battle_threshold: float = app_config.BATTLE_CHANGE_THRESHOLD_RATIO_DEFAULT
+    battle_region: tuple[int, int, int, int] | None = None
     auto_pause: bool = False
     hp_percent: int = 0
     hp_value: int = 0
@@ -54,6 +57,7 @@ class AlarmState:
     cap_value: int = 0
     flash_window: bool = False
     system_sound: bool = True
+    battle_logout_popup_timeout_sec: int = 0
 
 
 @dataclasses.dataclass
@@ -218,6 +222,8 @@ class AppState:
     light_freeze_enabled: bool = False
     light_freeze_color_value: int = 0
     light_freeze_intensity_value: int = 0
+    light_custom_color_value: int = 215
+    light_custom_intensity_value: int = 8
     light_freeze_interval_ms: int = app_config.APP_LIGHT_FREEZE_INTERVAL_MS_DEFAULT
     light_last_mode: str = ""
     light_last_color_address_hex: str = ""
@@ -227,15 +233,15 @@ class AppState:
 
     hp_pointer_address_hex: str = ""
     hp_source: str = "ocr"
-    hp_value: float | None = None
+    hp_value: int | None = None
 
     mp_pointer_address_hex: str = ""
     mp_source: str = "none"
-    mp_value: float | None = None
+    mp_value: int | None = None
 
     cap_pointer_address_hex: str = ""
     cap_source: str = "none"
-    cap_value: float | None = None
+    cap_value: int | None = None
 
     food_pointer_address_hex: str = ""
     food_source: str = "ocr"
@@ -244,6 +250,9 @@ class AppState:
     _prev_ocr_hp: int | None = None
     _prev_ocr_mp: int | None = None
     _prev_ocr_cap: int | None = None
+    _hp_pointer_invalid: bool = False
+    _mp_pointer_invalid: bool = False
+    _cap_pointer_invalid: bool = False
     _mp_resolved_addr: int | None = None
     _cap_resolved_addr: int | None = None
 
@@ -267,6 +276,9 @@ class AppState:
     alarm_threshold = _group_property("alarm", "threshold")
     alarm_cooldown = _group_property("alarm", "cooldown")
     alarm_region = _group_property("alarm", "region")
+    alarm_battle_enabled = _group_property("alarm", "battle_enabled")
+    alarm_battle_threshold = _group_property("alarm", "battle_threshold")
+    alarm_battle_region = _group_property("alarm", "battle_region")
     alarm_auto_pause = _group_property("alarm", "auto_pause")
     alarm_hp_percent = _group_property("alarm", "hp_percent")
     alarm_hp_value = _group_property("alarm", "hp_value")
