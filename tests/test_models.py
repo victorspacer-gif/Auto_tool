@@ -143,6 +143,8 @@ class TestAppStateDefaults:
         assert state.light_freeze_enabled is False
         assert state.light_freeze_color_value == 0
         assert state.light_freeze_intensity_value == 0
+        assert state.light_custom_color_value == 215
+        assert state.light_custom_intensity_value == 8
         assert state.light_freeze_interval_ms == 1_000
 
     def test_stats_defaults(self):

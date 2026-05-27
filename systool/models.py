@@ -222,6 +222,8 @@ class AppState:
     light_freeze_enabled: bool = False
     light_freeze_color_value: int = 0
     light_freeze_intensity_value: int = 0
+    light_custom_color_value: int = 215
+    light_custom_intensity_value: int = 8
     light_freeze_interval_ms: int = app_config.APP_LIGHT_FREEZE_INTERVAL_MS_DEFAULT
     light_last_mode: str = ""
     light_last_color_address_hex: str = ""
@@ -231,15 +233,15 @@ class AppState:
 
     hp_pointer_address_hex: str = ""
     hp_source: str = "ocr"
-    hp_value: float | None = None
+    hp_value: int | None = None
 
     mp_pointer_address_hex: str = ""
     mp_source: str = "none"
-    mp_value: float | None = None
+    mp_value: int | None = None
 
     cap_pointer_address_hex: str = ""
     cap_source: str = "none"
-    cap_value: float | None = None
+    cap_value: int | None = None
 
     food_pointer_address_hex: str = ""
     food_source: str = "ocr"

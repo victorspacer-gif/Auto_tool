@@ -92,8 +92,7 @@ DEFAULT_LIGHT_PROFILE = LightPointerProfile(
     process_name="miracle_gl.exe",
     module_name="miracle_gl",
     pointer_chains=[
-        [0x00A6DA60, 0xAC],
-        [0x00A6DA6C, 0x11C, 0xAC],
+        [0x00A3E4C0, 0xAC],
     ],
     structure_value_offset=0,
     signature_pattern=None,

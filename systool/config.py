@@ -194,7 +194,8 @@ class ConfigSerializer:
             "character_name", "character_name_normalized",
             "light_direct_address_hex",
             "light_freeze_enabled", "light_freeze_color_value",
-            "light_freeze_intensity_value", "light_freeze_interval_ms",
+            "light_freeze_intensity_value", "light_custom_color_value",
+            "light_custom_intensity_value", "light_freeze_interval_ms",
             "light_last_mode", "light_last_color_address_hex",
             "light_last_intensity_address_hex",
             "hp_pointer_address_hex", "hp_source", "hp_value",
@@ -533,6 +534,8 @@ class ConfigSerializer:
         state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
         state.light_freeze_color_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_freeze_color_value", state.light_freeze_color_value)))
         state.light_freeze_intensity_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_freeze_intensity_value", state.light_freeze_intensity_value)))
+        state.light_custom_color_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_custom_color_value", state.light_custom_color_value)))
+        state.light_custom_intensity_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_custom_intensity_value", state.light_custom_intensity_value)))
         state.light_freeze_interval_ms = max(LIGHT_FREEZE_INTERVAL_MS_MIN, get_int("light_freeze_interval_ms", state.light_freeze_interval_ms))
         state.light_last_mode = get_str("light_last_mode", state.light_last_mode)
         state.light_last_color_address_hex = get_str("light_last_color_address_hex", state.light_last_color_address_hex)

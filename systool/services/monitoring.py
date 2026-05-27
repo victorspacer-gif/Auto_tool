@@ -154,6 +154,22 @@ class LightControlService:
             self.runtime.state.light_last_mode = "boosted"
         return ok, message
 
+    def apply_custom(self) -> tuple[bool, str]:
+        state = self.runtime.state
+        color_value = self._clamp_byte(state.light_custom_color_value)
+        intensity_value = self._clamp_byte(state.light_custom_intensity_value)
+        ok, message = self._apply(
+            color_value=color_value,
+            intensity_value=intensity_value,
+        )
+        if ok:
+            state.light_custom_color_value = color_value
+            state.light_custom_intensity_value = intensity_value
+            state.light_freeze_color_value = color_value
+            state.light_freeze_intensity_value = intensity_value
+            state.light_last_mode = "custom"
+        return ok, message
+
     def reset_original(self) -> tuple[bool, str]:
         state = self.runtime.state
         if not state.light_last_color_address_hex or not state.light_last_intensity_address_hex:
@@ -256,12 +272,19 @@ class LightControlService:
         intensity_address: int | None = None,
     ) -> tuple[bool, str]:
         ctrl = self._require_controller()
-        intensity_address = color_address + 1 if intensity_address is None else intensity_address
-        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
         state = self.runtime.state
+        intensity_address = color_address + 1 if intensity_address is None else intensity_address
+        previous_color_address_hex = state.light_last_color_address_hex
+        previous_intensity_address_hex = state.light_last_intensity_address_hex
+        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
         state.light_last_color_address_hex = f"{color_address:X}"
         state.light_last_intensity_address_hex = f"{intensity_address:X}"
-        if remember_original:
+        if remember_original and self._should_capture_original(
+            previous_color_address_hex=previous_color_address_hex,
+            previous_intensity_address_hex=previous_intensity_address_hex,
+            color_address=color_address,
+            intensity_address=intensity_address,
+        ):
             state.light_original_color_value = result.color.old_value
             state.light_original_intensity_value = result.intensity.old_value
         mode_label = "direct" if state.light_direct_address_hex.strip() else "pointer"
@@ -285,6 +308,26 @@ class LightControlService:
             raise ProcessNotFoundError("Attach to the game process first.")
         return self.controller
 
+    @staticmethod
+    def _clamp_byte(value: int) -> int:
+        return max(0, min(255, int(value)))
+
+    def _should_capture_original(
+        self,
+        previous_color_address_hex: str,
+        previous_intensity_address_hex: str,
+        color_address: int,
+        intensity_address: int,
+    ) -> bool:
+        state = self.runtime.state
+        if state.light_original_color_value is None or state.light_original_intensity_value is None:
+            return True
+        return (
+            previous_color_address_hex != f"{color_address:X}"
+            or previous_intensity_address_hex != f"{intensity_address:X}"
+        )
+
+
 class StatPointerService:
     """Shared pointer-backed stat reader with OCR fallback."""
 
@@ -301,6 +344,7 @@ class StatPointerService:
     local_cache_attr = "_cache_time"
     local_ttl_attr = "_CACHE_TTL"
     hard_max_value: float | None = None
+    require_integer_value = True
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self.controller: LightMemoryController | None = None
@@ -454,6 +498,8 @@ class StatPointerService:
             raise ValueError("non-finite value")
         if numeric_value < 0:
             raise ValueError("negative value")
+        if self.require_integer_value and not numeric_value.is_integer():
+            raise ValueError("fractional value")
         if self.hard_max_value is not None and numeric_value > self.hard_max_value:
             raise ValueError(f"value above hard max {self.hard_max_value:.0f}")
 
@@ -465,9 +511,23 @@ class StatPointerService:
             if abs(numeric_value - fallback_value) > allowed_delta:
                 raise ValueError(f"value inconsistent with OCR ({fallback_value:.0f})")
 
+        if self.require_integer_value:
+            return int(numeric_value)
         if isinstance(raw_value, int):
             return raw_value
         return numeric_value
+
+    def _normalize_stat_value(self, raw_value: object) -> float | int | None:
+        if raw_value is None:
+            return None
+        if self.require_integer_value:
+            numeric_value = float(raw_value)
+            if numeric_value <= 0:
+                return None
+            return int(numeric_value)
+        if isinstance(raw_value, (int, float)) and raw_value > 0:
+            return float(raw_value)
+        return None
 
     def _read_valid_pointer_value(self) -> float | int:
         raw_value = self._read_pointer_value()
@@ -477,12 +537,10 @@ class StatPointerService:
             self._invalidate_pointer(str(exc), raw_value=raw_value)
             raise RuntimeError(str(exc)) from exc
 
-    def _get_fallback_value(self) -> float | None:
+    def _get_fallback_value(self) -> float | int | None:
         with self.runtime.settings_lock:
             fallback_value = getattr(self.runtime.state, self.fallback_attr)
-        if fallback_value is not None and fallback_value > 0:
-            return float(fallback_value)
-        return None
+        return self._normalize_stat_value(fallback_value)
 
     def _read_pointer_value(self) -> float | int:
         if self.pointer_reader is None or not self.stat_name:
@@ -490,7 +548,7 @@ class StatPointerService:
         read_method = getattr(self.pointer_reader, f"read_{self.stat_name}")
         return read_method()
 
-    def _get_value(self) -> float | None:
+    def _get_value(self) -> float | int | None:
         state = self.runtime.state
         if not self._is_address_valid():
             self._ensure_address_resolved()
@@ -574,14 +632,14 @@ class HpService(StatPointerService):
         self._light_address = None
         return result
 
-    def get_hp(self) -> float | None:
+    def get_hp(self) -> int | None:
         return self._get_value()
 
     def get_hp_peak(self) -> int:
         with self.runtime.settings_lock:
             return self.runtime.state.char_status_hp_peak
 
-    def _read_all_stats(self) -> tuple[float | None, float | None, float | None]:
+    def _read_all_stats(self) -> tuple[int | None, int | None, int | None]:
         """Read HP/MP/Cap/Food from pointers, falling back to OCR when unavailable.
 
         Returns (hp_val, mp_val, cap_val) from pointers (may be None).  When a
@@ -629,9 +687,6 @@ class HpService(StatPointerService):
             read_method_name="read_hp",
             source_attr="hp_source",
         )
-        if hp_val is not None:
-            hp_val = float(hp_val)
-
         mp_val = read_pointer_stat(
             service=self.runtime.mp_service if isinstance(self.runtime.mp_service, StatPointerService) else self,
             state_invalid_attr="_mp_pointer_invalid",
@@ -663,20 +718,20 @@ class HpService(StatPointerService):
         with self.runtime.settings_lock:
             if hp_val is None:
                 ocr_hp = getattr(state, "char_status_hp", None)
-                if ocr_hp is not None and ocr_hp > 0:
-                    hp_val = float(ocr_hp)
+                hp_val = self._normalize_stat_value(ocr_hp)
+                if hp_val is not None:
                     state.hp_value = hp_val
                     state.hp_source = "ocr"
             if mp_val is None:
                 ocr_mp = getattr(state, "char_status_mana", None)
-                if ocr_mp is not None and ocr_mp > 0:
-                    mp_val = float(ocr_mp)
+                mp_val = self._normalize_stat_value(ocr_mp)
+                if mp_val is not None:
                     state.mp_value = mp_val
                     state.mp_source = "ocr"
             if cap_val is None:
                 ocr_cap = getattr(state, "char_status_cap", None)
-                if ocr_cap is not None and ocr_cap > 0:
-                    cap_val = float(ocr_cap)
+                cap_val = self._normalize_stat_value(ocr_cap)
+                if cap_val is not None:
                     state.cap_value = cap_val
                     state.cap_source = "ocr"
             if food_val is None:
@@ -715,7 +770,7 @@ class MpService(StatPointerService):
     local_ttl_attr = "_MP_CACHE_TTL"
     hard_max_value = 1_000_000.0
 
-    def get_mp(self) -> float | None:
+    def get_mp(self) -> int | None:
         return self._get_value()
 
 
@@ -736,7 +791,7 @@ class CapService(StatPointerService):
     local_ttl_attr = "_CAP_CACHE_TTL"
     hard_max_value = 1_000_000.0
 
-    def get_cap(self) -> float | None:
+    def get_cap(self) -> int | None:
         return self._get_value()
 
     def get_cap_peak(self) -> int:
@@ -765,9 +820,12 @@ class FoodService(StatPointerService):
 
 class AlarmService:
     BATTLE_COOLDOWN_SECONDS = 3.0
+    SYSTEM_SOUND_SECONDS = 3.0
+    PIXEL_CHANGE_SOUND_SECONDS = 5.5
 
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
+        self._system_sound_lock = threading.Lock()
 
     @staticmethod
     def _resolve_alarm_audio_path(raw_path: str) -> str:
@@ -858,16 +916,41 @@ class AlarmService:
         except Exception:
             logger.debug("Game window flash failed", exc_info=True)
 
-    def _play_system_sound(self) -> None:
-        """Play a standard Windows system sound (SystemAsterisk)."""
+    def _play_system_sound(self, duration_seconds: float | None = None, stop_event: threading.Event | None = None) -> None:
+        """Play repeated Windows alert beeps for a bounded attention-grabbing period."""
+        if not self._system_sound_lock.acquire(blocking=False):
+            return
         try:
-            if HAS_WINSOUND and winsound is not None:
-                winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
-                return
-            if HAS_CTYPES:
-                ctypes.windll.user32.MessageBeep(0x40)
-        except Exception:
-            logger.debug("System sound playback failed", exc_info=True)
+            duration = max(0.1, float(duration_seconds or self.SYSTEM_SOUND_SECONDS))
+            deadline = time.monotonic() + duration
+            beep_pattern = [
+                (1200, 140),
+                (1200, 140),
+                (1600, 220),
+                (900, 140),
+            ]
+
+            while time.monotonic() < deadline:
+                if stop_event is not None and stop_event.is_set():
+                    return
+
+                try:
+                    if HAS_WINSOUND and winsound is not None:
+                        for frequency, beep_ms in beep_pattern:
+                            if time.monotonic() >= deadline or (stop_event is not None and stop_event.is_set()):
+                                return
+                            winsound.Beep(frequency, beep_ms)
+                            time.sleep(0.04)
+                    elif HAS_CTYPES:
+                        ctypes.windll.user32.MessageBeep(0x40)
+                        time.sleep(0.25)
+                    else:
+                        return
+                except Exception:
+                    logger.debug("System sound playback failed", exc_info=True)
+                    return
+        finally:
+            self._system_sound_lock.release()
 
     def _resolve_attached_game_window(self) -> int | None:
         light_service = getattr(self.runtime, "light_service", None)
@@ -935,6 +1018,27 @@ class AlarmService:
         if not HAS_PYAUTOGUI:
             self.runtime.ui.log("Battle reaction needs pyautogui")
             return False
+
+        # ============================================================
+        # Rate limit: max 3 executions every 60 seconds
+        # ============================================================
+        now = time.time()
+
+        if not hasattr(self, "_battle_hotkey_window_start"):
+            self._battle_hotkey_window_start = now
+            self._battle_hotkey_count = 0
+
+        # Reset window after 60 seconds
+        if now - self._battle_hotkey_window_start >= 60:
+            self._battle_hotkey_window_start = now
+            self._battle_hotkey_count = 0
+
+        # Block if limit reached
+        if self._battle_hotkey_count >= 3:
+            return False
+
+        self._battle_hotkey_count += 1
+
         try:
             pyautogui.keyDown("ctrl")
             time.sleep(0.02)
@@ -944,16 +1048,23 @@ class AlarmService:
 
             pyautogui.keyUp("q")
             return True
+
         except Exception as exc:
             self.runtime.ui.log(f"Battle CTRL+Q failed: {exc}")
             return False
+
         finally:
             try:
                 pyautogui.keyUp("ctrl")
             except Exception:
                 logger.debug("Battle CTRL key release failed")
 
-    def play_alarm(self) -> None:
+    def play_alarm(
+        self,
+        *,
+        system_sound_duration_seconds: float | None = None,
+        system_sound_stop_event: threading.Event | None = None,
+    ) -> None:
         path = self._resolve_alarm_sound_path()
         if path:
             self.runtime.state.alarm_mp3 = path
@@ -966,7 +1077,11 @@ class AlarmService:
             try:
                 # Play Windows system sound if enabled (non-blocking, instant feedback)
                 if system_sound:
-                    self._play_system_sound()
+                    threading.Thread(
+                        target=self._play_system_sound,
+                        args=(system_sound_duration_seconds, system_sound_stop_event),
+                        daemon=True,
+                    ).start()
 
                 # Flash game window taskbar icon if enabled
                 if flash_window and HAS_WIN32:
@@ -1012,7 +1127,10 @@ class AlarmService:
                 size = 200  # Default alarm region side length in pixels (200x200 square)
                 return {"top": screen_h // 2 - size // 2, "left": screen_w // 2 - size // 2, "width": size, "height": size, "mon": 1}
 
-            last_frame = None
+            pixel_baseline_frame = None
+            pixel_was_changed = False
+            pixel_changed_since = None
+            pixel_sound_stop = threading.Event()
             battle_last_frame = None
             battle_was_changed = False
             battle_cooldown_until = 0.0
@@ -1120,23 +1238,49 @@ class AlarmService:
                 except Exception as exc:
                     self.runtime.ui.log(f"❌ Capture: {exc}")
                     continue
-                if last_frame is not None and last_frame.shape == frame.shape:
-                    if now >= cooldown_until:
-                        diff = np.abs(frame.astype(np.int16) - last_frame.astype(np.int16))
-                        # Pixel-level difference: sum channels, then count pixels where diff > 30 (threshold)
-                        changed = float(np.mean(diff.sum(axis=2) > 30))
-                        if changed >= threshold:
+                if pixel_baseline_frame is None or pixel_baseline_frame.shape != frame.shape:
+                    pixel_sound_stop.set()
+                    pixel_sound_stop = threading.Event()
+                    pixel_baseline_frame = frame
+                    pixel_was_changed = False
+                    pixel_changed_since = None
+                else:
+                    diff = np.abs(frame.astype(np.int16) - pixel_baseline_frame.astype(np.int16))
+                    # Pixel-level difference against the stable baseline frame.
+                    changed = float(np.mean(diff.sum(axis=2) > 30))
+                    pixel_changed = changed >= threshold
+                    if pixel_changed and not pixel_was_changed:
+                        pixel_changed_since = now
+                        if now >= cooldown_until:
                             cooldown_until = now + state.alarm_cooldown
+                            pixel_sound_stop.set()
+                            pixel_sound_stop = threading.Event()
                             with self.runtime.record_lock:
                                 state.stats["alarms"] += 1
                             self.runtime.ui.log(f"🚨 ALARM — {changed * 100:.1f}% pixels changed!")
                             self.runtime.ui.set_status(f"⚠️  PIXEL ALARM — {changed * 100:.1f}% changed!", RED)
-                            self.play_alarm()
+                            self.play_alarm(
+                                system_sound_duration_seconds=self.PIXEL_CHANGE_SOUND_SECONDS,
+                                system_sound_stop_event=pixel_sound_stop,
+                            )
                             self.runtime.ui.refresh_stats()
                             if auto_pause and not self.runtime.pause.paused:
                                 self.runtime.ui.log("⏸  Auto-pausing all activities due to screen watch event")
                                 self.runtime.ui.dispatch(self.runtime.pause.toggle)
-                last_frame = frame
+                    elif pixel_changed and pixel_changed_since is not None:
+                        if now - pixel_changed_since >= self.PIXEL_CHANGE_SOUND_SECONDS:
+                            pixel_sound_stop.set()
+                            pixel_baseline_frame = frame
+                            pixel_was_changed = False
+                            pixel_changed_since = None
+                            self.runtime.ui.log("Pixel alarm baseline updated after persistent change")
+                            continue
+                    elif not pixel_changed:
+                        if pixel_was_changed:
+                            pixel_sound_stop.set()
+                        pixel_baseline_frame = frame
+                        pixel_changed_since = None
+                    pixel_was_changed = pixel_changed
 
                 if not battle_enabled:
                     battle_last_frame = None
