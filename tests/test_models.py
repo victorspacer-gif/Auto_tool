@@ -105,6 +105,8 @@ class TestAppStateDefaults:
         state = AppState()
         assert state.alarm_threshold == 0.80
         assert state.alarm_cooldown == 10
+        assert state.alarm_flash_window is False
+        assert state.alarm_system_sound is True
 
     def test_char_status_defaults(self):
         state = AppState()

@@ -52,8 +52,8 @@ class AlarmState:
     hp_value: int = 0
     mp_value: int = 0
     cap_value: int = 0
-    flash_window: bool = True
-    system_sound: bool = False
+    flash_window: bool = False
+    system_sound: bool = True
 
 
 @dataclasses.dataclass

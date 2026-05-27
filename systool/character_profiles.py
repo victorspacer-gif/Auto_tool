@@ -24,6 +24,12 @@ OCR_REGION_KEYS = (
     "char_status_mana_region",
     "char_status_cap_region",
 )
+PROFILE_LOAD_BLOCKED_CFG_KEYS = frozenset(
+    (
+        "alarm.flash_window",
+        "alarm_flash_window",
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -208,7 +214,12 @@ def save_character_profile(
 
 
 def load_character_profile(path: os.PathLike[str] | str) -> dict:
-    return ConfigSerializer.load_file(str(path))
+    payload = ConfigSerializer.load_file(str(path))
+    cfg = payload.get("cfg")
+    if isinstance(cfg, dict):
+        for key in PROFILE_LOAD_BLOCKED_CFG_KEYS:
+            cfg.pop(key, None)
+    return payload
 
 
 def get_window_title_for_pid(pid: int) -> str:

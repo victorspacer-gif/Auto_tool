@@ -686,8 +686,8 @@ class AlarmService:
             self.runtime.state.alarm_mp3 = path
 
         state = self.runtime.state
-        flash_window = getattr(state, 'alarm_flash_window', True)  # Default: enabled
-        system_sound = getattr(state, 'alarm_system_sound', False)  # Default: disabled
+        flash_window = getattr(state, 'alarm_flash_window', False)  # Default: disabled
+        system_sound = getattr(state, 'alarm_system_sound', True)  # Default: enabled
 
         def play() -> None:
             try:

@@ -11,9 +11,11 @@ from systool.character_profiles import (
     build_identity,
     build_ocr_region_metadata,
     build_profile_path,
+    load_character_profile,
     normalize_character_name,
     remap_ocr_regions_from_profile,
 )
+from systool.config import ConfigSerializer
 from systool.models import AppState
 
 
@@ -71,6 +73,24 @@ def test_remap_ocr_regions_from_profile_uses_current_window_rect():
 
     assert remapped["char_status_region"] == (1100, 600, 600, 400)
     assert remapped["char_status_hp_region"] == (1160, 680, 120, 40)
+
+
+def test_load_character_profile_blocks_flash_window_setting(tmp_path: Path):
+    state = AppState()
+    path = tmp_path / "autosave_Sir_Test.json"
+    ConfigSerializer.save_json(path, state)
+    raw = path.read_text(encoding="utf-8")
+    raw = raw.replace('"alarm.flash_window": false', '"alarm.flash_window": true')
+    raw = raw.replace('"alarm.system_sound": true', '"alarm.system_sound": true,\n  "alarm_flash_window": true')
+    path.write_text(raw, encoding="utf-8")
+
+    payload = load_character_profile(path)
+    restored = AppState()
+    ConfigSerializer.apply_loaded(restored, payload)
+
+    assert "alarm.flash_window" not in payload["cfg"]
+    assert "alarm_flash_window" not in payload["cfg"]
+    assert restored.alarm_flash_window is False
 
 
 def test_save_current_character_profile_skips_disk_write_when_state_is_unchanged(monkeypatch):
