@@ -97,7 +97,7 @@ class ScreenWatchTab:
         self.ui_vars["alarm_flash_var"] = flash_var
         sys_sound_var = tk.BooleanVar(value=self.runtime.state.alarm_system_sound)
         self.ui_vars["alarm_sys_sound_var"] = sys_sound_var
-        tk.Checkbutton(panel, text="Flash game window taskbar icon on alarm", variable=flash_var, font=BOLD, bg=PANEL, fg=TEAL, selectcolor=PANEL, activebackground=PANEL, activeforeground=TEAL).pack(anchor="w", pady=(8, 2))
+        tk.Checkbutton(panel, text="Flash game window taskbar icon on alarm (DANGEROUS)", variable=flash_var, font=BOLD, bg=PANEL, fg=TEAL, selectcolor=PANEL, activebackground=PANEL, activeforeground=TEAL).pack(anchor="w", pady=(8, 2))
         tk.Checkbutton(panel, text="Play Windows system sound (SystemAsterisk) on alarm", variable=sys_sound_var, font=BOLD, bg=PANEL, fg=TEAL, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w")
 
         action_row = tk.Frame(panel, bg=PANEL)
