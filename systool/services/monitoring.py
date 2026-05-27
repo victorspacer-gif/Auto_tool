@@ -778,7 +778,7 @@ class FoodService(StatPointerService):
 class AlarmService:
     BATTLE_COOLDOWN_SECONDS = 3.0
     SYSTEM_SOUND_SECONDS = 3.0
-    PIXEL_CHANGE_SOUND_SECONDS = 10.0
+    PIXEL_CHANGE_SOUND_SECONDS = 5.5
 
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
