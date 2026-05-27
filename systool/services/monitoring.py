@@ -272,12 +272,19 @@ class LightControlService:
         intensity_address: int | None = None,
     ) -> tuple[bool, str]:
         ctrl = self._require_controller()
-        intensity_address = color_address + 1 if intensity_address is None else intensity_address
-        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
         state = self.runtime.state
+        intensity_address = color_address + 1 if intensity_address is None else intensity_address
+        previous_color_address_hex = state.light_last_color_address_hex
+        previous_intensity_address_hex = state.light_last_intensity_address_hex
+        result = ctrl.write_light_pair(color_address, color_value, intensity_value)
         state.light_last_color_address_hex = f"{color_address:X}"
         state.light_last_intensity_address_hex = f"{intensity_address:X}"
-        if remember_original:
+        if remember_original and self._should_capture_original(
+            previous_color_address_hex=previous_color_address_hex,
+            previous_intensity_address_hex=previous_intensity_address_hex,
+            color_address=color_address,
+            intensity_address=intensity_address,
+        ):
             state.light_original_color_value = result.color.old_value
             state.light_original_intensity_value = result.intensity.old_value
         mode_label = "direct" if state.light_direct_address_hex.strip() else "pointer"
@@ -304,6 +311,21 @@ class LightControlService:
     @staticmethod
     def _clamp_byte(value: int) -> int:
         return max(0, min(255, int(value)))
+
+    def _should_capture_original(
+        self,
+        previous_color_address_hex: str,
+        previous_intensity_address_hex: str,
+        color_address: int,
+        intensity_address: int,
+    ) -> bool:
+        state = self.runtime.state
+        if state.light_original_color_value is None or state.light_original_intensity_value is None:
+            return True
+        return (
+            previous_color_address_hex != f"{color_address:X}"
+            or previous_intensity_address_hex != f"{intensity_address:X}"
+        )
 
 
 class StatPointerService:

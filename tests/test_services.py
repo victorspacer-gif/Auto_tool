@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import pytest
+from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 # Mock pynput only for tests that need mocked mouse/keyboard objects.
@@ -14,7 +15,7 @@ with patch("systool.runtime.pynput_kb"), \
     from systool.services import CharacterStatusService, HumanMouse, RightClickService, SafeKeyboardSession
     from systool.services import input_services
     from systool.services import monitoring as monitoring_module
-    from systool.services.monitoring import AlarmService, HpService, MpService
+    from systool.services.monitoring import AlarmService, HpService, LightControlService, MpService
     from systool.runtime import AppRuntime
 
 # Skip HotkeyServiceKeyMapping tests if pynput is not available (Linux CI).
@@ -118,6 +119,61 @@ class TestAlarmAudioPath:
     def test_resolve_alarm_audio_path_normalizes_relative_path(self):
         path = AlarmService._resolve_alarm_audio_path("alerts/test.mp3")
         assert path.endswith("alerts\\test.mp3") or path.endswith("alerts/test.mp3")
+
+
+class TestLightControlReset:
+    @dataclass
+    class _PatchResult:
+        address: int
+        old_value: int
+        new_value: int
+
+    @dataclass
+    class _LightPatchResult:
+        color: object
+        intensity: object
+
+    class _FakeLightController:
+        def __init__(self, color_value=90, intensity_value=4):
+            self.memory = {
+                0x1000: color_value,
+                0x1001: intensity_value,
+            }
+
+        def write_light_pair(self, color_address, color_value, intensity_value):
+            intensity_address = color_address + 1
+            old_color = self.memory[color_address]
+            old_intensity = self.memory[intensity_address]
+            self.memory[color_address] = color_value
+            self.memory[intensity_address] = intensity_value
+            return TestLightControlReset._LightPatchResult(
+                color=TestLightControlReset._PatchResult(color_address, old_color, color_value),
+                intensity=TestLightControlReset._PatchResult(intensity_address, old_intensity, intensity_value),
+            )
+
+    def test_reset_restores_first_game_values_after_multiple_client_applies(self):
+        runtime = AppRuntime()
+        runtime.state.light_direct_address_hex = "1000"
+        service = LightControlService(runtime)
+        service.controller = self._FakeLightController(color_value=90, intensity_value=4)
+
+        runtime.state.light_custom_color_value = 10
+        runtime.state.light_custom_intensity_value = 20
+        ok, _message = service.apply_custom()
+        assert ok is True
+
+        runtime.state.light_custom_color_value = 30
+        runtime.state.light_custom_intensity_value = 40
+        ok, _message = service.apply_custom()
+        assert ok is True
+
+        assert runtime.state.light_original_color_value == 90
+        assert runtime.state.light_original_intensity_value == 4
+
+        ok, _message = service.reset_original()
+        assert ok is True
+        assert service.controller.memory[0x1000] == 90
+        assert service.controller.memory[0x1001] == 4
 
 
 class TestSafeKeyboardSession:
