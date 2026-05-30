@@ -8,12 +8,14 @@ from types import SimpleNamespace
 from systool.app import SystemMonitorApp
 from systool.character_profiles import (
     AUTOSAVE_FOLDER_NAME,
+    PROFILE_LIGHT_CFG_KEYS,
     build_identity,
     build_ocr_region_metadata,
     build_profile_path,
     load_character_profile,
     normalize_character_name,
     remap_ocr_regions_from_profile,
+    save_character_profile,
 )
 from systool.config import ConfigSerializer
 from systool.models import AppState
@@ -78,6 +80,8 @@ def test_remap_ocr_regions_from_profile_uses_current_window_rect():
 def test_load_character_profile_blocks_flash_window_setting(tmp_path: Path):
     state = AppState()
     path = tmp_path / "autosave_Sir_Test.json"
+    state.light_freeze_enabled = True
+    state.light_custom_color_value = 99
     ConfigSerializer.save_json(path, state)
     raw = path.read_text(encoding="utf-8")
     raw = raw.replace('"alarm.flash_window": false', '"alarm.flash_window": true')
@@ -90,7 +94,28 @@ def test_load_character_profile_blocks_flash_window_setting(tmp_path: Path):
 
     assert "alarm.flash_window" not in payload["cfg"]
     assert "alarm_flash_window" not in payload["cfg"]
+    assert "light_freeze_enabled" not in payload["cfg"]
+    assert "light_custom_color_value" not in payload["cfg"]
     assert restored.alarm_flash_window is False
+    assert restored.light_freeze_enabled is False
+    assert restored.light_custom_color_value == 215
+
+
+def test_save_character_profile_omits_light_settings(tmp_path: Path):
+    state = AppState()
+    state.light_process_name = "custom_client.exe"
+    state.light_direct_address_hex = "ABCDEF"
+    state.light_freeze_enabled = True
+    state.light_freeze_color_value = 123
+    state.light_custom_intensity_value = 42
+    identity = build_identity("miracle_gl.exe", "Miracle 7.4 - Sir Test")
+    path = tmp_path / "autosave_Sir_Test.json"
+
+    save_character_profile(path, state, identity)
+    raw = path.read_text(encoding="utf-8")
+
+    for key in PROFILE_LIGHT_CFG_KEYS:
+        assert f'"{key}"' not in raw
 
 
 def test_save_current_character_profile_skips_disk_write_when_state_is_unchanged(monkeypatch):
@@ -122,7 +147,40 @@ def test_save_current_character_profile_skips_disk_write_when_state_is_unchanged
     assert called["count"] == 0
 
 
-def test_load_attached_profile_reapplies_light_freeze_when_enabled(monkeypatch):
+def test_save_current_character_profile_skips_disk_write_for_light_only_change(monkeypatch):
+    app = object.__new__(SystemMonitorApp)
+    app.runtime = SimpleNamespace(
+        state=AppState(),
+        ui=SimpleNamespace(log=lambda _msg: None),
+    )
+    app.current_character_profile_path = "C:/profiles/autosave_Sir_Test.json"
+    app.light_service = SimpleNamespace(controller=None)
+    app.runtime.state.light_process_name = "miracle_gl.exe"
+    app.runtime.state.attached_window_title = "Client - Sir Test"
+    app.runtime.state.character_name = "Sir Test"
+    app.runtime.state.character_name_normalized = "Sir_Test"
+    app._poll_settings = lambda schedule_next=False: None
+
+    app._last_saved_json_hash = SystemMonitorApp._compute_profile_payload_hash(app)
+    app.runtime.state.light_custom_color_value = 99
+    app.runtime.state.light_freeze_enabled = True
+
+    called = {"count": 0}
+
+    def fake_save_character_profile(*args, **kwargs):
+        called["count"] += 1
+
+    monkeypatch.setattr("systool.app.save_character_profile", fake_save_character_profile)
+    app._refresh_last_saved_profile_hash = lambda: None
+    app._get_attached_window_rect = lambda: None
+
+    saved = SystemMonitorApp._save_current_character_profile(app, log_success=True)
+
+    assert saved is False
+    assert called["count"] == 0
+
+
+def test_load_attached_profile_ignores_profile_light_freeze(monkeypatch):
     app = object.__new__(SystemMonitorApp)
     app.runtime = SimpleNamespace(
         state=AppState(),
@@ -165,7 +223,7 @@ def test_load_attached_profile_reapplies_light_freeze_when_enabled(monkeypatch):
     monkeypatch.setattr(
         "systool.app.load_character_profile",
         lambda _path: {
-            "cfg": {"light_freeze_enabled": True},
+            "cfg": {},
             "jobs": [],
             "spots": [],
             "alarm_region": None,
@@ -181,5 +239,5 @@ def test_load_attached_profile_reapplies_light_freeze_when_enabled(monkeypatch):
     message = SystemMonitorApp._load_or_create_attached_character_profile(app)
 
     assert message == "character=Sir Test"
-    assert app.runtime.state.light_freeze_enabled is True
-    assert start_calls["count"] == 1
+    assert app.runtime.state.light_freeze_enabled is False
+    assert start_calls["count"] == 0

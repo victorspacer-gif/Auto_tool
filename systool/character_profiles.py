@@ -25,12 +25,29 @@ OCR_REGION_KEYS = (
     "char_status_mana_region",
     "char_status_cap_region",
 )
-PROFILE_LOAD_BLOCKED_CFG_KEYS = frozenset(
+PROFILE_LIGHT_CFG_KEYS = frozenset(
+    (
+        "light_process_name",
+        "light_direct_address_hex",
+        "light_freeze_enabled",
+        "light_freeze_color_value",
+        "light_freeze_intensity_value",
+        "light_custom_color_value",
+        "light_custom_intensity_value",
+        "light_freeze_interval_ms",
+        "light_last_mode",
+        "light_last_color_address_hex",
+        "light_last_intensity_address_hex",
+        "light_original_color_value",
+        "light_original_intensity_value",
+    )
+)
+PROFILE_BLOCKED_CFG_KEYS = frozenset(
     (
         "alarm.flash_window",
         "alarm_flash_window",
     )
-)
+) | PROFILE_LIGHT_CFG_KEYS
 
 
 @dataclass(frozen=True)
@@ -211,14 +228,19 @@ def save_character_profile(
     *,
     window_rect: tuple[int, int, int, int] | None = None,
 ) -> None:
-    ConfigSerializer.save_json(str(path), state, metadata=profile_metadata(identity, state=state, window_rect=window_rect))
+    ConfigSerializer.save_json(
+        str(path),
+        state,
+        metadata=profile_metadata(identity, state=state, window_rect=window_rect),
+        exclude_keys=PROFILE_BLOCKED_CFG_KEYS,
+    )
 
 
 def load_character_profile(path: os.PathLike[str] | str) -> dict:
     payload = ConfigSerializer.load_file(str(path))
     cfg = payload.get("cfg")
     if isinstance(cfg, dict):
-        for key in PROFILE_LOAD_BLOCKED_CFG_KEYS:
+        for key in PROFILE_BLOCKED_CFG_KEYS:
             cfg.pop(key, None)
     return payload
 

@@ -267,8 +267,16 @@ class ConfigSerializer:
         return result
 
     @staticmethod
-    def save_json(path: str, state: AppState, metadata: dict[str, Any] | None = None) -> None:
+    def save_json(
+        path: str,
+        state: AppState,
+        metadata: dict[str, Any] | None = None,
+        *,
+        exclude_keys: set[str] | frozenset[str] | tuple[str, ...] = (),
+    ) -> None:
         payload = ConfigSerializer.to_dict(state)
+        for key in exclude_keys:
+            payload.pop(key, None)
         if metadata:
             payload["__meta__"] = metadata
         with open(path, "w", encoding="utf-8") as handle:

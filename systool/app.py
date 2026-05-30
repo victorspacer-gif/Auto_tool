@@ -25,6 +25,7 @@ from .character_profiles import (
     get_window_rect_for_pid,
     get_window_title_for_pid,
     load_character_profile,
+    PROFILE_BLOCKED_CFG_KEYS,
     remap_ocr_regions_from_profile,
     save_character_profile,
 )
@@ -1362,7 +1363,11 @@ class SystemMonitorApp:
 
     def _compute_profile_payload_hash(self) -> str:
         current_dict = ConfigSerializer.to_dict(self.runtime.state)
-        clean = {k: v for k, v in current_dict.items() if not k.startswith("__")}
+        clean = {
+            k: v
+            for k, v in current_dict.items()
+            if not k.startswith("__") and k not in PROFILE_BLOCKED_CFG_KEYS
+        }
         payload_json = json.dumps(clean, sort_keys=True, indent=2)
         return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
 
