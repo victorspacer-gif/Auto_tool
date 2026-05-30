@@ -88,6 +88,63 @@ class TestConfigSerializer:
         finally:
             os.unlink(path)
 
+    def test_json_round_trip_preserves_sandbox_fields(self):
+        state = AppState()
+        state.sandbox.backend = "sandboxie"
+        state.sandbox.box_name = "LauncherBox"
+        state.sandbox.exe_path = r"C:\Games\Client.exe"
+        state.sandbox.args = "--profile test"
+        state.sandbox.drop_admin = True
+        state.sandbox.spoof_env = False
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as handle:
+            path = handle.name
+
+        try:
+            ConfigSerializer.save_json(path, state)
+            payload = ConfigSerializer.load_file(path)
+            restored = AppState()
+            ConfigSerializer.apply_loaded(restored, payload)
+
+            assert restored.sandbox.backend == "sandboxie"
+            assert restored.sandbox.box_name == "LauncherBox"
+            assert restored.sandbox.exe_path == r"C:\Games\Client.exe"
+            assert restored.sandbox.args == "--profile test"
+            assert restored.sandbox.drop_admin is True
+            assert restored.sandbox.spoof_env is False
+        finally:
+            os.unlink(path)
+
+    def test_apply_loaded_accepts_legacy_sandbox_keys(self):
+        state = AppState()
+        payload = {
+            "cfg": {
+                "sandbox_backend": "sandboxie",
+                "sandbox_box_name": "LegacyBox",
+                "sandbox_exe_path": r"C:\Legacy\Client.exe",
+                "sandbox_args": "--legacy",
+                "sandbox_drop_admin": "true",
+                "sandbox_spoof_env": "false",
+            },
+            "jobs": [],
+            "spots": [],
+            "alarm_region": None,
+            "char_status_region": None,
+            "char_status_hp_region": None,
+            "char_status_mana_region": None,
+            "char_status_cap_region": None,
+            "hotkeys": {},
+        }
+
+        ConfigSerializer.apply_loaded(state, payload)
+
+        assert state.sandbox.backend == "sandboxie"
+        assert state.sandbox.box_name == "LegacyBox"
+        assert state.sandbox.exe_path == r"C:\Legacy\Client.exe"
+        assert state.sandbox.args == "--legacy"
+        assert state.sandbox.drop_admin is True
+        assert state.sandbox.spoof_env is False
+
     def test_apply_loaded_accepts_legacy_food_seconds(self):
         state = AppState()
         payload = {

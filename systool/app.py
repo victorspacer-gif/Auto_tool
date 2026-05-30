@@ -74,12 +74,14 @@ try:
         find_installation,
         launch_in_box,
         launch_with_job_object,
+        terminate_box,
     )
     HAS_SANDBOX_LAUNCHER = True
 except ImportError:
     find_installation = None
     launch_in_box = None
     launch_with_job_object = None
+    terminate_box = None
     HAS_SANDBOX_LAUNCHER = False
 
 
@@ -155,6 +157,7 @@ class SystemMonitorApp:
         self.sandbox_exe_var: tk.StringVar | None = None
         self.sandbox_args_var: tk.StringVar | None = None
         self.sandbox_box_var: tk.StringVar | None = None
+        self.sandbox_drop_admin_var: tk.BooleanVar | None = None
         self.sandbox_spoof_env_var: tk.BooleanVar | None = None
         self.sandbox_launcher_popup: tk.Toplevel | None = None
         self.sandbox_launch_button: tk.Button | None = None
@@ -587,7 +590,8 @@ class SystemMonitorApp:
             exe_frame = tk.Frame(frame, bg=PANEL)
             exe_frame.pack(fill="x", pady=4)
             tk.Label(exe_frame, text="Executable:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
-            self.sandbox_exe_var = tk.StringVar(value=self.runtime.state.sandbox_exe_path)
+            sandbox_state = self.runtime.state.sandbox
+            self.sandbox_exe_var = tk.StringVar(value=sandbox_state.exe_path)
             exe_entry = tk.Entry(exe_frame, textvariable=self.sandbox_exe_var, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2)
             exe_entry.pack(side="left", padx=4, pady=4, fill="x", expand=True)
             self._btn(exe_frame, "Browse", self._browse_sandbox_exe, BLUE).pack(side="left", padx=(4, 4))
@@ -596,7 +600,7 @@ class SystemMonitorApp:
             backend_frame = tk.Frame(frame, bg=PANEL)
             backend_frame.pack(fill="x", pady=4)
             tk.Label(backend_frame, text="Backend:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
-            self.sandbox_backend_var = tk.StringVar(value=self.runtime.state.sandbox_backend)
+            self.sandbox_backend_var = tk.StringVar(value=sandbox_state.backend)
             backend_combo = ttk.Combobox(
                 backend_frame,
                 textvariable=self.sandbox_backend_var,
@@ -610,7 +614,7 @@ class SystemMonitorApp:
             # Sandboxie box name (initially hidden)
             self.sandbox_box_frame = tk.Frame(frame, bg=PANEL)
             tk.Label(self.sandbox_box_frame, text="Box Name:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
-            self.sandbox_box_var = tk.StringVar(value=self.runtime.state.sandbox_box_name)
+            self.sandbox_box_var = tk.StringVar(value=sandbox_state.box_name)
             box_entry = tk.Entry(self.sandbox_box_frame, textvariable=self.sandbox_box_var, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2, width=28)
             box_entry.pack(side="left", padx=4, pady=4, fill="x", expand=True)
             if not (self.sandbox_sbie_info):
@@ -622,7 +626,7 @@ class SystemMonitorApp:
             args_frame = tk.Frame(frame, bg=PANEL)
             args_frame.pack(fill="x", pady=4)
             tk.Label(args_frame, text="Arguments:", font=BOLD, fg=FG, bg=PANEL, width=16, anchor="w").pack(side="left", padx=4, pady=4)
-            self.sandbox_args_var = tk.StringVar(value=self.runtime.state.sandbox_args)
+            self.sandbox_args_var = tk.StringVar(value=sandbox_state.args)
             args_entry = tk.Entry(args_frame, textvariable=self.sandbox_args_var, bg=BG, fg=FG, font=BODY, insertbackground=FG, relief="flat", bd=2)
             args_entry.pack(side="left", padx=4, pady=4, fill="x", expand=True)
             
@@ -634,7 +638,9 @@ class SystemMonitorApp:
             opts_col = tk.Frame(options_frame, bg=PANEL)
             opts_col.pack(side="left", padx=4, pady=4, fill="both", expand=True)
             
-            self.sandbox_spoof_env_var = tk.BooleanVar(value=self.runtime.state.sandbox_spoof_env)
+            self.sandbox_drop_admin_var = tk.BooleanVar(value=sandbox_state.drop_admin)
+            tk.Checkbutton(opts_col, text="Force run without administrative privileges", variable=self.sandbox_drop_admin_var, bg=PANEL, fg=FG, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w")
+            self.sandbox_spoof_env_var = tk.BooleanVar(value=sandbox_state.spoof_env)
             tk.Checkbutton(opts_col, text="Spoof Environment", variable=self.sandbox_spoof_env_var, bg=PANEL, fg=FG, selectcolor=PANEL, activebackground=PANEL).pack(anchor="w")
             
             # Update UI based on current backend
@@ -667,6 +673,7 @@ class SystemMonitorApp:
             self.ui_vars["sandbox_args_var"] = self.sandbox_args_var
             self.ui_vars["sandbox_backend_var"] = self.sandbox_backend_var
             self.ui_vars["sandbox_box_name_var"] = self.sandbox_box_var
+            self.ui_vars["sandbox_drop_admin_var"] = self.sandbox_drop_admin_var
             self.ui_vars["sandbox_spoof_env_var"] = self.sandbox_spoof_env_var
         else:
             self.sandbox_launcher_popup.deiconify()
@@ -686,6 +693,7 @@ class SystemMonitorApp:
         )
         if path:
             self.sandbox_exe_var.set(path.replace("/", "\\"))
+            self._sync_sandbox_state_from_ui()
             self._save_current_character_profile(log_success=False)
 
     def _on_sandbox_backend_change(self) -> None:
@@ -723,8 +731,9 @@ class SystemMonitorApp:
         use_sandboxie = backend == "sandboxie" and self.sandbox_sbie_info is not None
         box_name = self.sandbox_box_var.get().strip() if self.sandbox_box_var else "LauncherBox"
         args = self.sandbox_args_var.get().strip() if self.sandbox_args_var else ""
-        drop_admin = False  # Removed checkbox, always False
+        drop_admin = bool(self.sandbox_drop_admin_var.get()) if self.sandbox_drop_admin_var else False
         spoof_env = bool(self.sandbox_spoof_env_var.get()) if self.sandbox_spoof_env_var else True
+        self._sync_sandbox_state_from_ui()
 
         self.sandbox_launch_button.config(state="disabled")
         self.sandbox_kill_button.config(state="normal")
@@ -762,16 +771,45 @@ class SystemMonitorApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _terminate_sandbox(self) -> None:
-        if not self.sandbox_proc:
+        if not self.sandbox_proc and not (
+            self.sandbox_backend_var
+            and self.sandbox_backend_var.get() == "sandboxie"
+            and self.sandbox_sbie_info is not None
+        ):
             return
         try:
-            self.sandbox_proc.terminate()
-            self._sandbox_log("Terminate requested.")
+            if (
+                self.sandbox_backend_var
+                and self.sandbox_backend_var.get() == "sandboxie"
+                and self.sandbox_sbie_info is not None
+                and terminate_box is not None
+            ):
+                box_name = self.sandbox_box_var.get().strip() if self.sandbox_box_var else "LauncherBox"
+                terminate_box(self.sandbox_sbie_info, box_name, log_callback=self._sandbox_log)
+            elif self.sandbox_proc:
+                self.sandbox_proc.terminate()
+                self._sandbox_log("Terminate requested.")
         except Exception as exc:
             self._sandbox_log(f"Terminate failed: {exc}")
         finally:
+            self.sandbox_proc = None
             self.sandbox_launch_button.config(state="normal")
             self.sandbox_kill_button.config(state="disabled")
+
+    def _sync_sandbox_state_from_ui(self) -> None:
+        sandbox_state = self.runtime.state.sandbox
+        if self.sandbox_backend_var:
+            sandbox_state.backend = self.sandbox_backend_var.get()
+        if self.sandbox_box_var:
+            sandbox_state.box_name = self.sandbox_box_var.get().strip() or "LauncherBox"
+        if self.sandbox_exe_var:
+            sandbox_state.exe_path = self.sandbox_exe_var.get().strip()
+        if self.sandbox_args_var:
+            sandbox_state.args = self.sandbox_args_var.get().strip()
+        if self.sandbox_drop_admin_var:
+            sandbox_state.drop_admin = bool(self.sandbox_drop_admin_var.get())
+        if self.sandbox_spoof_env_var:
+            sandbox_state.spoof_env = bool(self.sandbox_spoof_env_var.get())
 
     def _append_log_line(self, line: str) -> None:
         if not self.log_widget or not self.log_widget.winfo_exists():
@@ -1621,6 +1659,7 @@ class SystemMonitorApp:
                 self.character_status_tab_ui.poll_settings(state)
             if self.light_tab_ui:
                 self.light_tab_ui.poll_settings(state)
+            self._sync_sandbox_state_from_ui()
         self._refresh_all_module_indicators_from_state()
         if self.character_status_tab_ui:
             self.character_status_tab_ui.refresh_display()
