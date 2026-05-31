@@ -30,18 +30,27 @@ class LightControlTab:
         panel.grid(row=0, column=0, sticky="ew")
         self.helpers["register_module_indicator"](panel, "light", self.runtime.state.light_freeze_enabled)
         light_process = tk.StringVar(value=self.runtime.state.light_process_name)
+        light_backend = tk.StringVar(value=self.runtime.state.light_memory_backend)
         light_direct_address = tk.StringVar(value=self.runtime.state.light_direct_address_hex)
         light_freeze_enabled = tk.BooleanVar(value=self.runtime.state.light_freeze_enabled)
         light_custom_color = tk.StringVar(value=str(self.runtime.state.light_custom_color_value))
         light_custom_intensity = tk.StringVar(value=str(self.runtime.state.light_custom_intensity_value))
         light_freeze_interval = tk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.light_freeze_interval_ms)))
         self.ui_vars["light_process_name_var"] = light_process
+        self.ui_vars["light_memory_backend_var"] = light_backend
         self.ui_vars["light_direct_address_hex_var"] = light_direct_address
         self.ui_vars["light_freeze_enabled_var"] = light_freeze_enabled
         self.ui_vars["light_custom_color_value_var"] = light_custom_color
         self.ui_vars["light_custom_intensity_value_var"] = light_custom_intensity
         self.ui_vars["light_freeze_interval_ms_var"] = light_freeze_interval
         self.helpers["label_entry"](panel, "Process name:", light_process, width=22)
+        backend_row = tk.Frame(panel, bg=PANEL)
+        backend_row.pack(fill="x", pady=2)
+        tk.Label(backend_row, text="Memory backend:", font=BOLD, fg=FG, bg=PANEL, width=22, anchor="w").pack(side="left")
+        backend_menu = tk.OptionMenu(backend_row, light_backend, "dbvm", "studiomemuer", "pymem")
+        backend_menu.configure(bg=BG, fg=FG, activebackground=BLUE, activeforeground=FG, relief="flat", bd=0, highlightthickness=0)
+        backend_menu["menu"].configure(bg=BG, fg=FG, activebackground=BLUE, activeforeground=FG)
+        backend_menu.pack(side="left", padx=(4, 0))
         self.helpers["label_entry"](panel, "Target color address (hex):", light_direct_address, width=18)
         custom_row = tk.Frame(panel, bg=PANEL)
         custom_row.pack(fill="x", pady=2)
@@ -157,6 +166,14 @@ class LightControlTab:
     def poll_settings(self, state) -> None:
         if "light_process_name_var" in self.ui_vars:
             state.light_process_name = str(self.ui_vars["light_process_name_var"].get()).strip()
+        if "light_memory_backend_var" in self.ui_vars:
+            backend = str(self.ui_vars["light_memory_backend_var"].get()).strip().lower()
+            if backend == "pymem":
+                state.light_memory_backend = "pymem"
+            elif backend in ("studiomemuer", "driver"):
+                state.light_memory_backend = "studiomemuer"
+            else:
+                state.light_memory_backend = "dbvm"
         if "light_direct_address_hex_var" in self.ui_vars:
             state.light_direct_address_hex = str(self.ui_vars["light_direct_address_hex_var"].get()).strip()
         state.light_custom_color_value = self._get_byte_value("light_custom_color_value_var", state.light_custom_color_value)
@@ -169,6 +186,8 @@ class LightControlTab:
     def refresh_from_state(self) -> None:
         if "light_freeze_enabled_var" in self.ui_vars:
             self.ui_vars["light_freeze_enabled_var"].set(self.runtime.state.light_freeze_enabled)
+        if "light_memory_backend_var" in self.ui_vars:
+            self.ui_vars["light_memory_backend_var"].set(self.runtime.state.light_memory_backend)
         if "light_custom_color_value_var" in self.ui_vars:
             self.ui_vars["light_custom_color_value_var"].set(str(self.runtime.state.light_custom_color_value))
         if "light_custom_intensity_value_var" in self.ui_vars:

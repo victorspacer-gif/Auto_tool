@@ -14,7 +14,16 @@ if vendor_tesseract_dir.exists():
 
 datas = vendor_tesseract_datas
 
-binaries = []
+bridge_dll_candidates = [
+    Path("systool") / "pointers" / "studiomem_bridge.dll",
+    Path("bridge") / "build" / "Release" / "studiomem_bridge.dll",
+]
+
+binaries = [
+    (str(path), str(Path("systool") / "pointers"))
+    for path in bridge_dll_candidates
+    if path.exists()
+]
 
 hiddenimports = [
     # Core dependencies

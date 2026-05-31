@@ -19,21 +19,27 @@ import psutil
 try:
     from ..pointers import (
         AddressResolveError,
+        DbvmBridgeBackend,
         DEFAULT_LIGHT_PROFILE,
+        DriverBridgeBackend,
         LightMemoryController,
         MemoryWriteError,
         PointerReader,
+        PymemBackend,
         ProcessNotFoundError,
     )
 
     HAS_LIGHT_MODULE = True
 except ImportError:
     DEFAULT_LIGHT_PROFILE = None
+    DbvmBridgeBackend = None
+    DriverBridgeBackend = None
     LightMemoryController = None
     AddressResolveError = RuntimeError
     MemoryWriteError = RuntimeError
     ProcessNotFoundError = RuntimeError
     PointerReader = None
+    PymemBackend = None
     HAS_LIGHT_MODULE = False
 
 from ..runtime import (
@@ -94,26 +100,42 @@ class LightControlService:
             raise RuntimeError("Light profile unavailable")
         return DEFAULT_LIGHT_PROFILE
 
+    def _make_backend(self):
+        backend_name = str(getattr(self.runtime.state, "light_memory_backend", "dbvm")).strip().lower()
+        if backend_name == "pymem":
+            return PymemBackend()
+        if backend_name in ("studiomemuer", "driver"):
+            return DriverBridgeBackend()
+        return DbvmBridgeBackend()
+
+    def _backend_label(self) -> str:
+        backend_name = str(getattr(self.runtime.state, "light_memory_backend", "dbvm")).strip().lower()
+        if backend_name == "pymem":
+            return "pymem"
+        if backend_name in ("studiomemuer", "driver"):
+            return "Studiomemuer driver"
+        return "DBVM-level"
+
     def attach(self) -> tuple[bool, str]:
         if not HAS_LIGHT_MODULE:
             return False, "Install psutil and pymem to use light control"
 
         process_name = self.runtime.state.light_process_name.strip()
         try:
-            self.controller = LightMemoryController(process_name)
+            self.controller = LightMemoryController(process_name, backend=self._make_backend())
             self.controller.attach()
             self.pointer_reader = PointerReader(self.controller)
-            return True, f"Attached to {process_name} | pointer list loaded"
+            return True, f"Attached to {process_name} via {self._backend_label()} | pointer list loaded"
         except ProcessNotFoundError as exc:
             fallback_name = self._find_game_process_name()
             if not fallback_name:
                 return False, str(exc)
             try:
-                self.controller = LightMemoryController(fallback_name)
+                self.controller = LightMemoryController(fallback_name, backend=self._make_backend())
                 self.controller.attach()
                 self.pointer_reader = PointerReader(self.controller)
                 self.runtime.state.light_process_name = fallback_name
-                return True, f"Attached to {fallback_name} | auto-detected game process"
+                return True, f"Attached to {fallback_name} via {self._backend_label()} | auto-detected game process"
             except Exception as fallback_exc:
                 return False, f"{exc} | fallback attach failed: {fallback_exc}"
         except Exception as exc:

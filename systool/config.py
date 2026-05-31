@@ -190,7 +190,7 @@ class ConfigSerializer:
             "rclick_food_burst_interval_ms",
             "rclick_click_delay_min_ms", "rclick_click_delay_max_ms",
             "rclick_post_click_settle_ms",
-            "light_process_name", "attached_window_title",
+            "light_process_name", "light_memory_backend", "attached_window_title",
             "character_name", "character_name_normalized",
             "light_direct_address_hex",
             "light_freeze_enabled", "light_freeze_color_value",
@@ -529,6 +529,7 @@ class ConfigSerializer:
 
         # ── Light ─────────────────────────────────────────────────────
         state.light_process_name = get_str("light_process_name", state.light_process_name)
+        state.light_memory_backend = get_str("light_memory_backend", state.light_memory_backend)
         state.attached_window_title = get_str("attached_window_title", state.attached_window_title)
         state.character_name = get_str("character_name", state.character_name)
         state.character_name_normalized = get_str("character_name_normalized", state.character_name_normalized)

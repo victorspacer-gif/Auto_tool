@@ -3,8 +3,14 @@
 from .pointer_reader import PointerReader
 from .memory_backend import (
     AddressResolveError,
+    DbvmBridgeBackend,
+    DriverBridgeBackend,
+    DriverBridgeError,
     LightMemoryController,
+    MemoryBackend,
+    MemoryReadError,
     MemoryWriteError,
+    PymemBackend,
     ProcessNotFoundError,
 )
 from .profiles import (
@@ -21,7 +27,13 @@ from .profiles import (
 __all__ = [
     "PointerReader",
     "LightMemoryController",
+    "MemoryBackend",
+    "PymemBackend",
+    "DriverBridgeBackend",
+    "DbvmBridgeBackend",
     "AddressResolveError",
+    "DriverBridgeError",
+    "MemoryReadError",
     "MemoryWriteError",
     "ProcessNotFoundError",
     "CT_POINTERS_DIR",

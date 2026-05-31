@@ -28,6 +28,7 @@ OCR_REGION_KEYS = (
 PROFILE_LIGHT_CFG_KEYS = frozenset(
     (
         "light_process_name",
+        "light_memory_backend",
         "light_direct_address_hex",
         "light_freeze_enabled",
         "light_freeze_color_value",
