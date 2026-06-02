@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import ctypes as ct
+from ctypes import wintypes
 import os
 from pathlib import Path
 import re
@@ -308,34 +309,199 @@ class DriverBridgeBackend:
 
 
 class DbvmBridgeBackend:
-    """Placeholder backend for DBVM-level memory access.
+    """DBVM-level backend using VMCall plus caller-provided target CR3.
 
-    DBVM does not expose the same process-virtual read/write contract as the DBK
-    IOCTL backend. This class is intentionally explicit until the bridge grows
-    VMCall-based CR3 discovery, virtual-to-physical translation, and physical
-    memory read/write support.
+    This backend does not use the DBK driver device. It requires DBVM to already
+    be running and a target-process CR3/DTB supplied by env/config.
     """
 
-    pid: int | None = None
+    def __init__(
+        self,
+        dll_path: str | os.PathLike[str] | None = None,
+        cr3: int | str | None = None,
+    ) -> None:
+        self.pid: int | None = None
+        self.cr3 = _parse_int(cr3 if cr3 is not None else os.environ.get("STUDIOMEM_DBVM_CR3"))
+        self.version: int | None = None
+        self._dll_path = Path(dll_path) if dll_path is not None else _default_bridge_path()
+        self._dll = ct.WinDLL(str(self._dll_path))
+        self._bind_exports()
+
+    def _bind_exports(self) -> None:
+        u32 = ct.c_uint32
+        u64 = ct.c_uint64
+
+        self._dll.smem_dbvm_initialize.argtypes = []
+        self._dll.smem_dbvm_initialize.restype = ct.c_int
+
+        self._dll.smem_dbvm_get_version.argtypes = [ct.POINTER(u32)]
+        self._dll.smem_dbvm_get_version.restype = ct.c_int
+
+        self._dll.smem_dbvm_read_physical.argtypes = [
+            u64,
+            ct.c_void_p,
+            u64,
+            ct.POINTER(u64),
+        ]
+        self._dll.smem_dbvm_read_physical.restype = ct.c_int
+
+        self._dll.smem_dbvm_write_physical.argtypes = [
+            u64,
+            ct.c_void_p,
+            u64,
+            ct.POINTER(u64),
+        ]
+        self._dll.smem_dbvm_write_physical.restype = ct.c_int
+
+        self._dll.smem_dbvm_read_virtual.argtypes = [
+            u64,
+            u64,
+            ct.c_void_p,
+            u64,
+            ct.POINTER(u64),
+        ]
+        self._dll.smem_dbvm_read_virtual.restype = ct.c_int
+
+        self._dll.smem_dbvm_write_virtual.argtypes = [
+            u64,
+            u64,
+            ct.c_void_p,
+            u64,
+            ct.POINTER(u64),
+        ]
+        self._dll.smem_dbvm_write_virtual.restype = ct.c_int
+
+        self._dll.smem_last_error.argtypes = [ct.c_wchar_p, u32]
+        self._dll.smem_last_error.restype = ct.c_int
 
     def attach(self, process_name: str) -> None:
-        raise DriverBridgeError(
-            "DBVM-level memory backend is selected, but the VMCall/CR3/page-walk bridge "
-            "is not implemented yet. Select 'studiomemuer' for the DBK driver path or "
-            "'pymem' for the user-mode fallback."
-        )
+        pid = _find_pid_by_name(process_name)
+        if pid is None:
+            raise ProcessNotFoundError(f"Process not found: {process_name}")
+        if self.cr3 is None or self.cr3 == 0:
+            raise DriverBridgeError(
+                "DBVM backend requires target CR3. Set STUDIOMEM_DBVM_CR3, for example "
+                "$env:STUDIOMEM_DBVM_CR3='0x12345000'. Automatic PID-to-CR3 discovery is not implemented yet."
+            )
+
+        self._check(self._dll.smem_dbvm_initialize(), "DBVM initialization")
+        version = ct.c_uint32()
+        self._check(self._dll.smem_dbvm_get_version(ct.byref(version)), "DBVM version query")
+        self.version = int(version.value)
+        self.pid = pid
 
     def detach(self) -> None:
         self.pid = None
 
     def get_module_base(self, module_substr: str) -> int:
-        raise ProcessNotFoundError("DBVM-level backend is not attached.")
+        if self.pid is None:
+            raise ProcessNotFoundError("Not attached to process.")
+        return _get_module_base_toolhelp(self.pid, module_substr)
 
     def read_bytes(self, address: int, size: int) -> bytes:
-        raise MemoryReadError("DBVM-level read path is not implemented yet.")
+        if self.pid is None:
+            raise ProcessNotFoundError("Not attached to process.")
+        if self.cr3 is None or self.cr3 == 0:
+            raise DriverBridgeError("DBVM CR3 is not configured.")
+        if size <= 0:
+            raise ValueError("Read size must be positive.")
+
+        buffer = ct.create_string_buffer(size)
+        bytes_read = ct.c_uint64()
+        status = self._dll.smem_dbvm_read_virtual(
+            ct.c_uint64(self.cr3),
+            ct.c_uint64(address),
+            ct.cast(buffer, ct.c_void_p),
+            ct.c_uint64(size),
+            ct.byref(bytes_read),
+        )
+        if status == SmemStatus.PARTIAL_COPY or bytes_read.value != size:
+            raise MemoryReadError(
+                f"DBVM partial virtual read at 0x{address:X}: {bytes_read.value}/{size} bytes"
+            )
+        self._check(status, f"DBVM virtual read 0x{address:X}")
+        return bytes(buffer.raw)
 
     def write_bytes(self, address: int, data: bytes) -> None:
-        raise MemoryWriteError("DBVM-level write path is not implemented yet.")
+        if self.pid is None:
+            raise ProcessNotFoundError("Not attached to process.")
+        if self.cr3 is None or self.cr3 == 0:
+            raise DriverBridgeError("DBVM CR3 is not configured.")
+        if not data:
+            raise ValueError("Write buffer must not be empty.")
+
+        buffer = ct.create_string_buffer(data, len(data))
+        bytes_written = ct.c_uint64()
+        status = self._dll.smem_dbvm_write_virtual(
+            ct.c_uint64(self.cr3),
+            ct.c_uint64(address),
+            ct.cast(buffer, ct.c_void_p),
+            ct.c_uint64(len(data)),
+            ct.byref(bytes_written),
+        )
+        if status == SmemStatus.PARTIAL_COPY or bytes_written.value != len(data):
+            raise MemoryWriteError(
+                f"DBVM partial virtual write at 0x{address:X}: {bytes_written.value}/{len(data)} bytes"
+            )
+        self._check(status, f"DBVM virtual write 0x{address:X}", memory_error=MemoryWriteError)
+
+    def read_physical(self, physical_address: int, size: int) -> bytes:
+        if size <= 0:
+            raise ValueError("Read size must be positive.")
+        buffer = ct.create_string_buffer(size)
+        bytes_read = ct.c_uint64()
+        status = self._dll.smem_dbvm_read_physical(
+            ct.c_uint64(physical_address),
+            ct.cast(buffer, ct.c_void_p),
+            ct.c_uint64(size),
+            ct.byref(bytes_read),
+        )
+        if status == SmemStatus.PARTIAL_COPY or bytes_read.value != size:
+            raise MemoryReadError(
+                f"DBVM partial physical read at 0x{physical_address:X}: {bytes_read.value}/{size} bytes"
+            )
+        self._check(status, f"DBVM physical read 0x{physical_address:X}")
+        return bytes(buffer.raw)
+
+    def write_physical(self, physical_address: int, data: bytes) -> None:
+        if not data:
+            raise ValueError("Write buffer must not be empty.")
+        buffer = ct.create_string_buffer(data, len(data))
+        bytes_written = ct.c_uint64()
+        status = self._dll.smem_dbvm_write_physical(
+            ct.c_uint64(physical_address),
+            ct.cast(buffer, ct.c_void_p),
+            ct.c_uint64(len(data)),
+            ct.byref(bytes_written),
+        )
+        if status == SmemStatus.PARTIAL_COPY or bytes_written.value != len(data):
+            raise MemoryWriteError(
+                f"DBVM partial physical write at 0x{physical_address:X}: {bytes_written.value}/{len(data)} bytes"
+            )
+        self._check(status, f"DBVM physical write 0x{physical_address:X}", memory_error=MemoryWriteError)
+
+    def _check(
+        self,
+        status: int,
+        operation: str,
+        memory_error: type[RuntimeError] = MemoryReadError,
+    ) -> None:
+        if status == SmemStatus.OK:
+            return
+        message = self._last_error_message()
+        if status in (SmemStatus.INVALID_ADDRESS, SmemStatus.PARTIAL_COPY):
+            raise memory_error(f"{operation} failed [{status}]: {message}")
+        if status == SmemStatus.ACCESS_DENIED:
+            raise PermissionError(f"{operation} failed [{status}]: {message}")
+        raise DriverBridgeError(f"{operation} failed [{status}]: {message}")
+
+    def _last_error_message(self) -> str:
+        buffer = ct.create_unicode_buffer(512)
+        try:
+            self._dll.smem_last_error(buffer, len(buffer))
+        except Exception:
+            return "No bridge error message available."
+        return buffer.value or "No bridge error message available."
 
 
 class LightMemoryController:
@@ -505,6 +671,73 @@ def _find_pid_by_name(process_name: str) -> int | None:
         if name and target in name.lower():
             return int(proc.info["pid"])
     return None
+
+
+def _parse_int(value: int | str | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    return int(text, 0)
+
+
+class _MODULEENTRY32W(ct.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("th32ModuleID", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("GlblcntUsage", wintypes.DWORD),
+        ("ProccntUsage", wintypes.DWORD),
+        ("modBaseAddr", ct.POINTER(ct.c_byte)),
+        ("modBaseSize", wintypes.DWORD),
+        ("hModule", wintypes.HMODULE),
+        ("szModule", wintypes.WCHAR * 256),
+        ("szExePath", wintypes.WCHAR * 260),
+    ]
+
+
+def _get_module_base_toolhelp(pid: int, module_substr: str) -> int:
+    kernel32 = ct.WinDLL("kernel32", use_last_error=True)
+    snapshot_flags = 0x00000008 | 0x00000010  # TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32
+    invalid_handle = wintypes.HANDLE(-1).value
+
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Module32FirstW.argtypes = [wintypes.HANDLE, ct.POINTER(_MODULEENTRY32W)]
+    kernel32.Module32FirstW.restype = wintypes.BOOL
+    kernel32.Module32NextW.argtypes = [wintypes.HANDLE, ct.POINTER(_MODULEENTRY32W)]
+    kernel32.Module32NextW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(snapshot_flags, pid)
+    if snapshot == invalid_handle:
+        raise ProcessNotFoundError(f"Unable to snapshot modules for PID {pid}: {ct.get_last_error()}")
+
+    target = module_substr.lower()
+    fallback: int | None = None
+    entry = _MODULEENTRY32W()
+    entry.dwSize = ct.sizeof(entry)
+    try:
+        ok = bool(kernel32.Module32FirstW(snapshot, ct.byref(entry)))
+        while ok:
+            name = str(entry.szModule)
+            path = str(entry.szExePath)
+            base = ct.cast(entry.modBaseAddr, ct.c_void_p).value or 0
+            if fallback is None and name.lower().endswith(".exe"):
+                fallback = int(base)
+            if target in name.lower() or target in path.lower():
+                return int(base)
+            ok = bool(kernel32.Module32NextW(snapshot, ct.byref(entry)))
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+    if fallback is not None:
+        return fallback
+    raise ProcessNotFoundError(f"Module not found: {module_substr}")
 
 
 def _default_bridge_path() -> Path:

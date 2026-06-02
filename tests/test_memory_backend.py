@@ -7,7 +7,6 @@ import pytest
 from systool.pointers.memory_backend import (
     AddressResolveError,
     DbvmBridgeBackend,
-    DriverBridgeError,
     LightMemoryController,
     MemoryReadError,
 )
@@ -65,8 +64,7 @@ def test_empty_pointer_chain_is_rejected() -> None:
         controller.resolve_pointer_chain(0x1000, [])
 
 
-def test_dbvm_backend_reports_unimplemented_bridge() -> None:
-    backend = DbvmBridgeBackend()
+def test_dbvm_backend_accepts_configured_cr3() -> None:
+    backend = DbvmBridgeBackend(cr3="0x12345000")
 
-    with pytest.raises(DriverBridgeError, match="DBVM-level memory backend"):
-        backend.attach("target.exe")
+    assert backend.cr3 == 0x12345000

@@ -55,6 +55,18 @@ __declspec(dllexport) int __stdcall smem_dbvm_initialize();
 __declspec(dllexport) int __stdcall smem_dbvm_get_version(
     std::uint32_t* out_version);
 
+__declspec(dllexport) int __stdcall smem_dbvm_read_physical(
+    std::uint64_t physical_address,
+    void* out_buffer,
+    std::uint64_t size,
+    std::uint64_t* out_bytes_read);
+
+__declspec(dllexport) int __stdcall smem_dbvm_write_physical(
+    std::uint64_t physical_address,
+    const void* buffer,
+    std::uint64_t size,
+    std::uint64_t* out_bytes_written);
+
 __declspec(dllexport) int __stdcall smem_dbvm_read_virtual(
     std::uint64_t cr3,
     std::uint64_t address,

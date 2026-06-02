@@ -76,6 +76,7 @@ class LightControlTab:
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(8, 0))
         self.helpers["btn"](buttons, "Attach", self.attach_light_process, BLUE, padx=10, pady=3).pack(side="left", padx=(0, 6))
+        self.helpers["btn"](buttons, "Read Current", self.read_light_current, BLUE, padx=10, pady=3).pack(side="left", padx=(0, 6))
         self.helpers["btn"](buttons, "Default", self.apply_light_default, ORANGE, padx=10, pady=3).pack(side="left", padx=(0, 6))
         self.helpers["btn"](buttons, "Boosted", self.apply_light_boosted, GREEN, padx=10, pady=3).pack(side="left", padx=(0, 6))
         self.helpers["btn"](buttons, "Custom", self.apply_light_custom, GREEN, padx=10, pady=3).pack(side="left", padx=(0, 6))
@@ -135,6 +136,11 @@ class LightControlTab:
 
     def apply_light_default(self) -> None:
         ok, message = self.services["light_service"].apply_default()
+        self._set_light_status(ok, message)
+
+    def read_light_current(self) -> None:
+        self.services["poll_settings_now"]()
+        ok, message = self.services["light_service"].read_current()
         self._set_light_status(ok, message)
 
     def apply_light_boosted(self) -> None:

@@ -1,5 +1,6 @@
 #include "studiomem_bridge.h"
 
+#include "dbvm_adapter.h"
 #include "driver_adapter.h"
 
 #include <windows.h>
@@ -312,6 +313,170 @@ __declspec(dllexport) int __stdcall smem_last_error(
 
     std::lock_guard<std::mutex> lock(g_mutex);
     wcsncpy_s(buffer, buffer_chars, g_last_error.c_str(), _TRUNCATE);
+    return SMEM_OK;
+}
+
+__declspec(dllexport) int __stdcall smem_dbvm_initialize() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    const SmemStatus status = dbvm_adapter::initialize();
+    if (status != SMEM_OK) {
+        return fail(
+            status,
+            L"DBVM is not currently reachable through VMCall/VMMCall. Start DBVM in Studiomemuer first, "
+            L"then provide the target process CR3 via STUDIOMEM_DBVM_CR3.");
+    }
+
+    set_last_error_message(L"OK");
+    return SMEM_OK;
+}
+
+__declspec(dllexport) int __stdcall smem_dbvm_get_version(
+    std::uint32_t* out_version) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    const SmemStatus status = dbvm_adapter::version(out_version);
+    if (status != SMEM_OK) {
+        return fail(status, L"DBVM version query failed.");
+    }
+
+    set_last_error_message(L"OK");
+    return SMEM_OK;
+}
+
+__declspec(dllexport) int __stdcall smem_dbvm_read_physical(
+    std::uint64_t physical_address,
+    void* out_buffer,
+    std::uint64_t size,
+    std::uint64_t* out_bytes_read) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (out_bytes_read != nullptr) {
+        *out_bytes_read = 0;
+    }
+    if (out_buffer == nullptr || out_bytes_read == nullptr || physical_address == 0 || size == 0) {
+        return fail(SMEM_ERR_INVALID_ARGUMENT, L"Physical address, output buffer, size, and byte count are required.");
+    }
+
+    std::size_t bytes_read = 0;
+    const SmemStatus status = dbvm_adapter::read_physical(
+        physical_address,
+        out_buffer,
+        static_cast<std::size_t>(size),
+        &bytes_read);
+    *out_bytes_read = bytes_read;
+
+    if (status != SMEM_OK) {
+        return fail(status, L"DBVM physical read failed.");
+    }
+    if (bytes_read != size) {
+        return fail(SMEM_ERR_PARTIAL_COPY, L"DBVM physical read returned fewer bytes than requested.");
+    }
+
+    set_last_error_message(L"OK");
+    return SMEM_OK;
+}
+
+__declspec(dllexport) int __stdcall smem_dbvm_write_physical(
+    std::uint64_t physical_address,
+    const void* buffer,
+    std::uint64_t size,
+    std::uint64_t* out_bytes_written) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (out_bytes_written != nullptr) {
+        *out_bytes_written = 0;
+    }
+    if (buffer == nullptr || out_bytes_written == nullptr || physical_address == 0 || size == 0) {
+        return fail(SMEM_ERR_INVALID_ARGUMENT, L"Physical address, input buffer, size, and byte count are required.");
+    }
+
+    std::size_t bytes_written = 0;
+    const SmemStatus status = dbvm_adapter::write_physical(
+        physical_address,
+        buffer,
+        static_cast<std::size_t>(size),
+        &bytes_written);
+    *out_bytes_written = bytes_written;
+
+    if (status != SMEM_OK) {
+        return fail(status, L"DBVM physical write failed.");
+    }
+    if (bytes_written != size) {
+        return fail(SMEM_ERR_PARTIAL_COPY, L"DBVM physical write returned fewer bytes than requested.");
+    }
+
+    set_last_error_message(L"OK");
+    return SMEM_OK;
+}
+
+__declspec(dllexport) int __stdcall smem_dbvm_read_virtual(
+    std::uint64_t cr3,
+    std::uint64_t address,
+    void* out_buffer,
+    std::uint64_t size,
+    std::uint64_t* out_bytes_read) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (out_bytes_read != nullptr) {
+        *out_bytes_read = 0;
+    }
+    if (cr3 == 0 || address == 0 || out_buffer == nullptr || size == 0 || out_bytes_read == nullptr) {
+        return fail(SMEM_ERR_INVALID_ARGUMENT, L"CR3, virtual address, output buffer, size, and byte count are required.");
+    }
+
+    std::size_t bytes_read = 0;
+    const SmemStatus status = dbvm_adapter::read_virtual(
+        cr3,
+        address,
+        out_buffer,
+        static_cast<std::size_t>(size),
+        &bytes_read);
+    *out_bytes_read = bytes_read;
+
+    if (status != SMEM_OK) {
+        return fail(status, L"DBVM virtual read failed. Check that STUDIOMEM_DBVM_CR3 belongs to the target process.");
+    }
+    if (bytes_read != size) {
+        return fail(SMEM_ERR_PARTIAL_COPY, L"DBVM virtual read returned fewer bytes than requested.");
+    }
+
+    set_last_error_message(L"OK");
+    return SMEM_OK;
+}
+
+__declspec(dllexport) int __stdcall smem_dbvm_write_virtual(
+    std::uint64_t cr3,
+    std::uint64_t address,
+    const void* buffer,
+    std::uint64_t size,
+    std::uint64_t* out_bytes_written) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (out_bytes_written != nullptr) {
+        *out_bytes_written = 0;
+    }
+    if (cr3 == 0 || address == 0 || buffer == nullptr || size == 0 || out_bytes_written == nullptr) {
+        return fail(SMEM_ERR_INVALID_ARGUMENT, L"CR3, virtual address, input buffer, size, and byte count are required.");
+    }
+
+    std::size_t bytes_written = 0;
+    const SmemStatus status = dbvm_adapter::write_virtual(
+        cr3,
+        address,
+        buffer,
+        static_cast<std::size_t>(size),
+        &bytes_written);
+    *out_bytes_written = bytes_written;
+
+    if (status != SMEM_OK) {
+        return fail(status, L"DBVM virtual write failed. Check that STUDIOMEM_DBVM_CR3 belongs to the target process.");
+    }
+    if (bytes_written != size) {
+        return fail(SMEM_ERR_PARTIAL_COPY, L"DBVM virtual write returned fewer bytes than requested.");
+    }
+
+    set_last_error_message(L"OK");
     return SMEM_OK;
 }
 

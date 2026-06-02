@@ -1,5 +1,8 @@
 .code
 
+PUBLIC smem_vmcall_intel
+PUBLIC smem_vmcall_amd
+
 ; Windows x64:
 ; rcx = vmcallinfo
 ; rdx = password1
