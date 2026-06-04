@@ -325,6 +325,7 @@ class DbvmBridgeBackend:
         self.cr3 = _parse_int(cr3)
         self._env_cr3 = _parse_int(os.environ.get("STUDIOMEM_DBVM_CR3"))
         self._driver_initialized = False
+        self._resolve_process_cr3_export = None
         self.version: int | None = None
         self._dll_path = Path(dll_path) if dll_path is not None else _default_bridge_path()
         self._dll = _load_bridge_dll(self._dll_path)
@@ -340,8 +341,15 @@ class DbvmBridgeBackend:
         self._dll.smem_shutdown.argtypes = []
         self._dll.smem_shutdown.restype = ct.c_int
 
-        self._dll.smem_resolve_process_cr3.argtypes = [u32, ct.POINTER(u64)]
-        self._dll.smem_resolve_process_cr3.restype = ct.c_int
+        self._resolve_process_cr3_export = getattr(self._dll, "smem_resolve_process_cr3", None)
+        if self._resolve_process_cr3_export is None:
+            print(
+                "[studiomem_bridge] missing export: smem_resolve_process_cr3. "
+                "Automatic DBVM PID-to-CR3 resolution requires a rebuilt bridge DLL."
+            )
+        else:
+            self._resolve_process_cr3_export.argtypes = [u32, ct.POINTER(u64)]
+            self._resolve_process_cr3_export.restype = ct.c_int
 
         self._dll.smem_dbvm_initialize.argtypes = []
         self._dll.smem_dbvm_initialize.restype = ct.c_int
@@ -498,12 +506,20 @@ class DbvmBridgeBackend:
         auto_error: str | None = None
 
         try:
+            if self._resolve_process_cr3_export is None:
+                raise DriverBridgeError(
+                    "studiomem_bridge.dll does not export smem_resolve_process_cr3. "
+                    f"Loaded DLL: {Path(self._dll_path).resolve()}. "
+                    "Rebuild bridge\\build\\Release\\studiomem_bridge.dll from the current bridge sources, "
+                    "then copy that rebuilt DLL into systool\\pointers\\studiomem_bridge.dll."
+                )
+
             self._check(self._dll.smem_initialize(), "driver bridge initialization for CR3 resolution")
             self._driver_initialized = True
 
             cr3 = ct.c_uint64()
             self._check(
-                self._dll.smem_resolve_process_cr3(ct.c_uint32(pid), ct.byref(cr3)),
+                self._resolve_process_cr3_export(ct.c_uint32(pid), ct.byref(cr3)),
                 f"resolve CR3 for PID {pid}",
             )
             if cr3.value:

@@ -86,12 +86,18 @@ class FakeDllFunction:
 
 
 class FakeDbvmDll:
-    def __init__(self, resolved_cr3: int | None = 0xABCDEF000, resolve_status: int = 0) -> None:
+    def __init__(
+        self,
+        resolved_cr3: int | None = 0xABCDEF000,
+        resolve_status: int = 0,
+        include_cr3_export: bool = True,
+    ) -> None:
         self.resolved_cr3 = resolved_cr3
         self.resolve_status = resolve_status
         self.smem_initialize = FakeDllFunction(lambda: 0)
         self.smem_shutdown = FakeDllFunction(lambda: 0)
-        self.smem_resolve_process_cr3 = FakeDllFunction(self._resolve_process_cr3)
+        if include_cr3_export:
+            self.smem_resolve_process_cr3 = FakeDllFunction(self._resolve_process_cr3)
         self.smem_dbvm_initialize = FakeDllFunction(lambda: 0)
         self.smem_dbvm_get_version = FakeDllFunction(self._dbvm_get_version)
         self.smem_dbvm_read_physical = FakeDllFunction(lambda *args: 0)
@@ -159,3 +165,13 @@ def test_dbvm_attach_falls_back_to_env_cr3(monkeypatch) -> None:
 
     assert backend.pid == 4321
     assert backend.cr3 == 0x55555000
+
+
+def test_dbvm_attach_reports_missing_cr3_export(monkeypatch) -> None:
+    fake_dll = FakeDbvmDll(include_cr3_export=False)
+    _install_fake_dbvm(monkeypatch, fake_dll)
+
+    backend = DbvmBridgeBackend()
+
+    with pytest.raises(mb.DriverBridgeError, match="does not export smem_resolve_process_cr3"):
+        backend.attach("target.exe")
