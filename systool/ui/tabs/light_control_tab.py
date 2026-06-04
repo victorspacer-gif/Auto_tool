@@ -33,6 +33,9 @@ class LightControlTab:
         light_backend = tk.StringVar(value=self.runtime.state.light_memory_backend)
         light_direct_address = tk.StringVar(value=self.runtime.state.light_direct_address_hex)
         light_freeze_enabled = tk.BooleanVar(value=self.runtime.state.light_freeze_enabled)
+        light_page_protection_freeze_enabled = tk.BooleanVar(
+            value=self.runtime.state.light_page_protection_freeze_enabled
+        )
         light_custom_color = tk.StringVar(value=str(self.runtime.state.light_custom_color_value))
         light_custom_intensity = tk.StringVar(value=str(self.runtime.state.light_custom_intensity_value))
         light_freeze_interval = tk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.light_freeze_interval_ms)))
@@ -40,6 +43,7 @@ class LightControlTab:
         self.ui_vars["light_memory_backend_var"] = light_backend
         self.ui_vars["light_direct_address_hex_var"] = light_direct_address
         self.ui_vars["light_freeze_enabled_var"] = light_freeze_enabled
+        self.ui_vars["light_page_protection_freeze_enabled_var"] = light_page_protection_freeze_enabled
         self.ui_vars["light_custom_color_value_var"] = light_custom_color
         self.ui_vars["light_custom_intensity_value_var"] = light_custom_intensity
         self.ui_vars["light_freeze_interval_ms_var"] = light_freeze_interval
@@ -73,6 +77,18 @@ class LightControlTab:
             activebackground=PANEL,
             activeforeground=FG,
         ).pack(anchor="w", pady=(4, 2))
+        tk.Checkbutton(
+            panel,
+            text="Page Protection Freeze (Experimental)",
+            variable=light_page_protection_freeze_enabled,
+            command=self.toggle_light_page_protection_freeze,
+            font=SMALL_B,
+            fg=FG,
+            bg=PANEL,
+            selectcolor=PANEL,
+            activebackground=PANEL,
+            activeforeground=FG,
+        ).pack(anchor="w", pady=(0, 2))
         buttons = tk.Frame(panel, bg=PANEL)
         buttons.pack(fill="x", pady=(8, 0))
         self.helpers["btn"](buttons, "Attach", self.attach_light_process, BLUE, padx=10, pady=3).pack(side="left", padx=(0, 6))
@@ -134,6 +150,23 @@ class LightControlTab:
         self.helpers["refresh_module_indicator"]("light", enabled and ok)
         self._set_light_status(ok, message)
 
+    def toggle_light_page_protection_freeze(self) -> None:
+        enabled = (
+            bool(self.ui_vars["light_page_protection_freeze_enabled_var"].get())
+            if "light_page_protection_freeze_enabled_var" in self.ui_vars
+            else False
+        )
+        self.runtime.state.light_page_protection_freeze_enabled = enabled
+        if not self.runtime.state.light_freeze_enabled:
+            self._set_light_status(True, "Light freeze mode updated.")
+            return
+        self.services["light_service"].stop_freeze()
+        ok, message = self.services["light_service"].start_freeze()
+        if not ok and "light_freeze_enabled_var" in self.ui_vars:
+            self.ui_vars["light_freeze_enabled_var"].set(False)
+        self.helpers["refresh_module_indicator"]("light", ok)
+        self._set_light_status(ok, message)
+
     def apply_light_default(self) -> None:
         ok, message = self.services["light_service"].apply_default()
         self._set_light_status(ok, message)
@@ -186,12 +219,18 @@ class LightControlTab:
         state.light_custom_intensity_value = self._get_byte_value("light_custom_intensity_value_var", state.light_custom_intensity_value)
         if "light_freeze_enabled_var" in self.ui_vars:
             state.light_freeze_enabled = bool(self.ui_vars["light_freeze_enabled_var"].get())
+        if "light_page_protection_freeze_enabled_var" in self.ui_vars:
+            state.light_page_protection_freeze_enabled = bool(self.ui_vars["light_page_protection_freeze_enabled_var"].get())
         if "light_freeze_interval_ms_var" in self.ui_vars:
             state.light_freeze_interval_ms = max(30, self.helpers["get_ui_ms"]("light_freeze_interval_ms_var", state.light_freeze_interval_ms))
 
     def refresh_from_state(self) -> None:
         if "light_freeze_enabled_var" in self.ui_vars:
             self.ui_vars["light_freeze_enabled_var"].set(self.runtime.state.light_freeze_enabled)
+        if "light_page_protection_freeze_enabled_var" in self.ui_vars:
+            self.ui_vars["light_page_protection_freeze_enabled_var"].set(
+                self.runtime.state.light_page_protection_freeze_enabled
+            )
         if "light_memory_backend_var" in self.ui_vars:
             self.ui_vars["light_memory_backend_var"].set(self.runtime.state.light_memory_backend)
         if "light_custom_color_value_var" in self.ui_vars:

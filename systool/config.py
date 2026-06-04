@@ -193,7 +193,8 @@ class ConfigSerializer:
             "light_process_name", "light_memory_backend", "attached_window_title",
             "character_name", "character_name_normalized",
             "light_direct_address_hex",
-            "light_freeze_enabled", "light_freeze_color_value",
+            "light_freeze_enabled", "light_page_protection_freeze_enabled",
+            "light_freeze_color_value",
             "light_freeze_intensity_value", "light_custom_color_value",
             "light_custom_intensity_value", "light_freeze_interval_ms",
             "light_last_mode", "light_last_color_address_hex",
@@ -541,6 +542,7 @@ class ConfigSerializer:
         state.sandbox.drop_admin = get_bool_any(("sandbox.drop_admin", "sandbox_drop_admin"), state.sandbox.drop_admin)
         state.sandbox.spoof_env = get_bool_any(("sandbox.spoof_env", "sandbox_spoof_env"), state.sandbox.spoof_env)
         state.light_freeze_enabled = get_bool("light_freeze_enabled", state.light_freeze_enabled)
+        state.light_page_protection_freeze_enabled = get_bool("light_page_protection_freeze_enabled", state.light_page_protection_freeze_enabled)
         state.light_freeze_color_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_freeze_color_value", state.light_freeze_color_value)))
         state.light_freeze_intensity_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_freeze_intensity_value", state.light_freeze_intensity_value)))
         state.light_custom_color_value = max(BYTE_VALUE_MIN, min(BYTE_VALUE_MAX, get_int("light_custom_color_value", state.light_custom_color_value)))

@@ -242,6 +242,8 @@ class LightControlService:
             return True, "Light freeze already running."
         if self.controller is None:
             return False, "Attach to the game process first."
+        if self._experimental_freeze_enabled():
+            return self._start_page_protection_freeze()
         ok, message = self._apply(
             color_value=self.runtime.state.light_freeze_color_value,
             intensity_value=self.runtime.state.light_freeze_intensity_value,
@@ -261,6 +263,14 @@ class LightControlService:
 
     def stop_freeze(self) -> None:
         self._freeze_stop.set()
+        if self._freeze_thread is not None and self._freeze_thread.is_alive():
+            self._freeze_thread.join(timeout=1.5)
+        self._freeze_thread = None
+        if self.controller is not None:
+            try:
+                self.controller.stop_page_protection_freeze()
+            except Exception:
+                logger.debug("Light page-protection freeze cleanup failed", exc_info=True)
 
     def _freeze_worker(self) -> None:
         while not self._freeze_stop.is_set():
@@ -302,6 +312,75 @@ class LightControlService:
         if self.pointer_reader is None:
             raise RuntimeError("PointerReader unavailable.")
         return self.pointer_reader.resolve_light_pair_addresses()
+
+    def _experimental_freeze_enabled(self) -> bool:
+        return bool(getattr(self.runtime.state, "light_page_protection_freeze_enabled", False))
+
+    def _start_page_protection_freeze(self) -> tuple[bool, str]:
+        ctrl = self._require_controller()
+        if DriverBridgeBackend is not None and isinstance(ctrl.backend, DriverBridgeBackend):
+            logger.warning(
+                "Page Protection Freeze is unsupported for DriverBridgeBackend; using legacy freeze."
+            )
+            return self._start_legacy_freeze_with_warning()
+        if not ctrl.supports_page_protection_freeze():
+            logger.warning(
+                "Page Protection Freeze is unsupported for %s; using legacy freeze.",
+                type(ctrl.backend).__name__,
+            )
+            return self._start_legacy_freeze_with_warning()
+
+        try:
+            state = self.runtime.state
+            color_address, intensity_address = self._resolve_light_pair_for_current_state()
+            previous_color_address_hex = state.light_last_color_address_hex
+            previous_intensity_address_hex = state.light_last_intensity_address_hex
+            result = ctrl.start_page_protection_freeze(
+                color_address=color_address,
+                color_value=state.light_freeze_color_value,
+                intensity_address=intensity_address,
+                intensity_value=state.light_freeze_intensity_value,
+                resolver=self._resolve_light_pair_for_current_state,
+            )
+            state.light_last_color_address_hex = f"{color_address:X}"
+            state.light_last_intensity_address_hex = f"{intensity_address:X}"
+            if self._should_capture_original(
+                previous_color_address_hex=previous_color_address_hex,
+                previous_intensity_address_hex=previous_intensity_address_hex,
+                color_address=color_address,
+                intensity_address=intensity_address,
+            ):
+                state.light_original_color_value = result.color.old_value
+                state.light_original_intensity_value = result.intensity.old_value
+            return True, (
+                "Light page-protection freeze enabled (experimental): "
+                f"color={state.light_freeze_color_value} "
+                f"intensity={state.light_freeze_intensity_value} "
+                "heartbeat=500ms"
+            )
+        except Exception as exc:
+            self.runtime.state.light_freeze_enabled = False
+            try:
+                ctrl.stop_page_protection_freeze()
+            except Exception:
+                logger.debug("Light page-protection freeze rollback failed", exc_info=True)
+            return False, f"Light page-protection freeze could not start: {exc}"
+
+    def _start_legacy_freeze_with_warning(self) -> tuple[bool, str]:
+        ok, message = self._apply(
+            color_value=self.runtime.state.light_freeze_color_value,
+            intensity_value=self.runtime.state.light_freeze_intensity_value,
+        )
+        if not ok:
+            self.runtime.state.light_freeze_enabled = False
+            return False, f"Light freeze could not start: {message}"
+        self._freeze_stop.clear()
+        self._freeze_thread = threading.Thread(target=self._freeze_worker, daemon=True)
+        self._freeze_thread.start()
+        return True, (
+            "Page Protection Freeze is unsupported for this backend; "
+            "legacy light freeze enabled instead."
+        )
 
     def _write_direct_pair(
         self,

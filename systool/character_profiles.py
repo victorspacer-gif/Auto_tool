@@ -31,6 +31,7 @@ PROFILE_LIGHT_CFG_KEYS = frozenset(
         "light_memory_backend",
         "light_direct_address_hex",
         "light_freeze_enabled",
+        "light_page_protection_freeze_enabled",
         "light_freeze_color_value",
         "light_freeze_intensity_value",
         "light_custom_color_value",

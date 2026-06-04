@@ -8,10 +8,15 @@ from pathlib import Path
 import re
 import struct
 import threading
+import time
+import logging
 from typing import Protocol
 
 import psutil
 import pymem
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessNotFoundError(RuntimeError):
@@ -129,6 +134,40 @@ class PymemBackend:
             self.pm.write_bytes(address, data, len(data))
         except Exception as exc:
             raise MemoryWriteError(f"Failed to write {len(data)} bytes at 0x{address:X}: {exc}") from exc
+
+    def virtual_protect(self, address: int, size: int, protection: int) -> wintypes.DWORD:
+        if self.pm is None:
+            raise ProcessNotFoundError("Not attached to process.")
+        if size <= 0:
+            raise ValueError("Protection size must be positive.")
+
+        process_handle = getattr(self.pm, "process_handle", None)
+        if process_handle is None:
+            raise ProcessNotFoundError("Process handle unavailable.")
+
+        kernel32 = ct.WinDLL("kernel32", use_last_error=True)
+        kernel32.VirtualProtectEx.argtypes = [
+            wintypes.HANDLE,
+            wintypes.LPVOID,
+            ct.c_size_t,
+            wintypes.DWORD,
+            ct.POINTER(wintypes.DWORD),
+        ]
+        kernel32.VirtualProtectEx.restype = wintypes.BOOL
+
+        old_protect = wintypes.DWORD()
+        ok = kernel32.VirtualProtectEx(
+            wintypes.HANDLE(process_handle),
+            wintypes.LPVOID(address),
+            ct.c_size_t(size),
+            wintypes.DWORD(protection),
+            ct.byref(old_protect),
+        )
+        if not ok:
+            raise MemoryWriteError(
+                f"VirtualProtectEx failed at 0x{address:X}: {ct.get_last_error()}"
+            )
+        return old_protect
 
 
 class SmemStatus:
@@ -568,10 +607,29 @@ class DbvmBridgeBackend:
 class LightMemoryController:
     """Thread-safe typed memory controller for Windows processes."""
 
+    PAGE_READONLY = 0x02
+    _HEARTBEAT_INTERVAL_SEC = 0.5
+
     def __init__(self, process_name: str, backend: MemoryBackend | None = None) -> None:
         self.process_name = process_name
         self.backend: MemoryBackend = backend or PymemBackend()
         self._lock = threading.RLock()
+        self.targets = {
+            "color": {
+                "current_addr": 0,
+                "frozen_val": None,
+                "old_protect": wintypes.DWORD(),
+            },
+            "intensity": {
+                "current_addr": 0,
+                "frozen_val": None,
+                "old_protect": wintypes.DWORD(),
+            },
+        }
+        self._protected_targets: set[str] = set()
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: threading.Thread | None = None
+        self._heartbeat_resolver = None
 
     @property
     def pid(self) -> int | None:
@@ -583,6 +641,7 @@ class LightMemoryController:
 
     def detach(self) -> None:
         with self._lock:
+            self.stop_page_protection_freeze()
             self.backend.detach()
 
     def read_byte(self, address: int) -> int:
@@ -723,6 +782,118 @@ class LightMemoryController:
             color=self.write_byte(color_address, color_value),
             intensity=self.write_byte(color_address + 1, intensity_value),
         )
+
+    def supports_page_protection_freeze(self) -> bool:
+        return isinstance(self.backend, PymemBackend)
+
+    def start_page_protection_freeze(
+        self,
+        color_address: int,
+        color_value: int,
+        intensity_address: int,
+        intensity_value: int,
+        resolver,
+    ) -> LightPatchResult:
+        if not self.supports_page_protection_freeze():
+            raise MemoryWriteError("Page-protection freeze requires PymemBackend.")
+
+        with self._lock:
+            self.stop_page_protection_freeze(join=False)
+            result = self.write_light_pair(color_address, color_value, intensity_value)
+            self.targets["color"]["current_addr"] = color_address
+            self.targets["color"]["frozen_val"] = color_value
+            self.targets["color"]["old_protect"] = wintypes.DWORD()
+            self.targets["intensity"]["current_addr"] = intensity_address
+            self.targets["intensity"]["frozen_val"] = intensity_value
+            self.targets["intensity"]["old_protect"] = wintypes.DWORD()
+            self._heartbeat_resolver = resolver
+            self._apply_target_protection("color")
+            self._apply_target_protection("intensity")
+            self._heartbeat_stop.clear()
+            self._heartbeat_thread = threading.Thread(
+                target=self._heartbeat_loop,
+                daemon=True,
+            )
+            self._heartbeat_thread.start()
+            return result
+
+    def stop_page_protection_freeze(self, join: bool = True) -> None:
+        self._heartbeat_stop.set()
+        thread = self._heartbeat_thread
+        if join and thread is not None and thread.is_alive():
+            thread.join(timeout=1.5)
+        with self._lock:
+            self._restore_all_target_protections()
+            self._heartbeat_thread = None
+            self._heartbeat_resolver = None
+
+    def _heartbeat_loop(self) -> None:
+        while not self._heartbeat_stop.wait(self._HEARTBEAT_INTERVAL_SEC):
+            resolver = self._heartbeat_resolver
+            if resolver is None:
+                break
+            try:
+                color_address, intensity_address = resolver()
+                self._sync_page_protection_targets(color_address, intensity_address)
+            except Exception:
+                logger.exception("Light page-protection freeze heartbeat failed")
+
+    def _sync_page_protection_targets(self, color_address: int, intensity_address: int) -> None:
+        with self._lock:
+            desired = {
+                "color": color_address,
+                "intensity": intensity_address,
+            }
+            for name, new_address in desired.items():
+                target = self.targets[name]
+                old_address = int(target["current_addr"])
+                if old_address == new_address:
+                    continue
+                logger.info(
+                    "Light page-protection freeze target migrated: %s 0x%X -> 0x%X",
+                    name,
+                    old_address,
+                    new_address,
+                )
+                self._restore_target_protection(name)
+                target["current_addr"] = new_address
+                frozen_val = target["frozen_val"]
+                if frozen_val is not None:
+                    self.write_byte(new_address, int(frozen_val))
+                self._apply_target_protection(name)
+
+    def _apply_target_protection(self, name: str) -> None:
+        target = self.targets[name]
+        address = int(target["current_addr"])
+        if address == 0:
+            return
+        old_protect = self._virtual_protect(address, 1, self.PAGE_READONLY)
+        target["old_protect"] = old_protect
+        self._protected_targets.add(name)
+
+    def _restore_all_target_protections(self) -> None:
+        for name in reversed(tuple(self.targets.keys())):
+            self._restore_target_protection(name)
+
+    def _restore_target_protection(self, name: str) -> None:
+        if name not in self._protected_targets:
+            return
+        target = self.targets[name]
+        address = int(target["current_addr"])
+        old_protect = target["old_protect"]
+        if address:
+            try:
+                self._virtual_protect(address, 1, int(old_protect.value))
+            except Exception:
+                logger.exception("Failed to restore protection for %s at 0x%X", name, address)
+        self._protected_targets.discard(name)
+        target["old_protect"] = wintypes.DWORD()
+
+    def _virtual_protect(self, address: int, size: int, protection: int) -> wintypes.DWORD:
+        virtual_protect = getattr(self.backend, "virtual_protect", None)
+        if virtual_protect is None:
+            raise MemoryWriteError("Backend does not support VirtualProtectEx.")
+        return virtual_protect(address, size, protection)
 
 
 def _find_pid_by_name(process_name: str) -> int | None:

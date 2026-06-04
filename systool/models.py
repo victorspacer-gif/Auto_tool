@@ -221,6 +221,7 @@ class AppState:
     character_name_normalized: str = ""
     light_direct_address_hex: str = ""
     light_freeze_enabled: bool = False
+    light_page_protection_freeze_enabled: bool = False
     light_freeze_color_value: int = 0
     light_freeze_intensity_value: int = 0
     light_custom_color_value: int = 215

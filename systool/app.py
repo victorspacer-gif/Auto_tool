@@ -1614,6 +1614,7 @@ class SystemMonitorApp:
             "healer_rune_delay_var": state.healer_rune_delay_ms,
             "light_process_name_var": state.light_process_name,
             "light_direct_address_hex_var": state.light_direct_address_hex,
+            "light_page_protection_freeze_enabled_var": state.light_page_protection_freeze_enabled,
             "light_freeze_interval_ms_var": state.light_freeze_interval_ms,
         }
         for name, value in mappings.items():
@@ -1627,6 +1628,8 @@ class SystemMonitorApp:
             self.ui_vars["healer_use_percent_var"].set(state.healer_use_percent)
         if "light_freeze_enabled_var" in self.ui_vars:
             self.ui_vars["light_freeze_enabled_var"].set(state.light_freeze_enabled)
+        if "light_page_protection_freeze_enabled_var" in self.ui_vars:
+            self.ui_vars["light_page_protection_freeze_enabled_var"].set(state.light_page_protection_freeze_enabled)
         self._refresh_all_module_indicators_from_state()
         if self.activity_control_tab_ui:
             self.activity_control_tab_ui.refresh_from_state()
