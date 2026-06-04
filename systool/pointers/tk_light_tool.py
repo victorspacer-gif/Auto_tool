@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 
-from .memory_backend import LightMemoryController, ProcessNotFoundError
+from .memory_backend import DriverBridgeBackend, LightMemoryController, ProcessNotFoundError, PymemBackend
 from .pointer_reader import PointerReader
 from .profiles import DEFAULT_LIGHT_PROFILE
 
@@ -10,10 +10,11 @@ class LightToolApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Light Effect Tool")
-        self.geometry("460x220")
+        self.geometry("460x260")
         self.resizable(False, False)
 
         self.process_name_var = tk.StringVar(value=DEFAULT_LIGHT_PROFILE.process_name)
+        self.backend_var = tk.StringVar(value="Driver bridge")
         self.controller: LightMemoryController | None = None
         self.pointer_reader: PointerReader | None = None
         self._build_ui()
@@ -22,26 +23,36 @@ class LightToolApp(tk.Tk):
         pad = {"padx": 12, "pady": 6}
         tk.Label(self, text="Process name").grid(row=0, column=0, sticky="w", **pad)
         tk.Entry(self, textvariable=self.process_name_var, width=28).grid(row=0, column=1, **pad)
+        tk.Label(self, text="Backend").grid(row=1, column=0, sticky="w", **pad)
+        tk.OptionMenu(self, self.backend_var, "Driver bridge", "pymem").grid(row=1, column=1, sticky="we", **pad)
         tk.Label(
             self,
             text="Uses Light Pointers.CT. Default = color 215 / intensity 8. Boosted = color 215 / intensity 11.",
             justify="left",
             wraplength=420,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", **pad)
-        tk.Button(self, text="Attach", width=16, command=self.attach).grid(row=2, column=0, **pad)
-        tk.Button(self, text="Apply Default", width=16, command=self.apply_default).grid(row=2, column=1, **pad)
-        tk.Button(self, text="Apply Boosted", width=16, command=self.apply_boosted).grid(row=3, column=0, columnspan=2, **pad)
+        ).grid(row=2, column=0, columnspan=2, sticky="w", **pad)
+        tk.Button(self, text="Attach", width=16, command=self.attach).grid(row=3, column=0, **pad)
+        tk.Button(self, text="Apply Default", width=16, command=self.apply_default).grid(row=3, column=1, **pad)
+        tk.Button(self, text="Apply Boosted", width=16, command=self.apply_boosted).grid(row=4, column=0, columnspan=2, **pad)
         self.status = tk.Label(self, text="Ready", anchor="w")
-        self.status.grid(row=4, column=0, columnspan=2, sticky="we", padx=12, pady=10)
+        self.status.grid(row=5, column=0, columnspan=2, sticky="we", padx=12, pady=10)
 
     def attach(self) -> None:
         try:
-            self.controller = LightMemoryController(self.process_name_var.get().strip())
+            backend = self._make_backend()
+            self.controller = LightMemoryController(self.process_name_var.get().strip(), backend=backend)
             self.controller.attach()
             self.pointer_reader = PointerReader(self.controller)
-            self.status.config(text="Attached successfully.")
+            self.status.config(text=f"Attached successfully via {self.backend_var.get()}.")
         except ProcessNotFoundError as exc:
             messagebox.showerror("Attach failed", str(exc))
+        except Exception as exc:
+            messagebox.showerror("Attach failed", str(exc))
+
+    def _make_backend(self):
+        if self.backend_var.get() == "pymem":
+            return PymemBackend()
+        return DriverBridgeBackend()
 
     def apply_boosted(self) -> None:
         self._apply(DEFAULT_LIGHT_PROFILE.color_enabled_value, DEFAULT_LIGHT_PROFILE.boosted_intensity_value)

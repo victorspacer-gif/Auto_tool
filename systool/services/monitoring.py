@@ -19,21 +19,27 @@ import psutil
 try:
     from ..pointers import (
         AddressResolveError,
+        DbvmBridgeBackend,
         DEFAULT_LIGHT_PROFILE,
+        DriverBridgeBackend,
         LightMemoryController,
         MemoryWriteError,
         PointerReader,
+        PymemBackend,
         ProcessNotFoundError,
     )
 
     HAS_LIGHT_MODULE = True
 except ImportError:
     DEFAULT_LIGHT_PROFILE = None
+    DbvmBridgeBackend = None
+    DriverBridgeBackend = None
     LightMemoryController = None
     AddressResolveError = RuntimeError
     MemoryWriteError = RuntimeError
     ProcessNotFoundError = RuntimeError
     PointerReader = None
+    PymemBackend = None
     HAS_LIGHT_MODULE = False
 
 from ..runtime import (
@@ -94,26 +100,42 @@ class LightControlService:
             raise RuntimeError("Light profile unavailable")
         return DEFAULT_LIGHT_PROFILE
 
+    def _make_backend(self):
+        backend_name = str(getattr(self.runtime.state, "light_memory_backend", "pymem")).strip().lower()
+        if backend_name == "pymem":
+            return PymemBackend()
+        if backend_name in ("studiomemuer", "driver"):
+            return DriverBridgeBackend()
+        return DbvmBridgeBackend()
+
+    def _backend_label(self) -> str:
+        backend_name = str(getattr(self.runtime.state, "light_memory_backend", "pymem")).strip().lower()
+        if backend_name == "pymem":
+            return "pymem"
+        if backend_name in ("studiomemuer", "driver"):
+            return "Studiomemuer driver"
+        return "DBVM-level"
+
     def attach(self) -> tuple[bool, str]:
         if not HAS_LIGHT_MODULE:
             return False, "Install psutil and pymem to use light control"
 
         process_name = self.runtime.state.light_process_name.strip()
         try:
-            self.controller = LightMemoryController(process_name)
+            self.controller = LightMemoryController(process_name, backend=self._make_backend())
             self.controller.attach()
             self.pointer_reader = PointerReader(self.controller)
-            return True, f"Attached to {process_name} | pointer list loaded"
+            return True, f"Attached to {process_name} via {self._backend_label()} | pointer list loaded"
         except ProcessNotFoundError as exc:
             fallback_name = self._find_game_process_name()
             if not fallback_name:
                 return False, str(exc)
             try:
-                self.controller = LightMemoryController(fallback_name)
+                self.controller = LightMemoryController(fallback_name, backend=self._make_backend())
                 self.controller.attach()
                 self.pointer_reader = PointerReader(self.controller)
                 self.runtime.state.light_process_name = fallback_name
-                return True, f"Attached to {fallback_name} | auto-detected game process"
+                return True, f"Attached to {fallback_name} via {self._backend_label()} | auto-detected game process"
             except Exception as fallback_exc:
                 return False, f"{exc} | fallback attach failed: {fallback_exc}"
         except Exception as exc:
@@ -169,6 +191,25 @@ class LightControlService:
             state.light_freeze_intensity_value = intensity_value
             state.light_last_mode = "custom"
         return ok, message
+
+    def read_current(self) -> tuple[bool, str]:
+        try:
+            state = self.runtime.state
+            color_address, intensity_address = self._resolve_light_pair_for_current_state()
+            ctrl = self._require_controller()
+            color_value = int(ctrl.read_byte(color_address))
+            intensity_value = int(ctrl.read_byte(intensity_address))
+            state.light_last_color_address_hex = f"{color_address:X}"
+            state.light_last_intensity_address_hex = f"{intensity_address:X}"
+            state.light_freeze_color_value = color_value
+            state.light_freeze_intensity_value = intensity_value
+            mode_label = "direct" if state.light_direct_address_hex.strip() else "pointer"
+            return True, (
+                f"Light current ({mode_label}) | color 0x{color_address:X}: {color_value} "
+                f"| intensity 0x{intensity_address:X}: {intensity_value}"
+            )
+        except Exception as exc:
+            return False, f"Read current failed: {exc}"
 
     def reset_original(self) -> tuple[bool, str]:
         state = self.runtime.state
@@ -239,20 +280,7 @@ class LightControlService:
 
     def _apply(self, color_value: int, intensity_value: int, remember_original: bool = True) -> tuple[bool, str]:
         try:
-            state = self.runtime.state
-            direct_address_hex = state.light_direct_address_hex.strip()
-            if direct_address_hex:
-                return self._write_direct_pair(
-                    color_address=int(direct_address_hex, 16),
-                    color_value=color_value,
-                    intensity_value=intensity_value,
-                    remember_original=remember_original,
-                )
-
-            ctrl = self._require_controller()
-            if self.pointer_reader is None:
-                raise RuntimeError("PointerReader unavailable.")
-            color_address, intensity_address = self.pointer_reader.resolve_light_pair_addresses()
+            color_address, intensity_address = self._resolve_light_pair_for_current_state()
             return self._write_direct_pair(
                 color_address=color_address,
                 color_value=color_value,
@@ -262,6 +290,18 @@ class LightControlService:
             )
         except Exception as exc:
             return False, str(exc)
+
+    def _resolve_light_pair_for_current_state(self) -> tuple[int, int]:
+        state = self.runtime.state
+        direct_address_hex = state.light_direct_address_hex.strip()
+        if direct_address_hex:
+            color_address = int(direct_address_hex, 16)
+            return color_address, color_address + 1
+
+        self._require_controller()
+        if self.pointer_reader is None:
+            raise RuntimeError("PointerReader unavailable.")
+        return self.pointer_reader.resolve_light_pair_addresses()
 
     def _write_direct_pair(
         self,
