@@ -46,7 +46,6 @@ Thumbs.db
 # Executables
 # =========================
 *.exe
-*.dll
 *.so
 /Pointer_study
 
