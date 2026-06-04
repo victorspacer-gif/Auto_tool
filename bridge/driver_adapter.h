@@ -13,6 +13,9 @@ void shutdown();
 SmemStatus open_process(std::uint32_t pid);
 void close_process();
 
+SmemStatus resolve_process_eprocess(std::uint32_t pid, std::uint64_t* out_eprocess);
+SmemStatus resolve_process_cr3(std::uint32_t pid, std::uint64_t* out_cr3);
+
 SmemStatus read_virtual_chunk(
     std::uint32_t pid,
     std::uint64_t address,

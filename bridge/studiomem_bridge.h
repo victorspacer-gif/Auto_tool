@@ -26,6 +26,10 @@ __declspec(dllexport) int __stdcall smem_attach_process(
 __declspec(dllexport) int __stdcall smem_open_process(std::uint32_t pid);
 __declspec(dllexport) int __stdcall smem_close_process();
 
+__declspec(dllexport) int __stdcall smem_resolve_process_cr3(
+    std::uint32_t pid,
+    std::uint64_t* out_cr3);
+
 __declspec(dllexport) int __stdcall smem_get_module_base(
     std::uint32_t pid,
     const wchar_t* module_name,

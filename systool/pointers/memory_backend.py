@@ -309,10 +309,11 @@ class DriverBridgeBackend:
 
 
 class DbvmBridgeBackend:
-    """DBVM-level backend using VMCall plus caller-provided target CR3.
+    """DBVM-level backend using VMCall plus target-process CR3.
 
-    This backend does not use the DBK driver device. It requires DBVM to already
-    be running and a target-process CR3/DTB supplied by env/config.
+    Explicit CR3 configuration wins. Otherwise attach resolves PID-to-CR3
+    through the Studiomemuer DBK device when available, with
+    STUDIOMEM_DBVM_CR3 retained as a fallback.
     """
 
     def __init__(
@@ -321,7 +322,9 @@ class DbvmBridgeBackend:
         cr3: int | str | None = None,
     ) -> None:
         self.pid: int | None = None
-        self.cr3 = _parse_int(cr3 if cr3 is not None else os.environ.get("STUDIOMEM_DBVM_CR3"))
+        self.cr3 = _parse_int(cr3)
+        self._env_cr3 = _parse_int(os.environ.get("STUDIOMEM_DBVM_CR3"))
+        self._driver_initialized = False
         self.version: int | None = None
         self._dll_path = Path(dll_path) if dll_path is not None else _default_bridge_path()
         self._dll = ct.WinDLL(str(self._dll_path))
@@ -330,6 +333,15 @@ class DbvmBridgeBackend:
     def _bind_exports(self) -> None:
         u32 = ct.c_uint32
         u64 = ct.c_uint64
+
+        self._dll.smem_initialize.argtypes = []
+        self._dll.smem_initialize.restype = ct.c_int
+
+        self._dll.smem_shutdown.argtypes = []
+        self._dll.smem_shutdown.restype = ct.c_int
+
+        self._dll.smem_resolve_process_cr3.argtypes = [u32, ct.POINTER(u64)]
+        self._dll.smem_resolve_process_cr3.restype = ct.c_int
 
         self._dll.smem_dbvm_initialize.argtypes = []
         self._dll.smem_dbvm_initialize.restype = ct.c_int
@@ -379,10 +391,7 @@ class DbvmBridgeBackend:
         if pid is None:
             raise ProcessNotFoundError(f"Process not found: {process_name}")
         if self.cr3 is None or self.cr3 == 0:
-            raise DriverBridgeError(
-                "DBVM backend requires target CR3. Set STUDIOMEM_DBVM_CR3, for example "
-                "$env:STUDIOMEM_DBVM_CR3='0x12345000'. Automatic PID-to-CR3 discovery is not implemented yet."
-            )
+            self.cr3 = self._resolve_process_cr3_with_fallback(pid)
 
         self._check(self._dll.smem_dbvm_initialize(), "DBVM initialization")
         version = ct.c_uint32()
@@ -391,6 +400,11 @@ class DbvmBridgeBackend:
         self.pid = pid
 
     def detach(self) -> None:
+        if self._driver_initialized:
+            try:
+                self._check(self._dll.smem_shutdown(), "driver bridge shutdown")
+            finally:
+                self._driver_initialized = False
         self.pid = None
 
     def get_module_base(self, module_substr: str) -> int:
@@ -479,6 +493,37 @@ class DbvmBridgeBackend:
                 f"DBVM partial physical write at 0x{physical_address:X}: {bytes_written.value}/{len(data)} bytes"
             )
         self._check(status, f"DBVM physical write 0x{physical_address:X}", memory_error=MemoryWriteError)
+
+    def _resolve_process_cr3_with_fallback(self, pid: int) -> int:
+        auto_error: str | None = None
+
+        try:
+            self._check(self._dll.smem_initialize(), "driver bridge initialization for CR3 resolution")
+            self._driver_initialized = True
+
+            cr3 = ct.c_uint64()
+            self._check(
+                self._dll.smem_resolve_process_cr3(ct.c_uint32(pid), ct.byref(cr3)),
+                f"resolve CR3 for PID {pid}",
+            )
+            if cr3.value:
+                return int(cr3.value)
+        except Exception as exc:
+            auto_error = str(exc)
+
+        if self._env_cr3:
+            return self._env_cr3
+
+        message = (
+            f"DBVM backend could not resolve CR3 automatically for PID {pid}."
+        )
+        if auto_error:
+            message += f" Automatic resolution failed: {auto_error}."
+        message += (
+            " Set STUDIOMEM_DBVM_CR3 or pass --cr3, for example "
+            "$env:STUDIOMEM_DBVM_CR3='0x12345000'."
+        )
+        raise DriverBridgeError(message)
 
     def _check(
         self,

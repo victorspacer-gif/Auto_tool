@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 
 from systool.pointers.memory_backend import DbvmBridgeBackend, LightMemoryController
 
@@ -13,7 +12,7 @@ def parse_int(value: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Exercise the Studiomemuer DBVM bridge.")
     parser.add_argument("--process", default="miracle_gl.exe", help="Target process name used for attach/module lookup.")
-    parser.add_argument("--cr3", default=os.environ.get("STUDIOMEM_DBVM_CR3"), help="Target process CR3/DTB, e.g. 0x12345000.")
+    parser.add_argument("--cr3", help="Explicit target process CR3/DTB. If omitted, DBK auto-resolution is tried before STUDIOMEM_DBVM_CR3.")
     parser.add_argument("--read-physical", type=parse_int, help="Physical address to read.")
     parser.add_argument("--write-physical", type=parse_int, help="Physical address to write.")
     parser.add_argument("--read-virtual", type=parse_int, help="Target-process virtual address to read through CR3.")

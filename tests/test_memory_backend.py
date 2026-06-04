@@ -4,6 +4,7 @@ import struct
 
 import pytest
 
+import systool.pointers.memory_backend as mb
 from systool.pointers.memory_backend import (
     AddressResolveError,
     DbvmBridgeBackend,
@@ -64,7 +65,97 @@ def test_empty_pointer_chain_is_rejected() -> None:
         controller.resolve_pointer_chain(0x1000, [])
 
 
-def test_dbvm_backend_accepts_configured_cr3() -> None:
+def test_dbvm_backend_accepts_configured_cr3(monkeypatch) -> None:
+    _install_fake_dbvm(monkeypatch, FakeDbvmDll())
+
     backend = DbvmBridgeBackend(cr3="0x12345000")
 
     assert backend.cr3 == 0x12345000
+
+
+class FakeDllFunction:
+    def __init__(self, func):
+        self.func = func
+        self.calls = []
+        self.argtypes = None
+        self.restype = None
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        return self.func(*args)
+
+
+class FakeDbvmDll:
+    def __init__(self, resolved_cr3: int | None = 0xABCDEF000, resolve_status: int = 0) -> None:
+        self.resolved_cr3 = resolved_cr3
+        self.resolve_status = resolve_status
+        self.smem_initialize = FakeDllFunction(lambda: 0)
+        self.smem_shutdown = FakeDllFunction(lambda: 0)
+        self.smem_resolve_process_cr3 = FakeDllFunction(self._resolve_process_cr3)
+        self.smem_dbvm_initialize = FakeDllFunction(lambda: 0)
+        self.smem_dbvm_get_version = FakeDllFunction(self._dbvm_get_version)
+        self.smem_dbvm_read_physical = FakeDllFunction(lambda *args: 0)
+        self.smem_dbvm_write_physical = FakeDllFunction(lambda *args: 0)
+        self.smem_dbvm_read_virtual = FakeDllFunction(lambda *args: 0)
+        self.smem_dbvm_write_virtual = FakeDllFunction(lambda *args: 0)
+        self.smem_last_error = FakeDllFunction(self._last_error)
+
+    def _resolve_process_cr3(self, _pid, out_cr3) -> int:
+        if self.resolve_status != 0:
+            return self.resolve_status
+        out_cr3._obj.value = int(self.resolved_cr3 or 0)
+        return 0
+
+    @staticmethod
+    def _dbvm_get_version(out_version) -> int:
+        out_version._obj.value = 0xCE
+        return 0
+
+    @staticmethod
+    def _last_error(buffer, _buffer_chars) -> int:
+        buffer.value = "fake driver error"
+        return 0
+
+
+def _install_fake_dbvm(monkeypatch, fake_dll: FakeDbvmDll) -> None:
+    monkeypatch.setattr(mb.ct, "WinDLL", lambda *_args, **_kwargs: fake_dll, raising=False)
+    monkeypatch.setattr(mb, "_find_pid_by_name", lambda _process_name: 4321)
+
+
+def test_dbvm_attach_resolves_cr3_from_pid(monkeypatch) -> None:
+    fake_dll = FakeDbvmDll(resolved_cr3=0xABCDEF123)
+    _install_fake_dbvm(monkeypatch, fake_dll)
+
+    backend = DbvmBridgeBackend()
+    backend.attach("target.exe")
+
+    assert backend.pid == 4321
+    assert backend.cr3 == 0xABCDEF123
+    assert backend.version == 0xCE
+    assert fake_dll.smem_initialize.calls
+    assert fake_dll.smem_resolve_process_cr3.calls[0][0].value == 4321
+
+
+def test_dbvm_attach_prefers_explicit_cr3(monkeypatch) -> None:
+    fake_dll = FakeDbvmDll(resolved_cr3=0xABCDEF123)
+    _install_fake_dbvm(monkeypatch, fake_dll)
+
+    backend = DbvmBridgeBackend(cr3="0x12345000")
+    backend.attach("target.exe")
+
+    assert backend.pid == 4321
+    assert backend.cr3 == 0x12345000
+    assert not fake_dll.smem_initialize.calls
+    assert not fake_dll.smem_resolve_process_cr3.calls
+
+
+def test_dbvm_attach_falls_back_to_env_cr3(monkeypatch) -> None:
+    fake_dll = FakeDbvmDll(resolve_status=mb.SmemStatus.DRIVER_UNAVAILABLE)
+    _install_fake_dbvm(monkeypatch, fake_dll)
+    monkeypatch.setenv("STUDIOMEM_DBVM_CR3", "0x55555000")
+
+    backend = DbvmBridgeBackend()
+    backend.attach("target.exe")
+
+    assert backend.pid == 4321
+    assert backend.cr3 == 0x55555000

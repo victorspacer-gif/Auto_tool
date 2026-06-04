@@ -125,6 +125,76 @@ SmemStatus open_process(std::uint32_t pid) {
 void close_process() {
 }
 
+SmemStatus resolve_process_eprocess(std::uint32_t pid, std::uint64_t* out_eprocess) {
+    if (out_eprocess != nullptr) {
+        *out_eprocess = 0;
+    }
+    if (pid == 0 || out_eprocess == nullptr) {
+        return SMEM_ERR_INVALID_ARGUMENT;
+    }
+    if (!has_device()) {
+        return SMEM_ERR_NOT_INITIALIZED;
+    }
+
+    DWORD input = pid;
+    std::uint64_t output = 0;
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(
+        g_device,
+        kDbkGetPeProcess,
+        &input,
+        sizeof(input),
+        &output,
+        sizeof(output),
+        &returned,
+        nullptr);
+
+    if (!ok) {
+        return status_from_last_error();
+    }
+    if (output == 0) {
+        return SMEM_ERR_PROCESS_NOT_FOUND;
+    }
+
+    *out_eprocess = output;
+    return SMEM_OK;
+}
+
+SmemStatus resolve_process_cr3(std::uint32_t pid, std::uint64_t* out_cr3) {
+    if (out_cr3 != nullptr) {
+        *out_cr3 = 0;
+    }
+    if (pid == 0 || out_cr3 == nullptr) {
+        return SMEM_ERR_INVALID_ARGUMENT;
+    }
+    if (!has_device()) {
+        return SMEM_ERR_NOT_INITIALIZED;
+    }
+
+    DWORD input = pid;
+    std::uint64_t output = 0;
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(
+        g_device,
+        kDbkGetCr3,
+        &input,
+        sizeof(input),
+        &output,
+        sizeof(output),
+        &returned,
+        nullptr);
+
+    if (!ok) {
+        return status_from_last_error();
+    }
+    if ((output & 0xFFFFFFFFFFFFF000ULL) == 0) {
+        return SMEM_ERR_INVALID_ADDRESS;
+    }
+
+    *out_cr3 = output;
+    return SMEM_OK;
+}
+
 SmemStatus read_virtual_chunk(
     std::uint32_t pid,
     std::uint64_t address,

@@ -167,6 +167,27 @@ __declspec(dllexport) int __stdcall smem_close_process() {
     return SMEM_OK;
 }
 
+__declspec(dllexport) int __stdcall smem_resolve_process_cr3(
+    std::uint32_t pid,
+    std::uint64_t* out_cr3) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (!g_initialized) {
+        return fail(SMEM_ERR_NOT_INITIALIZED, L"smem_initialize must be called first.");
+    }
+    if (pid == 0 || out_cr3 == nullptr) {
+        return fail(SMEM_ERR_INVALID_ARGUMENT, L"PID and out_cr3 are required.");
+    }
+
+    const SmemStatus status = driver_adapter::resolve_process_cr3(pid, out_cr3);
+    if (status != SMEM_OK) {
+        return fail(status, L"DBK GETCR3 failed for the target PID.");
+    }
+
+    set_last_error_message(L"OK");
+    return SMEM_OK;
+}
+
 __declspec(dllexport) int __stdcall smem_get_module_base(
     std::uint32_t pid,
     const wchar_t* module_name,
