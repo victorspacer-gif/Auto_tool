@@ -1322,9 +1322,18 @@ class SystemMonitorApp:
         def on_press(key):
             state = self.runtime.state
             if state.rebind_active and state.rebind_target:
-                key_str = HotkeyService.pynput_key_to_str(key)
-                if key_str != "esc":
-                    self.root.after(0, lambda: self.apply_rebind(key_str))
+                try:
+                    key_str = HotkeyService.pynput_key_to_str(key)
+                    if key_str != "esc":
+                        self.root.after(0, lambda: self.apply_rebind(key_str))
+                    else:
+                        # Esc cancels rebind — reset state and restart listener
+                        state.rebind_active = False
+                        state.rebind_target = None
+                        self.runtime.ui.log("🎹 Rebind cancelled")
+                        self.root.after(0, self._restart_global_listener)
+                except Exception:
+                    logger.warning("Error processing rebind hotkey")
                 return False
             bindings = state.hotkey_bindings
             try:
@@ -1348,6 +1357,20 @@ class SystemMonitorApp:
         self.listener = pynput_kb.Listener(on_press=on_press)
         self.listener.daemon = True
         self.listener.start()
+        self._schedule_listener_check()
+
+    def _schedule_listener_check(self) -> None:
+        """Periodically verify the global hotkey listener is alive; restart if dead."""
+        if not HAS_PYNPUT:
+            return
+        try:
+            if self.listener and not self.listener.is_alive():
+                logger.warning("Global hotkey listener died — restarting")
+                self._start_global_hotkeys()
+                return
+        except Exception:
+            logger.debug("Listener health check error")
+        self.root.after(5000, self._schedule_listener_check)
 
     def _restart_global_listener(self) -> None:
         if self.listener:
