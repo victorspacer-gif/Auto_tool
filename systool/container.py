@@ -54,6 +54,16 @@ class ServiceContainer:
         return self._lazy("cavebot_service", CaveBotService, (self.runtime,))
 
     @property
+    def chase_target_service(self):
+        from .services import ChaseTargetService
+        return self._lazy("chase_target_service", ChaseTargetService, (self.runtime,))
+
+    @property
+    def auto_looter_service(self):
+        from .services import AutoLooterService
+        return self._lazy("auto_looter_service", AutoLooterService, (self.runtime,))
+
+    @property
     def position_capture(self):
         from .services import PositionCaptureService
         return self._lazy("position_capture", PositionCaptureService, (self.runtime,))

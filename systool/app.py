@@ -126,6 +126,11 @@ class SystemMonitorApp:
         self.rune_service = self.container.rune_service
         self.job_service = self.container.job_service
         self.cavebot_service = self.container.cavebot_service
+        self.chase_target_service = self.container.chase_target_service
+        self.auto_looter_service = self.container.auto_looter_service
+        # Wire companion services into cavebot for orchestration
+        self.cavebot_service.chase_target_service = self.chase_target_service
+        self.cavebot_service.auto_looter_service = self.auto_looter_service
         self.runtime_timer_service = self.container.runtime_timer_service
 
 
@@ -469,7 +474,12 @@ class SystemMonitorApp:
         self.cavebot_tab_ui = CaveBotTab(
             cavebot_tab,
             self.runtime,
-            {"cavebot_service": self.cavebot_service, "position_capture": self.position_capture},
+            {
+                "cavebot_service": self.cavebot_service,
+                "chase_target_service": self.chase_target_service,
+                "auto_looter_service": self.auto_looter_service,
+                "position_capture": self.position_capture,
+            },
             tab_helpers,
             self.ui_vars,
         )
@@ -1265,6 +1275,8 @@ class SystemMonitorApp:
         )
         self.healer_service.stop()
         self.cavebot_service.stop()
+        self.chase_target_service.stop()
+        self.auto_looter_service.stop()
 
     def attach_light_process(self) -> None:
         self._poll_settings(schedule_next=False)

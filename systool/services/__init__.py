@@ -1,6 +1,8 @@
 """Service package preserving the original public API."""
 
+from .auto_looter import AutoLooterService
 from .cavebot import CaveBotService
+from .chase_target import ChaseTargetService
 from .fishing import FishingService
 from .healer import AutoHealerService
 from .hotkeys import HotkeyJobService, HotkeyService
@@ -31,8 +33,10 @@ __all__ = [
     "AlarmService",
     "AntiAfkService",
     "AutoHealerService",
+    "AutoLooterService",
     "CapService",
     "CaveBotService",
+    "ChaseTargetService",
     "CharacterStatusService",
     "FoodService",
     "FishingService",

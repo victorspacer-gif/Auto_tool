@@ -1,10 +1,16 @@
-"""CaveBot service — automated walking, attacking, and looting loop.
+"""CaveBot service — waypoint navigation orchestrator.
 
-Adapted from the TibiaAuto12 cavebot model:
-  - Waypoint-based navigation via minimap clicks + arrow key refresh
-  - Monster targeting via battle-list coordinate clicks
-  - Looting via right-clicks on SQM positions
-  - Script-driven: JSON files defining waypoint sequences
+Adapted from the TibiaAuto12 CaveBotController:
+  1. Load script → find active waypoint
+  2. Walk to waypoint coordinate (minimap click)
+  3. Stand still for N seconds
+  4. Signal ChaseTarget to attack monsters
+  5. Signal AutoLooter to loot
+  6. Advance to next waypoint
+  7. Loop back to start on completion
+
+When walking is disabled, the cavebot stays at the current position and
+only runs the attack + loot cycle (camping mode).
 
 Integrates with the Auto_tool DI container, ExecutionGate/MouseGate for
 coordinated input ownership, and PauseController for global pause/resume.
@@ -38,30 +44,19 @@ from ..constants import (
 from ..theme import GREEN, ORANGE, RED
 from .input_services import HumanMouse, SafeKeyboardSession, WindowService
 
-# Default scripts directory (relative to project root or PyInstaller bundle)
+# Default scripts directory
 SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "scripts")
 
 
 def _ensure_scripts_dir() -> str:
-    """Return (and create if needed) the scripts directory."""
     scripts_dir = os.environ.get("CAVEBOT_SCRIPTS_DIR") or SCRIPTS_DIR
     scripts_dir = os.path.abspath(scripts_dir)
     os.makedirs(scripts_dir, exist_ok=True)
     return scripts_dir
 
 
-# ── Waypoint types (matching TibiaAuto12 vocabulary) ─────────────────
-WAYPOINT_TYPES = {
-    1: "walk",
-    2: "rope",
-    3: "shovel",
-}
-
-WAYPOINT_TYPE_NAMES = {v: k for k, v in WAYPOINT_TYPES.items()}
-
-
 class CaveBotService:
-    """Background worker that follows a waypoint script, attacks monsters, and loots.
+    """Background waypoint walker and cavebot orchestrator.
 
     Lifecycle:
         - ``start()`` spins up a daemon thread running the main loop.
@@ -72,9 +67,11 @@ class CaveBotService:
 
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
-
-        # Cached references
         self._stop_event = threading.Event()
+
+        # Optional references to companion services (set via wiring)
+        self.chase_target_service: object | None = None
+        self.auto_looter_service: object | None = None
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -96,6 +93,17 @@ class CaveBotService:
         state = self.runtime.state.cavebot
         if not state.active:
             return
+        # Also stop chase target and auto looter when cavebot stops
+        if self.chase_target_service is not None:
+            try:
+                self.chase_target_service.stop()
+            except Exception:
+                pass
+        if self.auto_looter_service is not None:
+            try:
+                self.auto_looter_service.stop()
+            except Exception:
+                pass
         self._stop_event.set()
         state.active = False
         self.runtime.ui.module_state_changed("cavebot", False)
@@ -105,21 +113,11 @@ class CaveBotService:
 
     @staticmethod
     def list_scripts() -> list[str]:
-        """Return sorted list of available script names (without .json)."""
         scripts_dir = _ensure_scripts_dir()
-        scripts = sorted(
-            p.stem for p in Path(scripts_dir).glob("*.json")
-        )
-        return scripts
+        return sorted(p.stem for p in Path(scripts_dir).glob("*.json"))
 
     @staticmethod
     def load_script(name: str) -> list[dict]:
-        """Load a script JSON and return the waypoint list.
-
-        Each waypoint dict::
-
-            {"mark": "<waypoint-image-name>", "type": 1, "status": bool}
-        """
         scripts_dir = _ensure_scripts_dir()
         path = os.path.join(scripts_dir, f"{name}.json")
         if not os.path.isfile(path):
@@ -129,7 +127,6 @@ class CaveBotService:
 
     @staticmethod
     def save_script(name: str, data: list[dict]) -> None:
-        """Save a script JSON to disk."""
         scripts_dir = _ensure_scripts_dir()
         path = os.path.join(scripts_dir, f"{name}.json")
         with open(path, "w", encoding="utf-8") as f:
@@ -137,17 +134,15 @@ class CaveBotService:
 
     @staticmethod
     def create_default_script(name: str) -> None:
-        """Create a stub script with a single unconfigured waypoint."""
         scripts_dir = _ensure_scripts_dir()
         path = os.path.join(scripts_dir, f"{name}.json")
         if not os.path.isfile(path):
-            default = [{"mark": "", "type": 1, "status": "NotConfigured"}]
+            default = [{"mark": "", "x": 0, "y": 0, "type": 1, "status": "NotConfigured"}]
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(default, f, indent=4)
 
     @staticmethod
     def delete_script(name: str) -> None:
-        """Remove a script file from disk."""
         scripts_dir = _ensure_scripts_dir()
         path = os.path.join(scripts_dir, f"{name}.json")
         if os.path.isfile(path):
@@ -166,7 +161,6 @@ class CaveBotService:
             self.runtime.ui.module_state_changed("cavebot", False)
             return
 
-        # Reset to first waypoint if not configured
         if script_data and script_data[0].get("status") == "NotConfigured":
             self.runtime.ui.log("⚠️  Script has no configured waypoints. Add waypoints first.")
             state.active = False
@@ -174,25 +168,23 @@ class CaveBotService:
             return
 
         mouse = pynput_mouse.Controller() if HAS_PYNPUT else None
-        keyboard = pynput_kb.Controller() if HAS_PYNPUT else None
+
+        # Start companion services if configured
+        self._start_companions()
 
         try:
             while not self._stop_event.is_set():
+                self.runtime.pause.wait()
                 if self._stop_event.is_set():
                     break
 
-                # Re-load script data each iteration in case waypoints changed
+                # Re-load script data each iteration
                 script_data = self.load_script(state.script_name)
                 if not script_data:
                     break
 
                 # Find current active waypoint
-                current_idx = None
-                for idx, wp in enumerate(script_data):
-                    if wp.get("status") is True:
-                        current_idx = idx
-                        break
-
+                current_idx = self._find_active_waypoint(script_data)
                 if current_idx is None:
                     # Loop back to start
                     if script_data:
@@ -202,25 +194,35 @@ class CaveBotService:
 
                 waypoint = script_data[current_idx]
                 mark_name = waypoint.get("mark", "")
+                wp_x = waypoint.get("x", 0)
+                wp_y = waypoint.get("y", 0)
                 wp_type = waypoint.get("type", 1)
 
-                self.runtime.ui.log(f"📍 Waypoint [{current_idx + 1}/{len(script_data)}]: {mark_name}")
+                total = len(script_data)
+                self.runtime.ui.log(f"📍 [{current_idx + 1}/{total}] {mark_name or f'({wp_x},{wp_y})'} type={wp_type}")
 
                 # ── Phase 1: Walk to waypoint ─────────────────
-                if state.walking_enabled and mark_name:
-                    self._walk_to_waypoint(mark_name, state)
+                if state.walking_enabled and mouse:
+                    self._walk_to_waypoint(mark_name, wp_x, wp_y, state, mouse)
 
                 # ── Phase 2: Stand still ──────────────────────
                 if state.stand_seconds > 0:
                     if not self._wait_interruptible(state.stand_seconds):
                         break
 
-                # ── Phase 3: Attack monsters ──────────────────
+                # ── Phase 3: Attack window (let chase target work) ──
                 if state.monsters_to_attack:
-                    self._attack_cycle(state, mouse, keyboard)
+                    # Wait while chase target attacks — check every 0.5s
+                    attack_time = max(2.0, state.stand_seconds * 2)
+                    if not self._wait_interruptible(attack_time):
+                        break
 
                 # ── Phase 4: Loot ─────────────────────────────
                 if state.looting_enabled and state.sqm_positions:
+                    self._loot_cycle(state, mouse)
+                    # Second pass for nearby corpses
+                    if not self._wait_interruptible(random.uniform(0.3, 0.6)):
+                        break
                     self._loot_cycle(state, mouse)
 
                 # ── Advance to next waypoint ──────────────────
@@ -237,34 +239,58 @@ class CaveBotService:
             self.runtime.ui.module_state_changed("cavebot", False)
             self.runtime.ui.log("⏹ CaveBot ended")
 
+    # ── Companion services ───────────────────────────────────────────
+
+    def _start_companions(self) -> None:
+        """Start chase target and auto looter if they are configured."""
+        if self.chase_target_service is not None:
+            try:
+                chase_state = self.runtime.state.chase_target
+                if chase_state.monster_names and chase_state.battle_list_x > 0:
+                    self.chase_target_service.start()
+            except Exception:
+                pass
+        if self.auto_looter_service is not None:
+            try:
+                looter_state = self.runtime.state.auto_looter
+                if looter_state.sqm_positions:
+                    self.auto_looter_service.start()
+            except Exception:
+                pass
+
     # ── Walking ──────────────────────────────────────────────────────
 
-    def _walk_to_waypoint(self, mark_name: str, state, keyboard=None) -> None:
-        """Navigate to a waypoint marker on the minimap.
+    def _walk_to_waypoint(self, mark_name: str, wp_x: int, wp_y: int, state, mouse) -> None:
+        """Navigate to a waypoint using minimap crosshair click.
 
-        Uses minimap position click + optional arrow-key refresh (walk_for_debug).
+        If the waypoint has coordinates (x, y), clicks at that position
+        on the minimap. Otherwise falls back to minimap centre-click.
         """
         if not HAS_PYNPUT:
             return
 
-        mouse = pynput_mouse.Controller()
-        if keyboard is None:
-            keyboard = pynput_kb.Controller()
         map_region = state.map_region
         if not map_region:
             self.runtime.ui.log("⚠️  Map region not configured — cannot walk")
             return
 
-        # Attempt to locate marker by minimap click
-        max_attempts = 5
+        # Determine click position
+        if wp_x > 0 and wp_y > 0:
+            # Use waypoint coordinates directly
+            click_x = wp_x
+            click_y = wp_y
+        else:
+            # Fallback to minimap centre
+            click_x = map_region[0] + map_region[2] // 2
+            click_y = map_region[1] + map_region[3] // 2
+
+        max_attempts = 3
         for attempt in range(max_attempts):
             if self._stop_event.is_set():
                 return
 
-            # Click in the centre of the minimap to walk
-            centre_x = map_region[0] + map_region[2] // 2
-            centre_y = map_region[1] + map_region[3] // 2
-            jitter = random.randint(-3, 3)
+            jitter_x = click_x + random.randint(-3, 3)
+            jitter_y = click_y + random.randint(-3, 3)
 
             if not self.runtime.execution.acquire(
                 self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
@@ -274,114 +300,39 @@ class CaveBotService:
                 continue
 
             try:
-                HumanMouse.move(mouse, (centre_x + jitter, centre_y + jitter))
+                HumanMouse.move(mouse, (jitter_x, jitter_y))
                 time.sleep(random.uniform(0.03, 0.08))
                 mouse.click(pynput_mouse.Button.left)
                 time.sleep(INPUT_POST_CLICK_SLEEP)
             finally:
                 self.runtime.execution.release()
 
-            # Wait for character to move
-            if not self._wait_interruptible(random.uniform(0.8, 1.5)):
+            # Wait for character to start moving
+            if not self._wait_interruptible(random.uniform(0.8, 1.2)):
                 return
 
-            # If walk_for_debug is enabled, do a quick arrow-key refresh
-            if state.walk_for_debug and keyboard:
-                if not self.runtime.execution.acquire(
-                    self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
-                ):
-                    continue
-                try:
-                    session = SafeKeyboardSession(keyboard)
-                    session.tap(pynput_kb.Key.up, hold_seconds=0.05)
-                    time.sleep(0.05)
-                    session.tap(pynput_kb.Key.left, hold_seconds=0.05)
-                    time.sleep(0.05)
-                    session.tap(pynput_kb.Key.down, hold_seconds=0.05)
-                    time.sleep(0.05)
-                    session.tap(pynput_kb.Key.right, hold_seconds=0.05)
-                    time.sleep(0.05)
-                finally:
-                    self.runtime.execution.release()
+            # Walk-for-debug: do arrow-key refresh to force minimap update
+            if state.walk_for_debug:
+                self._do_arrow_refresh()
 
-            if not self._wait_interruptible(random.uniform(0.5, 1.0)):
-                return
+        self.runtime.ui.log(f"   Walked → ({click_x}, {click_y})")
 
-        self.runtime.ui.log(f"   Walked toward waypoint: {mark_name}")
-
-    # ── Attack cycle ─────────────────────────────────────────────────
-
-    def _attack_cycle(self, state, mouse, keyboard) -> None:
-        """Attack monsters from the configured monster list.
-
-        Uses battle-list coordinate clicks to target each monster type.
-        Follows the TibiaAuto12 model: scan target, attack, verify, follow.
-        """
-        for monster_name in state.monsters_to_attack:
-            if self._stop_event.is_set():
-                return
-
-            if not monster_name.strip():
-                continue
-
-            battle_x = state.battle_list_x
-            if battle_x <= 0:
-                self.runtime.ui.log("⚠️  Battle list X not configured")
-                continue
-
-            # Click on the battle list to target this monster type
-            # Each monster row is ~20px apart starting from y=120 (approx)
-            base_y = 120
-            row_offset = state.monsters_to_attack.index(monster_name) * 20
-            target_y = base_y + row_offset
-
-            for _ in range(state.monsters_range):
-                if self._stop_event.is_set():
-                    return
-
-                # Use skill key first (F1 by default) to target
-                if keyboard:
-                    if not self.runtime.execution.acquire(
-                        self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
-                    ):
-                        continue
-                    try:
-                        # Press the skill/attack key
-                        skill_pynput = self._key_str_to_pynput(state.skill_key)
-                        if skill_pynput:
-                            session = SafeKeyboardSession(keyboard)
-                            session.tap(skill_pynput, hold_seconds=0.04)
-                            time.sleep(random.uniform(0.1, 0.2))
-                    finally:
-                        self.runtime.execution.release()
-
-                # Click battle list to ensure target is selected
-                if not self.runtime.execution.acquire(
-                    self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
-                ):
-                    continue
-                try:
-                    click_y = target_y + random.randint(-2, 2)
-                    HumanMouse.move(mouse, (battle_x + random.randint(-5, 5), click_y))
-                    time.sleep(random.uniform(0.03, 0.06))
-                    mouse.click(pynput_mouse.Button.left)
-                    time.sleep(INPUT_POST_CLICK_SLEEP)
-                finally:
-                    self.runtime.execution.release()
-
-                # Follow mode: click follow if idle
-                if state.follow_mode:
-                    self._click_follow_if_needed(mouse)
-
-                if not self._wait_interruptible(random.uniform(0.5, 1.0)):
-                    return
-
-    def _click_follow_if_needed(self, mouse) -> None:
-        """Simulate follow mode click (placeholder — uses left-click on character)."""
-        # In TibiaAuto this checks for idle/follow icons. Here we just
-        # left-click on the character to re-engage follow if needed.
-        # Users can configure this behaviour via follow_mode setting.
-        pass
+    def _do_arrow_refresh(self) -> None:
+        """Press arrow keys briefly to force minimap refresh (debug mode)."""
+        if not HAS_PYNPUT:
+            return
+        keyboard = pynput_kb.Controller()
+        if not self.runtime.execution.acquire(
+            self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
+        ):
+            return
+        try:
+            session = SafeKeyboardSession(keyboard)
+            for key in [pynput_kb.Key.up, pynput_kb.Key.left, pynput_kb.Key.down, pynput_kb.Key.right]:
+                session.tap(key, hold_seconds=0.04)
+                time.sleep(0.04)
+        finally:
+            self.runtime.execution.release()
 
     # ── Looting ──────────────────────────────────────────────────────
 
@@ -407,17 +358,23 @@ class CaveBotService:
                 HumanMouse.move(mouse, jittered)
                 time.sleep(random.uniform(0.02, 0.05))
                 mouse.click(pynput_mouse.Button.right)
-                time.sleep(random.uniform(0.1, 0.2))
+                time.sleep(random.uniform(0.08, 0.15))
             finally:
                 self.runtime.execution.release()
 
-            if not self._wait_interruptible(random.uniform(0.15, 0.3)):
+            if not self._wait_interruptible(random.uniform(0.1, 0.2)):
                 return
 
     # ── Helpers ──────────────────────────────────────────────────────
 
+    @staticmethod
+    def _find_active_waypoint(script_data: list[dict]) -> int | None:
+        for idx, wp in enumerate(script_data):
+            if wp.get("status") is True:
+                return idx
+        return None
+
     def _wait_interruptible(self, seconds: float) -> bool:
-        """Sleep for *seconds*, returning False early if stop is requested."""
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             if self._stop_event.is_set():
@@ -425,26 +382,3 @@ class CaveBotService:
             self.runtime.pause.wait()
             time.sleep(0.05)
         return True
-
-    @staticmethod
-    def _key_str_to_pynput(key_str: str):
-        """Convert a key string like 'f1' or 'a' to a pynput key object."""
-        if not HAS_PYNPUT:
-            return None
-        value = key_str.strip().lower()
-        named = {}
-        for key_name, attr_name in [
-            ("f1", "f1"), ("f2", "f2"), ("f3", "f3"), ("f4", "f4"),
-            ("f5", "f5"), ("f6", "f6"), ("f7", "f7"), ("f8", "f8"),
-            ("f9", "f9"), ("f10", "f10"), ("f11", "f11"), ("f12", "f12"),
-            ("home", "home"), ("end", "end"),
-            ("up", "up"), ("down", "down"), ("left", "left"), ("right", "right"),
-        ]:
-            key_value = getattr(pynput_kb.Key, attr_name, None)
-            if key_value is not None:
-                named[key_name] = key_value
-        if value in named:
-            return named[value]
-        if len(value) == 1:
-            return pynput_kb.KeyCode.from_char(value)
-        return None

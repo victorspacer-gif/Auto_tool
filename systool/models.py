@@ -160,10 +160,17 @@ class SandboxState:
 
 @dataclasses.dataclass
 class CaveBotState:
-    """State for the CaveBot automation module."""
+    """State for the CaveBot automation module.
+
+    Mirrors the TibiaAuto12 model:
+      - Waypoint-based navigation via coordinate scripts
+      - Monster targeting via battle list + skill keys
+      - Looting via SQM right-clicks
+      - Chase target runs alongside waypoint walking
+    """
     active: bool = False
     script_name: str = ""
-    stand_seconds: int = 1
+    stand_seconds: int = app_config.CAVEBOT_STAND_SECONDS_DEFAULT
     walking_enabled: bool = True
     walk_for_debug: bool = False
     attack_players: bool = False
@@ -177,20 +184,57 @@ class CaveBotState:
     player_seen: bool = False
     attacking_you: bool = False
     cant_attack_suspend: bool = False
-    suspend_after: int = 5
-    monsters_range: int = 3
-    attack_mode: str = "normal"
+    suspend_after: int = app_config.CAVEBOT_SUSPEND_AFTER_DEFAULT
+    monsters_range: int = app_config.CAVEBOT_MONSTERS_RANGE_DEFAULT
+    attack_mode: str = app_config.CAVEBOT_ATTACK_MODE_DEFAULT
     cap_below_than: int = 0
     drop_items: bool = False
     load_auto_seller: bool = False
     load_auto_banker: bool = False
     looting_enabled: bool = True
-    skill_key: str = "f1"  # Key to use for targeting monster
-    # Region for map minimap click area
+    skill_key: str = app_config.CAVEBOT_SKILL_KEY_DEFAULT
+    # Region for minimap / crosshair click area (left, top, width, height)
     map_region: tuple[int, int, int, int] | None = None
     # SQM click positions for looting (9 around character)
     sqm_positions: list[tuple[int, int]] = dataclasses.field(default_factory=list)
     battle_list_x: int = 0  # X position of battle list for clicking
+
+
+@dataclasses.dataclass
+class ChaseTargetState:
+    """State for the continuous monster-targeting scanner.
+
+    Runs as a background thread alongside the cavebot to ensure the
+    character always has a valid target selected in the battle list.
+    """
+    active: bool = False
+    monster_names: list[str] = dataclasses.field(default_factory=list)
+    attack_key: str = app_config.CAVEBOT_SKILL_KEY_DEFAULT
+    scan_interval_ms: int = app_config.CHASE_SCAN_INTERVAL_MS_DEFAULT
+    follow_mode: bool = True
+    attack_mode: str = app_config.CAVEBOT_ATTACK_MODE_DEFAULT
+    player_seen_safe: bool = False
+    attacking_you_only: bool = False
+    force_attack: bool = False
+    suspend_unreachable: bool = False
+    suspend_after_unreachable: int = app_config.CAVEBOT_SUSPEND_AFTER_DEFAULT
+    monsters_range: int = app_config.CAVEBOT_MONSTERS_RANGE_DEFAULT
+    battle_list_x: int = 0
+
+
+@dataclasses.dataclass
+class AutoLooterState:
+    """State for the auto-looting background service.
+
+    Automatically right-clicks SQM positions around the character to
+    pick up loot from defeated creatures.
+    """
+    active: bool = False
+    sqm_positions: list[tuple[int, int]] = dataclasses.field(default_factory=list)
+    loot_delay_min_ms: int = app_config.LOOT_DELAY_MIN_MS_DEFAULT
+    loot_delay_max_ms: int = app_config.LOOT_DELAY_MAX_MS_DEFAULT
+    jitter: int = app_config.LOOT_JITTER_DEFAULT
+    auto_loot_on_kill: bool = True
 
 
 @dataclasses.dataclass
@@ -249,6 +293,8 @@ class AppState:
     healer: HealerState = dataclasses.field(default_factory=HealerState)
     sandbox: SandboxState = dataclasses.field(default_factory=SandboxState)
     cavebot: CaveBotState = dataclasses.field(default_factory=CaveBotState)
+    chase_target: ChaseTargetState = dataclasses.field(default_factory=ChaseTargetState)
+    auto_looter: AutoLooterState = dataclasses.field(default_factory=AutoLooterState)
 
     light_process_name: str = "miracle_gl.exe"
     light_memory_backend: str = "pymem"
@@ -397,6 +443,7 @@ class AppState:
     healer_mouse_speed = _group_property("healer", "mouse_speed")
     healer_rune_delay_ms = _group_property("healer", "rune_delay_ms")
 
+    # ── CaveBot group properties ──────────────────────────────────────
     cavebot_active = _group_property("cavebot", "active")
     cavebot_script_name = _group_property("cavebot", "script_name")
     cavebot_stand_seconds = _group_property("cavebot", "stand_seconds")
@@ -421,3 +468,26 @@ class AppState:
     cavebot_map_region = _group_property("cavebot", "map_region")
     cavebot_sqm_positions = _group_property("cavebot", "sqm_positions")
     cavebot_battle_list_x = _group_property("cavebot", "battle_list_x")
+
+    # ── ChaseTarget group properties ──────────────────────────────────
+    chase_active = _group_property("chase_target", "active")
+    chase_monster_names = _group_property("chase_target", "monster_names")
+    chase_attack_key = _group_property("chase_target", "attack_key")
+    chase_scan_interval_ms = _group_property("chase_target", "scan_interval_ms")
+    chase_follow_mode = _group_property("chase_target", "follow_mode")
+    chase_attack_mode = _group_property("chase_target", "attack_mode")
+    chase_player_seen_safe = _group_property("chase_target", "player_seen_safe")
+    chase_attacking_you_only = _group_property("chase_target", "attacking_you_only")
+    chase_force_attack = _group_property("chase_target", "force_attack")
+    chase_suspend_unreachable = _group_property("chase_target", "suspend_unreachable")
+    chase_suspend_after_unreachable = _group_property("chase_target", "suspend_after_unreachable")
+    chase_monsters_range = _group_property("chase_target", "monsters_range")
+    chase_battle_list_x = _group_property("chase_target", "battle_list_x")
+
+    # ── AutoLooter group properties ───────────────────────────────────
+    looter_active = _group_property("auto_looter", "active")
+    looter_sqm_positions = _group_property("auto_looter", "sqm_positions")
+    looter_loot_delay_min_ms = _group_property("auto_looter", "loot_delay_min_ms")
+    looter_loot_delay_max_ms = _group_property("auto_looter", "loot_delay_max_ms")
+    looter_jitter = _group_property("auto_looter", "jitter")
+    looter_auto_loot_on_kill = _group_property("auto_looter", "auto_loot_on_kill")

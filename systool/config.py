@@ -108,6 +108,15 @@ CAVEBOT_MONSTERS_RANGE_DEFAULT: int = 3
 CAVEBOT_SKILL_KEY_DEFAULT: str = "f1"
 CAVEBOT_ATTACK_MODE_DEFAULT: str = "normal"
 
+# ── Chase Target ──────────────────────────────────────────────────────
+CHASE_SCAN_INTERVAL_MS_DEFAULT: int = 300
+CHASE_SCAN_INTERVAL_MS_MIN: int = 50
+
+# ── Auto Looter ────────────────────────────────────────────────────────
+LOOT_DELAY_MIN_MS_DEFAULT: int = 200
+LOOT_DELAY_MAX_MS_DEFAULT: int = 500
+LOOT_JITTER_DEFAULT: int = 3
+
 # Defaults used when reading legacy or incomplete saved job payloads.
 JOB_JSON_MIN_MS_DEFAULT: int = 1_000
 JOB_JSON_MAX_MS_DEFAULT: int = 3_000
@@ -117,6 +126,7 @@ JOB_JSON_MAX_MS_DEFAULT: int = 3_000
 _JSON_SPECIAL = frozenset({
     "hotkey_bindings", "jobs", "fish_spots", "__meta__", "cavebot_monsters_to_attack",
     "cavebot_sqm_positions", "cavebot_map_region",
+    "chase_monster_names", "looter_sqm_positions",
 })
 
 
@@ -173,7 +183,7 @@ class ConfigSerializer:
         result: dict[str, object] = {}
 
         # Flatten all nested dataclass groups using asdict-based approach.
-        for group_name in ("alarm", "char_status", "fishing", "rune", "healer", "cavebot"):
+        for group_name in ("alarm", "char_status", "fishing", "rune", "healer", "cavebot", "chase_target", "auto_looter"):
             group_obj = getattr(state, group_name)
             if is_dataclass(group_obj):
                 flat = _flatten(group_obj)
@@ -636,3 +646,36 @@ class ConfigSerializer:
                 state.cavebot.map_region = tuple(int(v) for v in parsed)
             except (TypeError, ValueError, json.JSONDecodeError):
                 state.cavebot.map_region = None
+
+        # ── Chase Target ────────────────────────────────────────────────
+        state.chase_target.attack_key = get_str("chase_target.attack_key", state.chase_target.attack_key)
+        state.chase_target.scan_interval_ms = max(CHASE_SCAN_INTERVAL_MS_MIN, get_int("chase_target.scan_interval_ms", state.chase_target.scan_interval_ms))
+        state.chase_target.follow_mode = get_bool("chase_target.follow_mode", state.chase_target.follow_mode)
+        state.chase_target.attack_mode = get_str("chase_target.attack_mode", state.chase_target.attack_mode)
+        state.chase_target.player_seen_safe = get_bool("chase_target.player_seen_safe", state.chase_target.player_seen_safe)
+        state.chase_target.attacking_you_only = get_bool("chase_target.attacking_you_only", state.chase_target.attacking_you_only)
+        state.chase_target.force_attack = get_bool("chase_target.force_attack", state.chase_target.force_attack)
+        state.chase_target.suspend_unreachable = get_bool("chase_target.suspend_unreachable", state.chase_target.suspend_unreachable)
+        state.chase_target.suspend_after_unreachable = max(NON_NEGATIVE_INT_MIN, get_int("chase_target.suspend_after_unreachable", state.chase_target.suspend_after_unreachable))
+        state.chase_target.monsters_range = max(NON_NEGATIVE_INT_MIN, get_int("chase_target.monsters_range", state.chase_target.monsters_range))
+        state.chase_target.battle_list_x = max(NON_NEGATIVE_INT_MIN, get_int("chase_target.battle_list_x", state.chase_target.battle_list_x))
+        raw_chase_monsters = cfg.get("chase_target.monster_names")
+        if raw_chase_monsters and raw_chase_monsters not in ("None", ""):
+            try:
+                parsed = json.loads(raw_chase_monsters) if isinstance(raw_chase_monsters, str) else raw_chase_monsters
+                state.chase_target.monster_names = list(parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.chase_target.monster_names = []
+
+        # ── Auto Looter ──────────────────────────────────────────────────
+        state.auto_looter.loot_delay_min_ms = max(NON_NEGATIVE_INT_MIN, get_int("auto_looter.loot_delay_min_ms", state.auto_looter.loot_delay_min_ms))
+        state.auto_looter.loot_delay_max_ms = max(state.auto_looter.loot_delay_min_ms, get_int("auto_looter.loot_delay_max_ms", state.auto_looter.loot_delay_max_ms))
+        state.auto_looter.jitter = max(0, get_int("auto_looter.jitter", state.auto_looter.jitter))
+        state.auto_looter.auto_loot_on_kill = get_bool("auto_looter.auto_loot_on_kill", state.auto_looter.auto_loot_on_kill)
+        raw_looter_sqm = cfg.get("auto_looter.sqm_positions")
+        if raw_looter_sqm and raw_looter_sqm not in ("None", ""):
+            try:
+                parsed = json.loads(raw_looter_sqm) if isinstance(raw_looter_sqm, str) else raw_looter_sqm
+                state.auto_looter.sqm_positions = [tuple(p) for p in parsed]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.auto_looter.sqm_positions = []

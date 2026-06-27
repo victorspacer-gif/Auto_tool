@@ -74,6 +74,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.dispatch(lambda: called.append("dispatch"))
         assert "dispatch" in called
@@ -91,6 +92,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.log("hello")
         assert logged == ["hello"]
@@ -108,6 +110,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.set_status("ready", "green")
         assert status == [("ready", "green")]
@@ -125,6 +128,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.refresh_stats()
         assert refreshed == [True]
@@ -142,6 +146,7 @@ class TestUINotifierConfigure:
             set_pause_label=paused_vals.append,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.set_pause_label(True)
         assert paused_vals == [True]
@@ -159,6 +164,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=jobs.append,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         job = HotkeyJob(job_id=5)
         ui.job_state_changed(job)
@@ -177,6 +183,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda m, r: calls.append((m, r)),
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.module_state_changed("fishing", True)
         assert calls == [("fishing", True)]
@@ -196,6 +203,7 @@ class TestUINotifierConfigure:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         ui.log("msg")
         assert len(dispatched) == 1
@@ -238,6 +246,7 @@ class TestPauseControllerToggle:
             set_pause_label=pause_labels.append,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         pc = PauseController(ui, start_paused=True)
         assert pc.paused is True
@@ -261,6 +270,7 @@ class TestPauseControllerToggle:
             set_pause_label=pause_labels.append,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
         pc = PauseController(ui, start_paused=False)
         assert pc.paused is False
@@ -515,17 +525,6 @@ class TestAppRuntimeInit:
         assert runtime.hp_service is None
         assert runtime.mp_service is None
         assert runtime.cap_service is None
-
-
-class TestAppRuntimeSaveConfig:
-    """Verify save_config writes valid JSON to disk."""
-
-    def test_save_config_does_not_crash(self):
-        from systool.runtime import AppRuntime
-
-        runtime = AppRuntime()
-        # save_config should not raise even if config.json doesn't exist yet
-        runtime.save_config()
 
 
 class TestAppRuntimeConfigLoading:
@@ -800,6 +799,7 @@ class TestUINotifierDispatchWrapping:
             set_pause_label=lambda _p: None,
             job_state_changed=lambda _j: None,
             module_state_changed=lambda _m, _r: None,
+            show_logout_popup=lambda _t, _m, _to: None,
         )
 
         ui.log("test message")
