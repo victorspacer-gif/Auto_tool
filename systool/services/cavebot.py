@@ -12,8 +12,9 @@ Adapted from the TibiaAuto12 CaveBotController:
 When walking is disabled, the cavebot stays at the current position and
 only runs the attack + loot cycle (camping mode).
 
-Integrates with the Auto_tool DI container, ExecutionGate/MouseGate for
-coordinated input ownership, and PauseController for global pause/resume.
+All mouse/keyboard input goes through InputRouter which supports two modes:
+  - "hardware" (pynput — physical cursor movement)
+  - "direct" (Win32 SendMessage — background window injection)
 """
 
 from __future__ import annotations
@@ -33,16 +34,13 @@ from ..runtime import (
     HAS_PYNPUT,
     HAS_WIN32,
     pynput_kb,
-    pynput_mouse,
-    win32con,
-    win32gui,
 )
 from ..constants import (
     EXEC_WAIT_TIMEOUT_DEFAULT,
     INPUT_POST_CLICK_SLEEP,
 )
 from ..theme import GREEN, ORANGE, RED
-from .input_services import HumanMouse, SafeKeyboardSession, WindowService
+from .input_services import HumanMouse, SafeKeyboardSession
 
 # Default scripts directory
 SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "scripts")
@@ -56,20 +54,11 @@ def _ensure_scripts_dir() -> str:
 
 
 class CaveBotService:
-    """Background waypoint walker and cavebot orchestrator.
-
-    Lifecycle:
-        - ``start()`` spins up a daemon thread running the main loop.
-        - ``stop()`` signals the thread to exit gracefully.
-        - The loop respects PauseController (pauses when paused).
-        - All mouse/keyboard input goes through ExecutionGate / MouseGate.
-    """
+    """Background waypoint walker and cavebot orchestrator."""
 
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
         self._stop_event = threading.Event()
-
-        # Optional references to companion services (set via wiring)
         self.chase_target_service: object | None = None
         self.auto_looter_service: object | None = None
 
@@ -93,7 +82,6 @@ class CaveBotService:
         state = self.runtime.state.cavebot
         if not state.active:
             return
-        # Also stop chase target and auto looter when cavebot stops
         if self.chase_target_service is not None:
             try:
                 self.chase_target_service.stop()
@@ -152,7 +140,8 @@ class CaveBotService:
 
     def _worker(self) -> None:
         state = self.runtime.state.cavebot
-        self.runtime.ui.log(f"▶ CaveBot started — script: {state.script_name}")
+        router = self.runtime.input_router
+        self.runtime.ui.log(f"▶ CaveBot started — script: {state.script_name} (input: {self.runtime.state.input_mode})")
 
         script_data = self.load_script(state.script_name)
         if not script_data:
@@ -167,9 +156,6 @@ class CaveBotService:
             self.runtime.ui.module_state_changed("cavebot", False)
             return
 
-        mouse = pynput_mouse.Controller() if HAS_PYNPUT else None
-
-        # Start companion services if configured
         self._start_companions()
 
         try:
@@ -178,15 +164,12 @@ class CaveBotService:
                 if self._stop_event.is_set():
                     break
 
-                # Re-load script data each iteration
                 script_data = self.load_script(state.script_name)
                 if not script_data:
                     break
 
-                # Find current active waypoint
                 current_idx = self._find_active_waypoint(script_data)
                 if current_idx is None:
-                    # Loop back to start
                     if script_data:
                         script_data[0]["status"] = True
                         self.save_script(state.script_name, script_data)
@@ -197,33 +180,30 @@ class CaveBotService:
                 wp_x = waypoint.get("x", 0)
                 wp_y = waypoint.get("y", 0)
                 wp_type = waypoint.get("type", 1)
-
                 total = len(script_data)
                 self.runtime.ui.log(f"📍 [{current_idx + 1}/{total}] {mark_name or f'({wp_x},{wp_y})'} type={wp_type}")
 
                 # ── Phase 1: Walk to waypoint ─────────────────
-                if state.walking_enabled and mouse:
-                    self._walk_to_waypoint(mark_name, wp_x, wp_y, state, mouse)
+                if state.walking_enabled:
+                    self._walk_to_waypoint(mark_name, wp_x, wp_y, state, router)
 
                 # ── Phase 2: Stand still ──────────────────────
                 if state.stand_seconds > 0:
                     if not self._wait_interruptible(state.stand_seconds):
                         break
 
-                # ── Phase 3: Attack window (let chase target work) ──
+                # ── Phase 3: Attack window ────────────────────
                 if state.monsters_to_attack:
-                    # Wait while chase target attacks — check every 0.5s
                     attack_time = max(2.0, state.stand_seconds * 2)
                     if not self._wait_interruptible(attack_time):
                         break
 
                 # ── Phase 4: Loot ─────────────────────────────
                 if state.looting_enabled and state.sqm_positions:
-                    self._loot_cycle(state, mouse)
-                    # Second pass for nearby corpses
+                    self._loot_cycle(state, router)
                     if not self._wait_interruptible(random.uniform(0.3, 0.6)):
                         break
-                    self._loot_cycle(state, mouse)
+                    self._loot_cycle(state, router)
 
                 # ── Advance to next waypoint ──────────────────
                 script_data[current_idx]["status"] = False
@@ -242,7 +222,6 @@ class CaveBotService:
     # ── Companion services ───────────────────────────────────────────
 
     def _start_companions(self) -> None:
-        """Start chase target and auto looter if they are configured."""
         if self.chase_target_service is not None:
             try:
                 chase_state = self.runtime.state.chase_target
@@ -260,27 +239,15 @@ class CaveBotService:
 
     # ── Walking ──────────────────────────────────────────────────────
 
-    def _walk_to_waypoint(self, mark_name: str, wp_x: int, wp_y: int, state, mouse) -> None:
-        """Navigate to a waypoint using minimap crosshair click.
-
-        If the waypoint has coordinates (x, y), clicks at that position
-        on the minimap. Otherwise falls back to minimap centre-click.
-        """
-        if not HAS_PYNPUT:
-            return
-
+    def _walk_to_waypoint(self, mark_name: str, wp_x: int, wp_y: int, state, router) -> None:
         map_region = state.map_region
         if not map_region:
             self.runtime.ui.log("⚠️  Map region not configured — cannot walk")
             return
 
-        # Determine click position
         if wp_x > 0 and wp_y > 0:
-            # Use waypoint coordinates directly
-            click_x = wp_x
-            click_y = wp_y
+            click_x, click_y = wp_x, wp_y
         else:
-            # Fallback to minimap centre
             click_x = map_region[0] + map_region[2] // 2
             click_y = map_region[1] + map_region[3] // 2
 
@@ -289,8 +256,7 @@ class CaveBotService:
             if self._stop_event.is_set():
                 return
 
-            jitter_x = click_x + random.randint(-3, 3)
-            jitter_y = click_y + random.randint(-3, 3)
+            jx, jy = click_x + random.randint(-3, 3), click_y + random.randint(-3, 3)
 
             if not self.runtime.execution.acquire(
                 self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
@@ -300,44 +266,35 @@ class CaveBotService:
                 continue
 
             try:
-                HumanMouse.move(mouse, (jitter_x, jitter_y))
-                time.sleep(random.uniform(0.03, 0.08))
-                mouse.click(pynput_mouse.Button.left)
+                router.human_move_and_click(jx, jy, "left")
                 time.sleep(INPUT_POST_CLICK_SLEEP)
             finally:
                 self.runtime.execution.release()
 
-            # Wait for character to start moving
             if not self._wait_interruptible(random.uniform(0.8, 1.2)):
                 return
 
-            # Walk-for-debug: do arrow-key refresh to force minimap update
             if state.walk_for_debug:
-                self._do_arrow_refresh()
+                self._do_arrow_refresh(router)
 
-        self.runtime.ui.log(f"   Walked → ({click_x}, {click_y})")
+        mode = self.runtime.state.input_mode
+        self.runtime.ui.log(f"   Walked → ({click_x}, {click_y}) [{mode}]")
 
-    def _do_arrow_refresh(self) -> None:
-        """Press arrow keys briefly to force minimap refresh (debug mode)."""
-        if not HAS_PYNPUT:
-            return
-        keyboard = pynput_kb.Controller()
+    def _do_arrow_refresh(self, router) -> None:
         if not self.runtime.execution.acquire(
             self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
         ):
             return
         try:
-            session = SafeKeyboardSession(keyboard)
-            for key in [pynput_kb.Key.up, pynput_kb.Key.left, pynput_kb.Key.down, pynput_kb.Key.right]:
-                session.tap(key, hold_seconds=0.04)
+            for key in ["up", "left", "down", "right"]:
+                router.tap_key(key, hold_seconds=0.04)
                 time.sleep(0.04)
         finally:
             self.runtime.execution.release()
 
     # ── Looting ──────────────────────────────────────────────────────
 
-    def _loot_cycle(self, state, mouse) -> None:
-        """Right-click SQM positions around the character to pick up loot."""
+    def _loot_cycle(self, state, router) -> None:
         if not state.sqm_positions:
             return
 
@@ -351,13 +308,9 @@ class CaveBotService:
                 continue
 
             try:
-                jittered = (
-                    sqm[0] + random.randint(-2, 2),
-                    sqm[1] + random.randint(-2, 2),
-                )
-                HumanMouse.move(mouse, jittered)
-                time.sleep(random.uniform(0.02, 0.05))
-                mouse.click(pynput_mouse.Button.right)
+                jx = sqm[0] + random.randint(-2, 2)
+                jy = sqm[1] + random.randint(-2, 2)
+                router.right_click(jx, jy)
                 time.sleep(random.uniform(0.08, 0.15))
             finally:
                 self.runtime.execution.release()

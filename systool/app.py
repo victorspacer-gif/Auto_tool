@@ -131,6 +131,9 @@ class SystemMonitorApp:
         # Wire companion services into cavebot for orchestration
         self.cavebot_service.chase_target_service = self.chase_target_service
         self.cavebot_service.auto_looter_service = self.auto_looter_service
+        # Create and wire input router
+        self.input_router = self.container.input_router
+        self.runtime.input_router = self.input_router
         self.runtime_timer_service = self.container.runtime_timer_service
 
 

@@ -296,6 +296,11 @@ class AppState:
     chase_target: ChaseTargetState = dataclasses.field(default_factory=ChaseTargetState)
     auto_looter: AutoLooterState = dataclasses.field(default_factory=AutoLooterState)
 
+    # Input mode: "hardware" (physical cursor via pynput) or "direct" (Win32 SendMessage)
+    input_mode: str = "hardware"
+    game_window_title: str = ""  # Title fragment for detecting the game window
+    game_hwnd: int | None = None  # Explicit window handle (overrides title search)
+
     light_process_name: str = "miracle_gl.exe"
     light_memory_backend: str = "pymem"
     attached_window_title: str = ""

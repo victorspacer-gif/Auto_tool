@@ -164,11 +164,13 @@ except ImportError:
     HAS_PYNPUT = False
 
 try:
+    import win32api
     import win32con
     import win32gui
 
     HAS_WIN32 = True
 except ImportError:
+    win32api = None
     win32con = None
     win32gui = None
     HAS_WIN32 = False
@@ -400,6 +402,7 @@ class AppRuntime:
         self.cap_service: object | None = None
         self.food_service: object | None = None
         self.runtime_timer_stop = threading.Event()
+        self.input_router: object | None = None
 
 
 @dataclass(slots=True)

@@ -64,6 +64,11 @@ class ServiceContainer:
         return self._lazy("auto_looter_service", AutoLooterService, (self.runtime,))
 
     @property
+    def input_router(self):
+        from .services.input_router import InputRouter
+        return self._lazy("input_router", InputRouter, (self.runtime,))
+
+    @property
     def position_capture(self):
         from .services import PositionCaptureService
         return self._lazy("position_capture", PositionCaptureService, (self.runtime,))

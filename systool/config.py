@@ -220,6 +220,7 @@ class ConfigSerializer:
             "mp_pointer_address_hex", "mp_source", "mp_value",
             "cap_pointer_address_hex", "cap_source", "cap_value",
             "food_pointer_address_hex", "food_source", "food_value",
+            "input_mode", "game_window_title", "game_hwnd",
         ]
         for attr in direct_attrs:
             result[attr] = ConfigSerializer._to_json_compatible(getattr(state, attr))
@@ -567,6 +568,14 @@ class ConfigSerializer:
         state.light_last_mode = get_str("light_last_mode", state.light_last_mode)
         state.light_last_color_address_hex = get_str("light_last_color_address_hex", state.light_last_color_address_hex)
         state.light_last_intensity_address_hex = get_str("light_last_intensity_address_hex", state.light_last_intensity_address_hex)
+        state.input_mode = get_str("input_mode", state.input_mode)
+        state.game_window_title = get_str("game_window_title", state.game_window_title)
+        raw_hwnd = cfg.get("game_hwnd")
+        if raw_hwnd not in (None, "", "None"):
+            try:
+                state.game_hwnd = int(raw_hwnd)
+            except (TypeError, ValueError):
+                state.game_hwnd = None
 
         raw_original_color = cfg.get("light_original_color_value")
         raw_original_intensity = cfg.get("light_original_intensity_value")
