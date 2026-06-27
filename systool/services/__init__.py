@@ -1,5 +1,6 @@
 """Service package preserving the original public API."""
 
+from .cavebot import CaveBotService
 from .fishing import FishingService
 from .healer import AutoHealerService
 from .hotkeys import HotkeyJobService, HotkeyService
@@ -31,6 +32,7 @@ __all__ = [
     "AntiAfkService",
     "AutoHealerService",
     "CapService",
+    "CaveBotService",
     "CharacterStatusService",
     "FoodService",
     "FishingService",

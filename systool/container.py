@@ -49,6 +49,11 @@ class ServiceContainer:
     # -- Service properties ------------------------------------------------
 
     @property
+    def cavebot_service(self):
+        from .services import CaveBotService
+        return self._lazy("cavebot_service", CaveBotService, (self.runtime,))
+
+    @property
     def position_capture(self):
         from .services import PositionCaptureService
         return self._lazy("position_capture", PositionCaptureService, (self.runtime,))

@@ -159,6 +159,41 @@ class SandboxState:
 
 
 @dataclasses.dataclass
+class CaveBotState:
+    """State for the CaveBot automation module."""
+    active: bool = False
+    script_name: str = ""
+    stand_seconds: int = 1
+    walking_enabled: bool = True
+    walk_for_debug: bool = False
+    attack_players: bool = False
+    force_attack: bool = False
+    follow_mode: bool = True
+    monsters_to_attack: list[str] = dataclasses.field(default_factory=list)
+    priority_one: int = 1
+    priority_two: int = 2
+    priority_three: int = 3
+    priority_four: int = 4
+    player_seen: bool = False
+    attacking_you: bool = False
+    cant_attack_suspend: bool = False
+    suspend_after: int = 5
+    monsters_range: int = 3
+    attack_mode: str = "normal"
+    cap_below_than: int = 0
+    drop_items: bool = False
+    load_auto_seller: bool = False
+    load_auto_banker: bool = False
+    looting_enabled: bool = True
+    skill_key: str = "f1"  # Key to use for targeting monster
+    # Region for map minimap click area
+    map_region: tuple[int, int, int, int] | None = None
+    # SQM click positions for looting (9 around character)
+    sqm_positions: list[tuple[int, int]] = dataclasses.field(default_factory=list)
+    battle_list_x: int = 0  # X position of battle list for clicking
+
+
+@dataclasses.dataclass
 class AppState:
     hotkey_bindings: dict[str, str] = dataclasses.field(
         default_factory=lambda: {
@@ -213,6 +248,7 @@ class AppState:
     rune: RuneState = dataclasses.field(default_factory=RuneState)
     healer: HealerState = dataclasses.field(default_factory=HealerState)
     sandbox: SandboxState = dataclasses.field(default_factory=SandboxState)
+    cavebot: CaveBotState = dataclasses.field(default_factory=CaveBotState)
 
     light_process_name: str = "miracle_gl.exe"
     light_memory_backend: str = "pymem"
@@ -360,3 +396,28 @@ class AppState:
     healer_rune_pos = _group_property("healer", "rune_pos")
     healer_mouse_speed = _group_property("healer", "mouse_speed")
     healer_rune_delay_ms = _group_property("healer", "rune_delay_ms")
+
+    cavebot_active = _group_property("cavebot", "active")
+    cavebot_script_name = _group_property("cavebot", "script_name")
+    cavebot_stand_seconds = _group_property("cavebot", "stand_seconds")
+    cavebot_walking_enabled = _group_property("cavebot", "walking_enabled")
+    cavebot_walk_for_debug = _group_property("cavebot", "walk_for_debug")
+    cavebot_attack_players = _group_property("cavebot", "attack_players")
+    cavebot_force_attack = _group_property("cavebot", "force_attack")
+    cavebot_follow_mode = _group_property("cavebot", "follow_mode")
+    cavebot_monsters_to_attack = _group_property("cavebot", "monsters_to_attack")
+    cavebot_player_seen = _group_property("cavebot", "player_seen")
+    cavebot_attacking_you = _group_property("cavebot", "attacking_you")
+    cavebot_cant_attack_suspend = _group_property("cavebot", "cant_attack_suspend")
+    cavebot_suspend_after = _group_property("cavebot", "suspend_after")
+    cavebot_monsters_range = _group_property("cavebot", "monsters_range")
+    cavebot_attack_mode = _group_property("cavebot", "attack_mode")
+    cavebot_cap_below_than = _group_property("cavebot", "cap_below_than")
+    cavebot_drop_items = _group_property("cavebot", "drop_items")
+    cavebot_load_auto_seller = _group_property("cavebot", "load_auto_seller")
+    cavebot_load_auto_banker = _group_property("cavebot", "load_auto_banker")
+    cavebot_looting_enabled = _group_property("cavebot", "looting_enabled")
+    cavebot_skill_key = _group_property("cavebot", "skill_key")
+    cavebot_map_region = _group_property("cavebot", "map_region")
+    cavebot_sqm_positions = _group_property("cavebot", "sqm_positions")
+    cavebot_battle_list_x = _group_property("cavebot", "battle_list_x")

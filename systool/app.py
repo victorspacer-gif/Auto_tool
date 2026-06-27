@@ -59,6 +59,7 @@ from .services import HAS_LIGHT_MODULE, HotkeyService
 from .theme import BG, BLUE, BODY, BOLD, FG, GREEN, HEADER, MONO, MUTED, ORANGE, PANEL, PURPLE, RED, SMALL, SMALL_B, TEAL
 from .ui.tabs import (
     ActivityControlTab,
+    CaveBotTab,
     CharacterStatusTab,
     ConfigTab,
     FishingTab,
@@ -124,6 +125,7 @@ class SystemMonitorApp:
         self.runtime.food_service = self.food_service
         self.rune_service = self.container.rune_service
         self.job_service = self.container.job_service
+        self.cavebot_service = self.container.cavebot_service
         self.runtime_timer_service = self.container.runtime_timer_service
 
 
@@ -351,6 +353,7 @@ class SystemMonitorApp:
         char_status_tab = tk.Frame(notebook, bg=BG)
         variables_tab = tk.Frame(notebook, bg=BG)
         fish_tab = tk.Frame(notebook, bg=BG)
+        cavebot_tab = tk.Frame(notebook, bg=BG)
         hotkeys_tab = tk.Frame(notebook, bg=BG)
         config_tab = tk.Frame(notebook, bg=BG)
 
@@ -363,6 +366,7 @@ class SystemMonitorApp:
         self.char_status_tab = char_status_tab
         self.variables_tab = variables_tab
         self.fish_tab = fish_tab
+        self.cavebot_tab = cavebot_tab
         self.hotkeys_tab = hotkeys_tab
         self.config_tab = config_tab
 
@@ -375,6 +379,7 @@ class SystemMonitorApp:
             ("char_status", char_status_tab, "📊  Character Status"),
             ("variables", variables_tab, "🔬  Variables"),
             ("fish", fish_tab, "🎣  Fishing Session"),
+            ("cavebot", cavebot_tab, "🤖  CaveBot"),
             ("hotkeys", hotkeys_tab, "⌨️  Hotkeys"),
             ("config", config_tab, "💾  Config"),
         ]
@@ -458,6 +463,13 @@ class SystemMonitorApp:
             fish_tab,
             self.runtime,
             {"fishing_service": self.fishing_service, "position_capture": self.position_capture},
+            tab_helpers,
+            self.ui_vars,
+        )
+        self.cavebot_tab_ui = CaveBotTab(
+            cavebot_tab,
+            self.runtime,
+            {"cavebot_service": self.cavebot_service, "position_capture": self.position_capture},
             tab_helpers,
             self.ui_vars,
         )
@@ -1252,6 +1264,7 @@ class SystemMonitorApp:
             stop_rune=self.rune_service.stop,
         )
         self.healer_service.stop()
+        self.cavebot_service.stop()
 
     def attach_light_process(self) -> None:
         self._poll_settings(schedule_next=False)

@@ -1,6 +1,7 @@
 """Tab components for the SystemMonitor UI."""
 
 from .activity_control_tab import ActivityControlTab
+from .cavebot_tab import CaveBotTab
 from .character_status_tab import CharacterStatusTab
 from .config_tab import ConfigTab
 from .fishing_tab import FishingTab
@@ -13,6 +14,7 @@ from .variables_tab import VariablesTab
 
 __all__ = [
     "ActivityControlTab",
+    "CaveBotTab",
     "CharacterStatusTab",
     "ConfigTab",
     "FishingTab",

@@ -101,6 +101,13 @@ BYTE_VALUE_MIN: int = 0
 BYTE_VALUE_MAX: int = 255
 LIGHT_FREEZE_INTERVAL_MS_MIN: int = 30
 
+# ── CaveBot ──────────────────────────────────────────────────────────
+CAVEBOT_STAND_SECONDS_DEFAULT: int = 1
+CAVEBOT_SUSPEND_AFTER_DEFAULT: int = 5
+CAVEBOT_MONSTERS_RANGE_DEFAULT: int = 3
+CAVEBOT_SKILL_KEY_DEFAULT: str = "f1"
+CAVEBOT_ATTACK_MODE_DEFAULT: str = "normal"
+
 # Defaults used when reading legacy or incomplete saved job payloads.
 JOB_JSON_MIN_MS_DEFAULT: int = 1_000
 JOB_JSON_MAX_MS_DEFAULT: int = 3_000
@@ -108,7 +115,8 @@ JOB_JSON_MAX_MS_DEFAULT: int = 3_000
 
 # Fields that need special handling during serialization (non-dataclass types).
 _JSON_SPECIAL = frozenset({
-    "hotkey_bindings", "jobs", "fish_spots", "__meta__",
+    "hotkey_bindings", "jobs", "fish_spots", "__meta__", "cavebot_monsters_to_attack",
+    "cavebot_sqm_positions", "cavebot_map_region",
 })
 
 
@@ -165,7 +173,7 @@ class ConfigSerializer:
         result: dict[str, object] = {}
 
         # Flatten all nested dataclass groups using asdict-based approach.
-        for group_name in ("alarm", "char_status", "fishing", "rune", "healer"):
+        for group_name in ("alarm", "char_status", "fishing", "rune", "healer", "cavebot"):
             group_obj = getattr(state, group_name)
             if is_dataclass(group_obj):
                 flat = _flatten(group_obj)
@@ -581,3 +589,50 @@ class ConfigSerializer:
             )
             state.jobs.append(job)
             state.job_counter = max(state.job_counter, job.job_id)
+
+        # ── CaveBot ────────────────────────────────────────────────────
+        state.cavebot.script_name = get_str("cavebot.script_name", state.cavebot.script_name)
+        state.cavebot.stand_seconds = max(NON_NEGATIVE_INT_MIN, get_int("cavebot.stand_seconds", state.cavebot.stand_seconds))
+        state.cavebot.walking_enabled = get_bool("cavebot.walking_enabled", state.cavebot.walking_enabled)
+        state.cavebot.walk_for_debug = get_bool("cavebot.walk_for_debug", state.cavebot.walk_for_debug)
+        state.cavebot.attack_players = get_bool("cavebot.attack_players", state.cavebot.attack_players)
+        state.cavebot.force_attack = get_bool("cavebot.force_attack", state.cavebot.force_attack)
+        state.cavebot.follow_mode = get_bool("cavebot.follow_mode", state.cavebot.follow_mode)
+        state.cavebot.looting_enabled = get_bool("cavebot.looting_enabled", state.cavebot.looting_enabled)
+        state.cavebot.player_seen = get_bool("cavebot.player_seen", state.cavebot.player_seen)
+        state.cavebot.attacking_you = get_bool("cavebot.attacking_you", state.cavebot.attacking_you)
+        state.cavebot.cant_attack_suspend = get_bool("cavebot.cant_attack_suspend", state.cavebot.cant_attack_suspend)
+        state.cavebot.suspend_after = max(NON_NEGATIVE_INT_MIN, get_int("cavebot.suspend_after", state.cavebot.suspend_after))
+        state.cavebot.monsters_range = max(NON_NEGATIVE_INT_MIN, get_int("cavebot.monsters_range", state.cavebot.monsters_range))
+        state.cavebot.attack_mode = get_str("cavebot.attack_mode", state.cavebot.attack_mode)
+        state.cavebot.cap_below_than = max(NON_NEGATIVE_INT_MIN, get_int("cavebot.cap_below_than", state.cavebot.cap_below_than))
+        state.cavebot.drop_items = get_bool("cavebot.drop_items", state.cavebot.drop_items)
+        state.cavebot.skill_key = get_str("cavebot.skill_key", state.cavebot.skill_key)
+        state.cavebot.battle_list_x = max(NON_NEGATIVE_INT_MIN, get_int("cavebot.battle_list_x", state.cavebot.battle_list_x))
+        state.cavebot.load_auto_seller = get_bool("cavebot.load_auto_seller", state.cavebot.load_auto_seller)
+        state.cavebot.load_auto_banker = get_bool("cavebot.load_auto_banker", state.cavebot.load_auto_banker)
+
+        # ── CaveBot list fields ────────────────────────────────────────
+        raw_monsters = cfg.get("cavebot.monsters_to_attack")
+        if raw_monsters and raw_monsters not in ("None", ""):
+            try:
+                parsed = json.loads(raw_monsters) if isinstance(raw_monsters, str) else raw_monsters
+                state.cavebot.monsters_to_attack = list(parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.cavebot.monsters_to_attack = []
+
+        raw_sqm = cfg.get("cavebot.sqm_positions")
+        if raw_sqm and raw_sqm not in ("None", ""):
+            try:
+                parsed = json.loads(raw_sqm) if isinstance(raw_sqm, str) else raw_sqm
+                state.cavebot.sqm_positions = [tuple(p) for p in parsed]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.cavebot.sqm_positions = []
+
+        raw_map_region = cfg.get("cavebot.map_region")
+        if raw_map_region and raw_map_region not in ("None", ""):
+            try:
+                parsed = json.loads(raw_map_region) if isinstance(raw_map_region, str) else raw_map_region
+                state.cavebot.map_region = tuple(int(v) for v in parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.cavebot.map_region = None
