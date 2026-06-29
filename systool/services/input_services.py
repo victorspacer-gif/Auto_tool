@@ -542,7 +542,7 @@ class RightClickService:
             self.runtime.ui.log("❌ pynput missing")
             state.rclick_active = False
             return
-        mouse = pynput_mouse.Controller()
+        router = self.runtime.input_router
         while not self.runtime.rclick_stop.is_set():
             self.runtime.pause.wait()
             if self.runtime.rclick_stop.is_set():
@@ -617,15 +617,11 @@ class RightClickService:
                 continue
             try:
                 click_target = HumanMouse.jitter(target, rclick_jitter)
-                HumanMouse.move(mouse, click_target)
+                router.human_move_and_click(click_target[0], click_target[1], "right")
                 for click_index in range(clicks_to_send):
-                    # Add slight random variation between clicks for natural rhythm
-                    # Convert burst_interval_ms to seconds (/1000); add jitter on top
                     inter_click = max(RCCLICK_INTER_CLICK_MIN, burst_interval_ms / 1000.0 + random.uniform(*RCCLICK_INTER_CLICK_JITTER))
                     time.sleep(inter_click)
-                    mouse.click(pynput_mouse.Button.right, 1)
-                # Settle after all clicks — lets the game register and adds human-like pause
-                # Convert post_settle_ms to seconds (/1000)
+                    router.right_click(click_target[0], click_target[1])
                 time.sleep(post_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ R-click: {exc}")

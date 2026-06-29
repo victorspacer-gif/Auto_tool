@@ -197,42 +197,8 @@ class CaveBotTab:
             cb.pack(side="left", padx=2)
 
         # ═══════════════════════════════════════════════════════════
-        # RIGHT COLUMN — Input Settings + Chase Target + Auto Looter
+        # RIGHT COLUMN — Chase Target + Auto Looter
         # ═══════════════════════════════════════════════════════════
-
-        # ── Input Mode ──────────────────────────────────────────
-        input_panel = tk.LabelFrame(
-            right, text=" 🖱️  Input Mode ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10
-        )
-        input_panel.pack(fill="x", pady=(0, 6))
-
-        self._input_mode_var = tk.StringVar(value=self.runtime.state.input_mode)
-        modes = [("Hardware (physical cursor)", "hardware"), ("Direct (window injection)", "direct")]
-        for text, value in modes:
-            rb = tk.Radiobutton(
-                input_panel, text=text, variable=self._input_mode_var, value=value,
-                bg=PANEL, fg=FG, selectcolor=BG, font=SMALL,
-                command=self._sync_input_mode
-            )
-            rb.pack(anchor="w")
-
-        hwnd_frame = tk.Frame(input_panel, bg=PANEL)
-        hwnd_frame.pack(fill="x", pady=(4, 0))
-        tk.Label(hwnd_frame, text="Window Title:", font=SMALL, bg=PANEL, fg=FG).pack(side="left", padx=(0, 4))
-        self._window_title_var = tk.StringVar(value=self.runtime.state.game_window_title)
-        tk.Entry(
-            hwnd_frame, textvariable=self._window_title_var, font=MONO, bg=BG, fg=FG,
-            relief="flat", bd=2, width=18
-        ).pack(side="left", fill="x", expand=True)
-        self.helpers["btn"](hwnd_frame, "Detect", self._detect_window, BLUE).pack(side="left", padx=(4, 0))
-
-        hwnd_info = tk.Frame(input_panel, bg=PANEL)
-        hwnd_info.pack(fill="x", pady=(4, 0))
-        self._hwnd_label = tk.Label(
-            hwnd_info, text=f"HWND: {self.runtime.state.game_hwnd or '—'}",
-            font=SMALL, bg=PANEL, fg=MUTED
-        )
-        self._hwnd_label.pack(side="left")
 
         # ── Chase Target ──────────────────────────────────────────
         chase_panel = tk.LabelFrame(
@@ -713,46 +679,3 @@ class CaveBotTab:
             self._looter_sqm_listbox.delete(0, tk.END)
             for pos in self.runtime.state.auto_looter.sqm_positions:
                 self._looter_sqm_listbox.insert(tk.END, f"{pos[0]}, {pos[1]}")
-
-    # ═══════════════════════════════════════════════════════════════
-    # Input Mode Helpers
-    # ═══════════════════════════════════════════════════════════════
-
-    def _sync_input_mode(self) -> None:
-        """Sync the radio button selection to runtime state."""
-        self.runtime.state.input_mode = self._input_mode_var.get()
-        mode_label = "direct (Win32)" if self._input_mode_var.get() == "direct" else "hardware (pynput)"
-        self.runtime.ui.log(f"🖱️ Input mode set to {mode_label}")
-
-    def _detect_window(self) -> None:
-        """Try to find the game window by title and store its HWND."""
-        title = self._window_title_var.get().strip()
-        if not title:
-            self.runtime.ui.log("⚠️  Enter a window title fragment first")
-            return
-        try:
-            import win32gui
-            found = [None]
-
-            def enum_cb(hwnd, _):
-                if found[0]:
-                    return
-                try:
-                    win_title = win32gui.GetWindowText(hwnd)
-                    if title.lower() in win_title.lower() and win32gui.IsWindowVisible(hwnd):
-                        found[0] = hwnd
-                except Exception:
-                    pass
-
-            win32gui.EnumWindows(enum_cb, None)
-            if found[0]:
-                hwnd = found[0]
-                self.runtime.state.game_hwnd = hwnd
-                if self._hwnd_label:
-                    self._hwnd_label.config(text=f"HWND: {hwnd}")
-                actual_title = win32gui.GetWindowText(hwnd)
-                self.runtime.ui.log(f"✅ Detected window: '{actual_title}' (HWND {hwnd})")
-            else:
-                self.runtime.ui.log(f"❌ No visible window found matching '{title}'")
-        except Exception as exc:
-            self.runtime.ui.log(f"❌ Window detection error: {exc}")

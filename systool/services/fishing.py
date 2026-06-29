@@ -10,7 +10,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-from ..runtime import AppRuntime, HAS_PYNPUT, pynput_mouse
+from ..runtime import AppRuntime
 from ..constants import (
     FISHING_AUTO_RESTART_DELAY,
     FISHING_BONUS_MULTIPLIER,
@@ -94,14 +94,7 @@ class FishingService:
         state = self.runtime.state
         self.runtime.ui.log(f"▶ Fishing start — rod={state.fish_rod_pos}  spots={len(state.fish_spots)}")
         stopped_by_food = False
-        if not HAS_PYNPUT:
-            self.runtime.ui.log("❌ pynput missing")
-            state.fish_active = False
-            state.fish_session_remaining_secs = 0
-            state.fish_session_deadline = None
-            self.runtime.ui.module_state_changed("fish", False)
-            return
-        mouse = pynput_mouse.Controller()
+        router = self.runtime.input_router
         deck = list(state.fish_spots)
         random.shuffle(deck)
         index = 0
@@ -197,10 +190,8 @@ class FishingService:
                         break
                     continue
                 rod_target = HumanMouse.jitter(rod, rod_jitter)
-                # Duration scales inversely with mouse_speed: higher speed → shorter duration.
-                HumanMouse.move(mouse, rod_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / mouse_speed))
+                router.human_move_and_click(rod_target[0], rod_target[1], "right", duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / mouse_speed))
                 time.sleep(random.uniform(FISHING_PAUSE_SHORT_MIN, FISHING_PAUSE_SHORT_MAX))
-                mouse.click(pynput_mouse.Button.right, 1)
                 self.runtime.ui.log(f"🎣 Rod clicked at {rod_target}")
                 # Configurable delay between rod-click and casting to spot.
                 time.sleep(random.uniform(cast_min, cast_max) / 1000.0)
@@ -210,10 +201,8 @@ class FishingService:
                     index = 0
                 spot_target = HumanMouse.jitter(deck[index], spot_jitter)
                 index += 1
-                # Duration scales inversely with mouse_speed: higher speed → shorter duration.
-                HumanMouse.move(mouse, spot_target, duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / mouse_speed))
+                router.human_move_and_click(spot_target[0], spot_target[1], "left", duration=max(FISHING_MIN_MOVE_DURATION, FISHING_MOVE_BASE_DURATION / mouse_speed))
                 time.sleep(random.uniform(FISHING_PAUSE_MEDIUM_MIN, FISHING_PAUSE_MEDIUM_MAX))
-                mouse.click(pynput_mouse.Button.left, 1)
                 with self.runtime.record_lock:
                     state.stats["fish_casts"] += 1
                 self.runtime.ui.log(f"🪣 Cast → {spot_target}")

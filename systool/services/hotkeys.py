@@ -13,7 +13,7 @@ from ..models import HotkeyJob
 from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb
 from ..constants import HOTKEY_EXEC_MAX_WAIT, RCCLICK_INTER_CLICK_MIN, RCCLICK_INTER_CLICK_JITTER, HOTKEY_FOCUS_RESTORE_DELAY, HOTKEY_KEY_TAP_HOLD
 from ..theme import GREEN, RED
-from .input_services import SafeKeyboardSession, WindowService
+from .input_services import WindowService
 
 class HotkeyJobService:
     def __init__(self, runtime: AppRuntime) -> None:
@@ -83,7 +83,6 @@ class HotkeyJobService:
             self.runtime.ui.log("❌ pynput missing")
             job.running = False
             return
-        keyboard = pynput_kb.Controller()
         pressed_key = self.key_map.get(job.key.upper())
         if not pressed_key:
             self.runtime.ui.log(f"❌ Unknown key {job.key}")
@@ -127,7 +126,7 @@ class HotkeyJobService:
                     for _ in range(count):
                         if job.stop_evt.is_set():
                             break
-                        self._press_key(keyboard, pressed_key)
+                        self._press_key(job)
                         sent += 1
                         # Add slight random variation between burst clicks for natural rhythm
                         inter_click = max(RCCLICK_INTER_CLICK_MIN, job.burst_int_ms / 1000.0 + random.uniform(*RCCLICK_INTER_CLICK_JITTER))
@@ -142,7 +141,7 @@ class HotkeyJobService:
                     self.runtime.ui.log(f"⚡ Job #{job.job_id} burst {job.key} ×{sent}")
             else:
                 try:
-                    self._press_key(keyboard, pressed_key)
+                    self._press_key(job)
                 finally:
                     self.runtime.execution.release()
                 with self.runtime.record_lock:
@@ -156,13 +155,8 @@ class HotkeyJobService:
         self.runtime.ui.log(f"⏹ Job #{job.job_id} stopped")
         self.runtime.ui.job_state_changed(job)
 
-    @staticmethod
-    def _press_key(keyboard, pressed_key) -> None:
-        session = SafeKeyboardSession(keyboard)
-        try:
-            session.tap(pressed_key, hold_seconds=HOTKEY_KEY_TAP_HOLD)
-        finally:
-            session.release_all()
+    def _press_key(self, job: HotkeyJob) -> None:
+        self.runtime.input_router.tap_key(job.key.lower(), hold_seconds=HOTKEY_KEY_TAP_HOLD)
 
 class HotkeyService:
     @staticmethod

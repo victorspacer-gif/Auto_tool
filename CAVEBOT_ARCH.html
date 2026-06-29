@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CaveBot — Architecture Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Segoe UI', 'SF Pro', system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+    min-height: 100vh;
+  }
+  h1 { font-size: 1.6rem; font-weight: 300; color: #58a6ff; margin-bottom: 0.25rem; letter-spacing: 0.02em; }
+  .subtitle { color: #8b949e; font-size: 0.85rem; margin-bottom: 2rem; text-align: center; }
+
+  .diagram {
+    width: 100%;
+    max-width: 1000px;
+    position: relative;
+  }
+
+  /* ── Service Block ─────────────────────────────────────────────── */
+  .service {
+    background: linear-gradient(135deg, #161b22 0%, #1c2333 100%);
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 1.2rem 1.4rem;
+    margin-bottom: 1.4rem;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .service:hover { border-color: #58a6ff; }
+
+  .service-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
+  }
+  .service-header .icon { font-size: 1.3rem; }
+  .service-header .name { font-weight: 600; font-size: 1rem; color: #f0f6fc; }
+  .service-header .badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 99px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .badge-orchestrator { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb55; }
+  .badge-worker     { background: #2ea04333; color: #3fb950; border: 1px solid #2ea04355; }
+  .badge-infra      { background: #8b949e33; color: #8b949e; border: 1px solid #8b949e44; }
+
+  .service-desc {
+    font-size: 0.82rem;
+    color: #8b949e;
+    margin-bottom: 0.6rem;
+    line-height: 1.5;
+  }
+
+  .fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .fields .field {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.72rem;
+    font-family: 'JetBrains Mono', 'Cascadia Mono', monospace;
+    color: #c9d1d9;
+  }
+  .fields .field span { color: #7ee787; }
+  .fields .field em  { color: #d2a8ff; font-style: normal; }
+
+  /* ── Arrow Connectors ──────────────────────────────────────────── */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+    color: #484f58;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .connector .line {
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(90deg, #30363d 0%, #484f58 50%, #30363d 100%);
+  }
+  .connector .arrow { font-size: 1rem; }
+
+  .flow-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0.4rem 0 0.6rem;
+  }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .flow-box {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.72rem;
+    text-align: center;
+    min-width: 80px;
+    color: #8b949e;
+  }
+  .flow-box strong { color: #f0f6fc; display: block; font-size: 0.8rem; }
+  .flow-arrow { color: #484f58; font-size: 1rem; }
+
+  /* ── Inline phase list ─────────────────────────────────────────── */
+  .phases {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .phase {
+    background: #1c2333;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
+    color: #8b949e;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .phase .num {
+    background: #30363d;
+    color: #c9d1d9;
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    font-weight: 700;
+    font-size: 0.65rem;
+  }
+
+  /* ── Legend ─────────────────────────────────────────────────────── */
+  .legend {
+    margin-top: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    justify-content: center;
+    font-size: 0.78rem;
+    color: #8b949e;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .dot-orange  { background: #d29922; }
+  .dot-blue    { background: #58a6ff; }
+  .dot-green   { background: #3fb950; }
+  .dot-purple  { background: #bc8cff; }
+
+  .footer {
+    margin-top: 2.5rem;
+    font-size: 0.72rem;
+    color: #484f58;
+    text-align: center;
+    border-top: 1px solid #21262d;
+    padding-top: 1.2rem;
+    width: 100%;
+    max-width: 1000px;
+  }
+  .footer a { color: #58a6ff; text-decoration: none; }
+
+  @media (max-width: 640px) {
+    .flow-row { flex-direction: column; gap: 0.5rem; }
+    .fields { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<h1>🤖 CaveBot — Architecture</h1>
+<p class="subtitle">Three co-operating background services · Dual-mode input router · JSON script system</p>
+
+<div class="diagram">
+
+  <!-- ═══════════════ CaveBotService ═══════════════ -->
+  <div class="service">
+    <div class="service-header">
+      <span class="icon">🤖</span>
+      <span class="name">CaveBotService</span>
+      <span class="badge badge-orchestrator">ORCHESTRATOR</span>
+    </div>
+    <div class="service-desc">
+      Waypoint walk orchestrator. Loads a scripted path from disk, walks each waypoint
+      by clicking coordinates on the minimap, then waits while companions handle
+      attack and looting. Loops back to waypoint 1 when the path is complete.
+    </div>
+
+    <div class="fields">
+      <div class="field"><span>script_name</span>  <em>str</em></div>
+      <div class="field"><span>stand_seconds</span> <em>int</em></div>
+      <div class="field"><span>walking_enabled</span> <em>bool</em></div>
+      <div class="field"><span>monsters_to_attack</span> <em>[str]</em></div>
+      <div class="field"><span>sqm_positions</span> <em>[(int,int)]</em></div>
+      <div class="field"><span>map_region</span> <em>(x,y,w,h)</em></div>
+      <div class="field"><span>battle_list_x</span> <em>int</em></div>
+      <div class="field"><span>skill_key</span> <em>str</em></div>
+      <div class="field"><span>follow_mode</span> <em>bool</em></div>
+      <div class="field"><span>attack_mode</span> <em>str</em></div>
+    </div>
+
+    <!-- Worker phases -->
+    <div class="phases">
+      <div class="phase"><span class="num">1</span> Walk to waypoint → minimap click</div>
+      <div class="phase"><span class="num">2</span> Stand still N seconds</div>
+      <div class="phase"><span class="num">3</span> Attack window ← ChaseTarget</div>
+      <div class="phase"><span class="num">4</span> Loot corpses 2×  ← AutoLooter</div>
+      <div class="phase"><span class="num">5</span> Advance → next waypoint</div>
+    </div>
+  </div>
+
+  <!-- Arrow: CaveBot ── starts ── ChaseTarget -->
+  <div class="connector">
+    <span class="line"></span>
+    <span style="color:#58a6ff">auto-starts companions</span>
+    <span class="line"></span>
+  </div>
+
+  <!-- Flow: CaveBot → ChaseTarget + AutoLooter side-by-side -->
+  <div class="flow-group">
+    <div class="flow-row">
+      <div class="flow-box">🤖 <strong>CaveBot</strong><br>Waypoint loop</div>
+      <span class="flow-arrow">▶</span>
+      <div class="service" style="flex:1; margin:0; min-width:260px;">
+        <div class="service-header">
+          <span class="icon">🎯</span>
+          <span class="name">ChaseTargetService</span>
+          <span class="badge badge-worker">WORKER</span>
+        </div>
+        <div class="service-desc">
+          Continuous battle-list scanner. Cycles through configured monster names,
+          presses the attack key, and clicks the battle list to re-target.
+          Repeats every <em>scan_interval_ms</em>.
+        </div>
+        <div class="fields">
+          <div class="field"><span>monster_names</span> <em>[str]</em></div>
+          <div class="field"><span>attack_key</span> <em>str</em></div>
+          <div class="field"><span>scan_interval_ms</span> <em>int</em></div>
+          <div class="field"><span>battle_list_x</span> <em>int</em></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-row" style="margin-top:0.6rem;">
+      <div class="flow-box">🤖 <strong>CaveBot</strong><br>Loot phase</div>
+      <span class="flow-arrow">▶</span>
+      <div class="service" style="flex:1; margin:0; min-width:260px;">
+        <div class="service-header">
+          <span class="icon">💰</span>
+          <span class="name">AutoLooterService</span>
+          <span class="badge badge-worker">WORKER</span>
+        </div>
+        <div class="service-desc">
+          Background corpse looter. Right-clicks all configured SQM positions
+          around the character. Runs continuously or on-demand via
+          <em>loot_once()</em>.
+        </div>
+        <div class="fields">
+          <div class="field"><span>sqm_positions</span> <em>[(int,int)]</em></div>
+          <div class="field"><span>loot_delay_min_ms</span> <em>int</em></div>
+          <div class="field"><span>loot_delay_max_ms</span> <em>int</em></div>
+          <div class="field"><span>jitter</span> <em>int</em></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Arrow: ALL services → InputRouter -->
+  <div class="connector">
+    <span class="line"></span>
+    <span style="color:#bc8cff">all input → InputRouter</span>
+    <span class="line"></span>
+  </div>
+
+  <!-- ═══════════════ InputRouter ═══════════════ -->
+  <div class="service">
+    <div class="service-header">
+      <span class="icon">🔌</span>
+      <span class="name">InputRouter</span>
+      <span class="badge badge-infra">INFRASTRUCTURE</span>
+    </div>
+    <div class="service-desc">
+      Dual-mode input abstraction. Every mouse click and key press from every
+      service passes through the InputRouter. The active mode is read from
+      <em>runtime.state.input_mode</em> and can be changed at runtime.
+    </div>
+
+    <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.6rem;">
+      <!-- Hardware mode card -->
+      <div style="flex:1; min-width:200px; background:#161b22; border:1px solid #2ea04355; border-radius:8px; padding:0.7rem;">
+        <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.4rem;">
+          <span style="font-size:1rem;">🖱️</span>
+          <strong style="color:#3fb950; font-size:0.85rem;">Hardware Mode</strong>
+        </div>
+        <div style="font-size:0.72rem; color:#8b949e; line-height:1.6;">
+          <code>pynput_mouse.Controller()</code><br>
+          <code>pynput_kb.Controller()</code><br>
+          <span style="color:#7ee787;">HumanMouse</span> bezier curves
+        </div>
+        <div style="font-size:0.72rem; color:#f0f6fc; margin-top:0.3rem;">
+          ✓ Physical cursor moves on screen<br>
+          ✗ Window must be in the foreground
+        </div>
+      </div>
+
+      <!-- Direct mode card -->
+      <div style="flex:1; min-width:200px; background:#161b22; border:1px solid #d2992255; border-radius:8px; padding:0.7rem;">
+        <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.4rem;">
+          <span style="font-size:1rem;">🎯</span>
+          <strong style="color:#d29922; font-size:0.85rem;">Direct Mode</strong>
+        </div>
+        <div style="font-size:0.72rem; color:#8b949e; line-height:1.6;">
+          <code>SendMessage(hwnd, WM_*DOWN)</code><br>
+          <code>SendMessage(hwnd, WM_*UP)</code><br>
+          <code>PostMessage(hwnd, WM_MOUSEMOVE)</code>
+        </div>
+        <div style="font-size:0.72rem; color:#f0f6fc; margin-top:0.3rem;">
+          ✓ No cursor movement<br>
+          ✓ Works in the background
+        </div>
+      </div>
+    </div>
+
+    <div class="fields" style="margin-top:0.6rem;">
+      <div class="field"><span>input_mode</span> <em>"hardware" | "direct"</em></div>
+      <div class="field"><span>game_hwnd</span> <em>int | None</em></div>
+      <div class="field"><span>game_window_title</span> <em>str</em></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ Services using InputRouter ═══════════════ -->
+  <div class="connector">
+    <span class="line"></span>
+    <span style="color:#8b949e">also consumed by</span>
+    <span class="line"></span>
+  </div>
+
+  <!-- Consumer badges -->
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; margin:0.5rem 0 1rem;">
+    <div style="background:#21262d; border:1px solid #30363d; border-radius:6px; padding:0.3rem 0.8rem; font-size:0.72rem;">❤️ HealerService</div>
+    <div style="background:#21262d; border:1px solid #30363d; border-radius:6px; padding:0.3rem 0.8rem; font-size:0.72rem;">🎣 FishingService</div>
+    <div style="background:#21262d; border:1px solid #30363d; border-radius:6px; padding:0.3rem 0.8rem; font-size:0.72rem;">✨ RuneMakerService</div>
+    <div style="background:#21262d; border:1px solid #30363d; border-radius:6px; padding:0.3rem 0.8rem; font-size:0.72rem;">⌨️ HotkeyJobService</div>
+    <div style="background:#21262d; border:1px solid #30363d; border-radius:6px; padding:0.3rem 0.8rem; font-size:0.72rem;">🚶 AntiAfkService*</div>
+  </div>
+  <div style="text-align:center; font-size:0.65rem; color:#484f58;">* AntiAfk intentionally stays on pynput — its purpose is physical mouse movement to prevent system idle.</div>
+
+  <!-- ═══════════════ Script System ═══════════════ -->
+  <div class="connector" style="margin-top:1rem;">
+    <span class="line"></span>
+    <span style="color:#7ee787;">storage</span>
+    <span class="line"></span>
+  </div>
+
+  <div class="service">
+    <div class="service-header">
+      <span class="icon">📜</span>
+      <span class="name">Script System</span>
+      <span class="badge badge-infra">STORAGE</span>
+    </div>
+    <div class="service-desc">
+      JSON files stored in <code style="color:#58a6ff;">scripts/&lt;name&gt;.json</code>.
+      Each waypoint stores its mark label, minimap coordinates,
+      action type, and active status.
+    </div>
+    <div style="background:#0d1117; border:1px solid #30363d; border-radius:6px; padding:0.7rem; font-family:'JetBrains Mono',monospace; font-size:0.72rem; line-height:1.6; margin-top:0.5rem;">
+      <span style="color:#8b949e;">[</span><br>
+      <span style="color:#8b949e;">  {</span> <span style="color:#d2a8ff;">"mark"</span>: <span style="color:#a5d6ff;">"Star"</span>,  <span style="color:#d2a8ff;">"x"</span>: <span style="color:#79c0ff;">500</span>, <span style="color:#d2a8ff;">"y"</span>: <span style="color:#79c0ff;">300</span>, <span style="color:#d2a8ff;">"type"</span>: <span style="color:#79c0ff;">1</span>, <span style="color:#d2a8ff;">"status"</span>: <span style="color:#79c0ff;">false</span> <span style="color:#8b949e;">},</span><br>
+      <span style="color:#8b949e;">  {</span> <span style="color:#d2a8ff;">"mark"</span>: <span style="color:#a5d6ff;">"Cross"</span>, <span style="color:#d2a8ff;">"x"</span>: <span style="color:#79c0ff;">620</span>, <span style="color:#d2a8ff;">"y"</span>: <span style="color:#79c0ff;">280</span>, <span style="color:#d2a8ff;">"type"</span>: <span style="color:#79c0ff;">1</span>, <span style="color:#d2a8ff;">"status"</span>: <span style="color:#79c0ff;">true</span>  <span style="color:#8b949e;">},</span> <span style="color:#484f58;">← active</span><br>
+      <span style="color:#8b949e;">  {</span> <span style="color:#d2a8ff;">"mark"</span>: <span style="color:#a5d6ff;">"Skull"</span>,  <span style="color:#d2a8ff;">"x"</span>: <span style="color:#79c0ff;">750</span>, <span style="color:#d2a8ff;">"y"</span>: <span style="color:#79c0ff;">350</span>, <span style="color:#d2a8ff;">"type"</span>: <span style="color:#79c0ff;">1</span>, <span style="color:#d2a8ff;">"status"</span>: <span style="color:#79c0ff;">false</span> <span style="color:#8b949e;">}</span><br>
+      <span style="color:#8b949e;">]</span>
+    </div>
+    <div class="fields" style="margin-top:0.5rem;">
+      <div class="field"><span>type</span> <em>1=Walk</em>  <span style="color:#8b949e;">|</span> <em>2=Rope</em>  <span style="color:#8b949e;">|</span> <em>3=Shovel</em></div>
+      <div class="field"><span>mark</span> <em>20 types: Star, Cross, Skull, Flag…</em></div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><span class="legend-dot dot-orange"></span> Orchestrator</div>
+    <div class="legend-item"><span class="legend-dot dot-green"></span> Worker</div>
+    <div class="legend-item"><span class="legend-dot dot-blue"></span> Infrastructure</div>
+    <div class="legend-item"><span class="legend-dot dot-purple"></span> All input routed</div>
+    <div class="legend-item"><span style="color:#484f58;">InputRouter</span> consumed by <span style="color:#3fb950;">❤️ 🎣 ✨ ⌨️</span></div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <a href="https://github.com/victorspacer-gif/Auto_tool/tree/feature/cavebot">feature/cavebot</a>
+  ·
+  Adapted from
+  <a href="https://github.com/MuriloChianfa/TibiaAuto12">TibiaAuto12</a>
+  ·
+  Created for SystemMonitor
+</div>
+
+</body>
+</html>

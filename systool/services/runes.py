@@ -9,7 +9,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-from ..runtime import AppRuntime, HAS_PYNPUT, pynput_kb, pynput_mouse
+from ..runtime import AppRuntime
 from ..constants import (
     INPUT_HOLD_DELAY_MAX,
     INPUT_MOUSE_DURATION_MAX,
@@ -22,8 +22,7 @@ from ..constants import (
     RUNE_WAIT_INTERRUPTIBLE,
 )
 from ..theme import GREEN, ORANGE, RED
-from .hotkeys import HotkeyService
-from .input_services import HumanMouse, SafeKeyboardSession
+from .input_services import HumanMouse
 
 
 class RuneMakerService:
@@ -59,19 +58,7 @@ class RuneMakerService:
             f"▶ Rune session start — spell={state.rune_spell_key.upper()}  "
             f"cycle={state.rune_cycle_delay_ms}ms  post-settle={state.rune_post_cast_settle_ms}ms"
         )
-        if not HAS_PYNPUT:
-            self.runtime.ui.log("❌ pynput missing")
-            state.rune_active = False
-            self.runtime.ui.module_state_changed("rune", False)
-            return
-        keyboard = pynput_kb.Controller()
-        mouse = pynput_mouse.Controller()
-        spell = HotkeyService.key_str_to_pynput(state.rune_spell_key)
-        if not spell:
-            self.runtime.ui.log(f"❌ Unknown spell key: {state.rune_spell_key}")
-            state.rune_active = False
-            self.runtime.ui.module_state_changed("rune", False)
-            return
+        router = self.runtime.input_router
 
         cycles_completed = 0
         while not self.runtime.rune_stop.is_set():
@@ -124,31 +111,27 @@ class RuneMakerService:
                 if not self.runtime.pause.wait_interruptible(RUNE_POST_CAST_SETTLE, self.runtime.rune_stop):
                     break
                 continue
-            session = SafeKeyboardSession(keyboard)
             try:
-                session.tap(spell, hold_seconds=RUNE_SPELL_HOLD_SECONDS)
+                router.tap_key(state.rune_spell_key, hold_seconds=RUNE_SPELL_HOLD_SECONDS)
                 self.runtime.ui.log(f"✨ Spell cast ({state.rune_spell_key.upper()})")
                 if not self.runtime.pause.wait_interruptible(cast_delay_ms / 1000.0, self.runtime.rune_stop):
                     break
 
-                HumanMouse.drag(
-                    mouse,
-                    HumanMouse.jitter(hand, jitter),
-                    HumanMouse.jitter(storage, jitter),
-                )
+                hand_pos = HumanMouse.jitter(hand, jitter)
+                storage_pos = HumanMouse.jitter(storage, jitter)
+                router.human_move_and_click(hand_pos[0], hand_pos[1], "left")
+                router.human_move_and_click(storage_pos[0], storage_pos[1], "left")
                 self.runtime.ui.log("📦 Rune moved → storage")
-                HumanMouse.drag(
-                    mouse,
-                    HumanMouse.jitter(blank, jitter),
-                    HumanMouse.jitter(hand, jitter),
-                )
+                blank_pos = HumanMouse.jitter(blank, jitter)
+                hand_pos2 = HumanMouse.jitter(hand, jitter)
+                router.human_move_and_click(blank_pos[0], blank_pos[1], "left")
+                router.human_move_and_click(hand_pos2[0], hand_pos2[1], "left")
                 self.runtime.ui.log("📥 Blank rune → hand slot")
                 time.sleep(post_cast_settle_ms / 1000.0)
             except Exception as exc:
                 self.runtime.ui.log(f"❌ Rune cycle: {exc}")
                 break
             finally:
-                session.release_all()
                 self.runtime.execution.release()
             with self.runtime.record_lock:
                 state.stats["runes_made"] += 1

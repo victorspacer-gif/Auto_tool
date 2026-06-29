@@ -17,6 +17,7 @@ from ..constants import (
     HEALER_EXEC_MAX_WAIT,
     HEALER_COOLDOWN_SHORT,
     HEALER_COOLDOWN_LONG,
+    HEALER_COOLDOWN_AFTER_MOUSE,
     HEALER_MOUSE_MAX_WAIT,
     HEALER_MIN_WAIT_TIMEOUT,
     HEALER_CAST_HOLD_SECONDS,
@@ -28,7 +29,6 @@ from ..constants import (
 )
 from ..theme import GREEN, ORANGE, RED
 from .hotkeys import HotkeyService
-from .input_services import HumanMouse, SafeKeyboardSession
 
 class AutoHealerService:
     def __init__(self, runtime: AppRuntime) -> None:
@@ -62,13 +62,7 @@ class AutoHealerService:
     def _worker(self) -> None:
         state = self.runtime.state
         self.runtime.ui.log("▶ Auto healer start")
-        if not HAS_PYNPUT:
-            self.runtime.ui.log("❌ pynput missing")
-            state.healer_active = False
-            self.runtime.ui.module_state_changed("healer", False)
-            return
-        keyboard = pynput_kb.Controller()
-        mouse = pynput_mouse.Controller()
+        router = self.runtime.input_router
         cooldown_until = 0.0
         while not self.runtime.healer_stop.is_set():
             self.runtime.pause.wait()
@@ -81,7 +75,6 @@ class AutoHealerService:
                 continue
             with self.runtime.settings_lock:
                 hp_peak = state.char_status_hp_peak
-                # Use pointer-based MP first, fall back to OCR
                 mana_value = None
                 if self.runtime.mp_service is not None:
                     try:
@@ -99,7 +92,6 @@ class AutoHealerService:
                 rune_pos = state.healer_rune_pos
                 mouse_speed = state.healer_mouse_speed
                 rune_delay_ms = state.healer_rune_delay_ms
-            # Try pointer-based HP first, fall back to OCR
             hp_value = None
             if self.runtime.hp_service is not None:
                 try:
@@ -121,7 +113,6 @@ class AutoHealerService:
                     break
                 continue
             if min_mana > 0 and mana_value is not None:
-                # Pick a random threshold between min and max (if max set), otherwise use min
                 threshold = random.randint(min_mana, max_mana) if max_mana > min_mana else min_mana
                 if mana_value < threshold:
                     if not self.runtime.pause.wait_interruptible(HEALER_WAIT_INTERRUPTIBLE_3, self.runtime.healer_stop):
@@ -129,20 +120,14 @@ class AutoHealerService:
                     continue
             try:
                 if mode == "spell":
-                    spell_key = HotkeyService.key_str_to_pynput(spell_key_name)
-                    if not spell_key:
-                        self.runtime.ui.log(f"❌ Unknown healer spell key: {spell_key_name}")
-                        break
                     if not self.runtime.execution.acquire(self.runtime.healer_stop, max_wait=HEALER_EXEC_MAX_WAIT, module_id="healer"):
                         if self.runtime.healer_stop.is_set():
                             break
                         cooldown_until = time.monotonic() + HEALER_COOLDOWN_AFTER_TAP
                         continue
-                    session = SafeKeyboardSession(keyboard)
                     try:
-                        session.tap(spell_key, hold_seconds=HEALER_CAST_HOLD_SECONDS)
+                        router.tap_key(spell_key_name.lower(), hold_seconds=HEALER_CAST_HOLD_SECONDS)
                     finally:
-                        session.release_all()
                         self.runtime.execution.release()
                     cooldown_until = time.monotonic() + HEALER_COOLDOWN_LONG
                     self.runtime.ui.log(f"❤️ Spell heal ({spell_key_name.upper()}) at HP {hp_value}")
@@ -153,14 +138,13 @@ class AutoHealerService:
                         cooldown_until = time.monotonic() + HEALER_COOLDOWN_AFTER_MOUSE
                         continue
                     try:
-                        HumanMouse.move(mouse, rune_pos, duration=max(HEALER_MIN_MOVE_DURATION, HEALER_MOVE_BASE_DURATION / max(mouse_speed, 0.2)))
+                        dur = max(HEALER_MIN_MOVE_DURATION, HEALER_MOVE_BASE_DURATION / max(mouse_speed, 0.2))
+                        router.human_move_and_click(rune_pos[0], rune_pos[1], "right", duration=dur)
                         time.sleep(HEALER_POST_ACTION_SLEEP)
-                        mouse.click(pynput_mouse.Button.right, 1)
                         if not self.runtime.pause.wait_interruptible(rune_delay_ms / 1000.0, self.runtime.healer_stop):
                             break
-                        HumanMouse.move(mouse, character_pos, duration=max(HEALER_MIN_MOVE_DURATION, HEALER_MOVE_BASE_DURATION / max(mouse_speed, 0.2)))
+                        router.human_move_and_click(character_pos[0], character_pos[1], "left", duration=dur)
                         time.sleep(HEALER_POST_ACTION_SLEEP)
-                        mouse.click(pynput_mouse.Button.left, 1)
                     finally:
                         self.runtime.mouse.release()
                     cooldown_until = time.monotonic() + max(HEALER_MAX_COOLDOWN_BASE, rune_delay_ms / 1000.0 + 0.15)
