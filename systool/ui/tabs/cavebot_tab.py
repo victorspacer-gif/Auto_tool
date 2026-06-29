@@ -46,12 +46,17 @@ class CaveBotTab:
         # UI state vars
         self._script_var = tk.StringVar(value=runtime.state.cavebot.script_name)
         self._stand_var = tk.StringVar(value=str(runtime.state.cavebot.stand_seconds))
-        self._mark_var = tk.IntVar(value=1)
+        self._mark_var = tk.StringVar(value=MARK_NAMES[0])
         self._wp_type_var = tk.IntVar(value=1)
         self._walk_var = tk.BooleanVar(value=runtime.state.cavebot.walking_enabled)
         self._loot_var = tk.BooleanVar(value=runtime.state.cavebot.looting_enabled)
         self._debug_var = tk.BooleanVar(value=runtime.state.cavebot.walk_for_debug)
         self._follow_var = tk.BooleanVar(value=runtime.state.cavebot.follow_mode)
+
+        # Image detection vars
+        self._img_detect_var = tk.BooleanVar(value=runtime.state.cavebot.image_detection_enabled)
+        self._arrival_var = tk.BooleanVar(value=runtime.state.cavebot.arrival_detection_enabled)
+        self._precision_var = tk.StringVar(value=str(runtime.state.cavebot.image_detection_precision))
 
         # Script waypoint display widgets
         self._script_listbox: tk.Listbox | None = None
@@ -122,16 +127,19 @@ class CaveBotTab:
         mark_row = tk.Frame(wp_panel, bg=PANEL)
         mark_row.pack(fill="x", pady=(0, 4))
         tk.Label(mark_row, text="Mark:", font=BOLD, bg=PANEL, fg=FG).pack(side="left", padx=(0, 4))
-        mark_dropdown = tk.OptionMenu(mark_row, self._mark_var, *range(1, len(MARK_NAMES) + 1))
+        mark_dropdown = tk.OptionMenu(mark_row, self._mark_var, *MARK_NAMES)
         mark_dropdown.configure(bg=BG, fg=FG, font=MONO, relief="flat", bd=1, highlightthickness=0)
         mark_dropdown.pack(side="left", padx=(0, 8))
 
-        tk.Label(mark_row, text="Type:", font=BOLD, bg=PANEL, fg=FG).pack(side="left", padx=(0, 4))
+        # Live preview label — updates as the user changes the mark dropdown
+        self._mark_preview_label = tk.Label(mark_row, text=f"→ {MARK_NAMES[0]} / Walk", font=SMALL, bg=PANEL, fg=MUTED)
+        self._mark_preview_label.pack(side="left")
+        self._mark_var.trace_add("write", lambda *_: self._update_mark_preview())
+
+        tk.Label(mark_row, text="Type:", font=BOLD, bg=PANEL, fg=FG).pack(side="left", padx=(8, 4))
         type_dropdown = tk.OptionMenu(mark_row, self._wp_type_var, *[1, 2, 3])
         type_dropdown.configure(bg=BG, fg=FG, font=MONO, relief="flat", bd=1, highlightthickness=0)
         type_dropdown.pack(side="left", padx=(0, 8))
-
-        tk.Label(mark_row, text=f" = {MARK_NAMES[0]} / Walk", font=SMALL, bg=PANEL, fg=MUTED).pack(side="left")
 
         # Previous / Current / Next waypoint display
         nav_frame = tk.Frame(wp_panel, bg=PANEL)
@@ -195,6 +203,38 @@ class CaveBotTab:
             cb = tk.Checkbutton(opts_row, text=text, variable=var, bg=PANEL, fg=FG,
                                 selectcolor=BG, font=SMALL, command=self._sync_controls)
             cb.pack(side="left", padx=2)
+
+        # ── Image detection options ───────────────────────────────
+        img_row = tk.Frame(ctrl_panel, bg=PANEL)
+        img_row.pack(fill="x", pady=(0, 4))
+        cb_img = tk.Checkbutton(img_row, text="🔍 Img Detect", variable=self._img_detect_var,
+                                bg=PANEL, fg=FG, selectcolor=BG, font=SMALL,
+                                command=self._sync_controls)
+        cb_img.pack(side="left", padx=2)
+        cb_arr = tk.Checkbutton(img_row, text="📍 Arrival Check", variable=self._arrival_var,
+                                bg=PANEL, fg=FG, selectcolor=BG, font=SMALL,
+                                command=self._sync_controls)
+        cb_arr.pack(side="left", padx=2)
+        tk.Label(img_row, text="Precision:", font=SMALL, bg=PANEL, fg=FG).pack(side="left", padx=(4, 2))
+        tk.Entry(img_row, textvariable=self._precision_var, font=MONO, bg=BG, fg=FG,
+                 relief="flat", bd=2, width=4).pack(side="left", padx=(0, 4))
+
+        # Mark availability indicator
+        avail = CaveBotService.list_available_marks()
+        avail_count = len(avail)
+        if avail_count > 0:
+            avail_text = f"🖼 {avail_count} marks"
+        else:
+            avail_text = "⚠️ No mark images"
+        self._marks_label = tk.Label(img_row, text=avail_text, font=SMALL, bg=PANEL, fg=MUTED)
+        self._marks_label.pack(side="left", padx=2)
+
+        # Auto-detect minimap button
+        detect_row = tk.Frame(ctrl_panel, bg=PANEL)
+        detect_row.pack(fill="x", pady=(0, 4))
+        self.helpers["btn"](detect_row, "🗺  Detect Minimap Region", self._detect_minimap_region, PURPLE).pack(side="left", padx=2)
+        self.helpers["btn"](detect_row, "🔍 Detect Battle X", self._record_battle_list_x, PURPLE).pack(side="left", padx=2)
+        self.helpers["btn"](detect_row, "📸 Capture Ref", self._capture_reference, TEAL).pack(side="left", padx=2)
 
         # ═══════════════════════════════════════════════════════════
         # RIGHT COLUMN — Chase Target + Auto Looter
@@ -364,6 +404,13 @@ class CaveBotTab:
     # Waypoint Editing
     # ═══════════════════════════════════════════════════════════════
 
+    def _update_mark_preview(self) -> None:
+        """Update the live preview label when the mark dropdown changes."""
+        if self._mark_preview_label:
+            mark = self._mark_var.get()
+            wp_type = WAYPOINT_TYPES.get(self._wp_type_var.get(), "?")
+            self._mark_preview_label.config(text=f"→ {mark} / {wp_type}")
+
     def _add_waypoint(self) -> None:
         """Add a new waypoint at the current position."""
         name = self._script_var.get().strip()
@@ -371,8 +418,7 @@ class CaveBotTab:
             self.runtime.ui.log("⚠️  Select/create a script first")
             return
 
-        mark_idx = self._mark_var.get()
-        mark_name = MARK_NAMES[mark_idx - 1] if 1 <= mark_idx <= len(MARK_NAMES) else ""
+        mark_name = self._mark_var.get()
         wp_type = self._wp_type_var.get()
 
         # Record current mouse position for the waypoint coordinate
@@ -549,6 +595,14 @@ class CaveBotTab:
         state.looting_enabled = self._loot_var.get()
         state.walk_for_debug = self._debug_var.get()
         state.follow_mode = self._follow_var.get()
+        state.image_detection_enabled = self._img_detect_var.get()
+        state.arrival_detection_enabled = self._arrival_var.get()
+        try:
+            val = float(self._precision_var.get())
+            if 0.5 <= val <= 1.0:
+                state.image_detection_precision = val
+        except (ValueError, TypeError):
+            pass
 
     def _start_cavebot(self) -> None:
         # Sync UI to state
@@ -608,6 +662,79 @@ class CaveBotTab:
         self.runtime.state.chase_target.battle_list_x = x
         self.runtime.state.cavebot.battle_list_x = x
         self.runtime.ui.log(f"⚔️ Battle list X set to {x}")
+
+    def _detect_minimap_region(self) -> None:
+        """Auto-detect the minimap region using image matching.
+
+        Tries multiple strategies:
+        1. Look for game-specific Reference/CenterButton.png capture
+        2. Look for Tibia-style MapSettings.png border
+        3. Look for zoom +/- buttons at bottom-right
+        """
+        from ...services.image_finder import detect_minimap_region as _detect_map, list_references, HAS_CV2
+
+        if not HAS_CV2:
+            self.runtime.ui.log("❌ OpenCV not available — cannot auto-detect minimap")
+            return
+
+        refs = list_references()
+        self.runtime.ui.log(f"🔍 Detecting minimap... (references available: {len(refs)})")
+
+        map_region = _detect_map(precision=0.8)
+        if map_region is not None:
+            self.runtime.state.cavebot.map_region = map_region
+            self.runtime.ui.log(f"🗺  Minimap region auto-detected: {map_region}")
+            self.runtime.ui.set_status(f"Minimap: {map_region}", GREEN)
+            return
+
+        self.runtime.ui.log("⚠️  Could not auto-detect minimap.")
+        self.runtime.ui.log("   💡 Use 'Capture Reference' to save CenterButton image from your game.")
+        self.runtime.ui.set_status("Minimap not found — capture a reference", ORANGE)
+
+    def _capture_reference(self) -> None:
+        """Capture a screen region to use as a game-specific reference image.
+
+        Click on any UI element (e.g. the "Center" button on the minimap,
+        the "Battle" title bar, the +/- zoom buttons) to capture a small
+        region around the click point and save it as a reference PNG.
+        """
+        import tkinter.simpledialog as sd
+        from ...services.image_finder import save_reference_image, HAS_CV2
+
+        if not HAS_CV2:
+            self.runtime.ui.log("❌ OpenCV not available — cannot capture reference")
+            return
+
+        name = sd.askstring(
+            "Capture Reference",
+            "Enter a name for this reference image.\n"
+            "Suggested: CenterButton, Battle, ZoomIn, ZoomOut\n"
+            "Then click on the UI element on screen.",
+            parent=self.parent,
+        )
+        if not name or not name.strip():
+            return
+
+        name = name.strip()
+        self.runtime.ui.log(f"📸 Click on the '{name}' UI element on screen...")
+        self.runtime.ui.set_status(f"Click on {name}...", ORANGE)
+
+        # Use position_capture to let the user click
+        pos_service = self.services.get("position_capture")
+        if pos_service:
+            def on_click(pos: tuple[int, int]) -> None:
+                # Capture a 40x16 region centered on the click
+                x, y = pos
+                region = (x - 20, y - 8, 40, 16)
+                path = save_reference_image(name, region)
+                if path:
+                    self.runtime.ui.log(f"✅ Reference '{name}' saved: {path}")
+                    self.runtime.ui.set_status(f"Reference '{name}' saved", GREEN)
+                else:
+                    self.runtime.ui.log(f"❌ Failed to capture '{name}'")
+                    self.runtime.ui.set_status("Capture failed", ORANGE)
+
+            pos_service.capture(on_click, f"Reference: {name}")
 
     # ═══════════════════════════════════════════════════════════════
     # Auto Looter Controls
