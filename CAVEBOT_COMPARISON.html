@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto_tool vs TibiaAuto12 — CaveBot Feature Comparison</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --green: #3fb950;
+  --orange: #d29922;
+  --red: #f85149;
+  --blue: #58a6ff;
+  --purple: #bc8cff;
+  --teal: #56d4dd;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--fg); line-height: 1.6;
+  padding: 20px;
+}
+h1 { font-size: 1.8em; margin-bottom: 4px; color: var(--fg); }
+h2 { font-size: 1.3em; margin: 24px 0 12px; color: var(--blue); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+h3 { font-size: 1.05em; margin: 16px 0 8px; color: var(--teal); }
+.subtitle { color: var(--muted); font-size: 0.9em; margin-bottom: 20px; }
+
+/* Legend */
+.legend { display: flex; gap: 20px; margin-bottom: 18px; font-size: 0.85em; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-match { width: 14px; height: 14px; border-radius: 3px; background: var(--green); }
+.legend-adapted { width: 14px; height: 14px; border-radius: 3px; background: var(--orange); }
+.legend-new { width: 14px; height: 14px; border-radius: 3px; background: var(--blue); }
+.legend-missing { width: 14px; height: 14px; border-radius: 3px; background: var(--red); }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 0.9em; }
+th, td { padding: 8px 12px; text-align: left; border: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface2); color: var(--blue); font-weight: 600; white-space: nowrap; }
+tr:nth-child(even) td { background: var(--surface); }
+tr:hover td { background: #1c2128; }
+td:first-child { font-weight: 600; white-space: nowrap; color: var(--fg); }
+td:nth-child(2), td:nth-child(3) { font-size: 0.88em; }
+
+/* Status badges */
+.badge { display: inline-block; padding: 1px 7px; border-radius: 8px; font-size: 0.75em; font-weight: 600; }
+.badge-match { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-adapted { background: rgba(210,153,34,0.15); color: var(--orange); }
+.badge-new { background: rgba(88,166,255,0.15); color: var(--blue); }
+.badge-missing { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-improved { background: rgba(86,212,221,0.12); color: var(--teal); }
+
+/* Code */
+code { background: var(--surface2); padding: 1px 5px; border-radius: 3px; font-size: 0.88em; color: var(--orange); }
+pre {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; font-size: 0.82em; overflow-x: auto; margin: 8px 0;
+  color: var(--fg);
+}
+
+/* Summary cards */
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.card .num { font-size: 1.6em; font-weight: 700; }
+.card .label { font-size: 0.82em; color: var(--muted); margin-top: 2px; }
+.card.green .num { color: var(--green); }
+.card.orange .num { color: var(--orange); }
+.card.blue .num { color: var(--blue); }
+.card.red .num { color: var(--red); }
+.card.teal .num { color: var(--teal); }
+
+/* Section boxes */
+.arch-section { display: flex; gap: 16px; margin: 16px 0; flex-wrap: wrap; }
+.arch-card {
+  flex: 1; min-width: 280px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+}
+.arch-card h4 { color: var(--teal); margin-bottom: 6px; }
+.arch-card ul { padding-left: 16px; font-size: 0.88em; }
+.arch-card li { margin-bottom: 3px; }
+</style>
+</head>
+<body>
+
+<h1>🧬 Auto_tool (SystemMonitor) vs TibiaAuto12</h1>
+<p class="subtitle">CaveBot feature comparison — implementation approach & key differences</p>
+
+<div class="legend">
+  <span class="legend-item"><span class="legend-match"></span> Direct Port</span>
+  <span class="legend-item"><span class="legend-adapted"></span> Adapted / Improved</span>
+  <span class="legend-item"><span class="legend-new"></span> New in Auto_tool</span>
+  <span class="legend-item"><span class="legend-missing"></span> Not Implemented</span>
+</div>
+
+<div class="summary-grid">
+  <div class="card teal">
+    <div class="num">20</div>
+    <div class="label">Waypoint marks (same)</div>
+  </div>
+  <div class="card green">
+    <div class="num">13</div>
+    <div class="label">Direct ports</div>
+  </div>
+  <div class="card orange">
+    <div class="num">7</div>
+    <div class="label">Adapted / improved</div>
+  </div>
+  <div class="card blue">
+    <div class="num">5</div>
+    <div class="label">New features</div>
+  </div>
+  <div class="card red">
+    <div class="num">4</div>
+    <div class="label">Not implemented</div>
+  </div>
+</div>
+
+<!-- ========== ARCHITECTURE ========== -->
+
+<h2>🏗  Architecture Comparison</h2>
+
+<div class="arch-section">
+  <div class="arch-card">
+    <h4>TibiaAuto12 (Original)</h4>
+    <ul>
+      <li><strong>Monolithic</strong> single-process GUI (tkinter)</li>
+      <li>Global <code>EnabledCaveBot</code> + <code>ThreadManager</code> for threading</li>
+      <li><code>CaveBotController</code> — self-contained loop (walk → attack → loot)</li>
+      <li>Hardware-only input (<code>SendToClient</code> via <code>pynput</code> key simulation)</li>
+      <li>HookWindow — <code>PrintWindow</code> Win32 API for screen capture</li>
+      <li>All state in global variables + JSON files</li>
+      <li><strong>3 modules:</strong> CaveBot / Scanners / AutoLooter</li>
+    </ul>
+  </div>
+  <div class="arch-card">
+    <h4>Auto_tool (SystemMonitor)</h4>
+    <ul>
+      <li><strong>Layered DI</strong> — container.py injects services into UI</li>
+      <li><code>ExecutionGate</code> + <code>MouseGate</code> — FIFO input ownership (thread-safe)</li>
+      <li><strong>3 service split:</strong> CaveBotService / ChaseTargetService / AutoLooterService</li>
+      <li><strong>Dual-mode InputRouter</strong> — hardware (pynput) OR direct (Win32 SendMessage)</li>
+      <li><code>ImageFinder</code> — mss screen capture + OpenCV template matching</li>
+      <li><code>AppRuntime</code> state object — typed dataclasses, not globals</li>
+      <li><strong>10+ services</strong> — integrated with healer, fishing, mana, etc.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ========== FEATURE TABLE ========== -->
+
+<h2>📋 Feature-by-Feature Comparison</h2>
+
+<table>
+<thead>
+<tr>
+  <th>Feature</th>
+  <th>TibiaAuto12 Implementation</th>
+  <th>Auto_tool Implementation</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+
+<!-- === CORE === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Core CaveBot</td></tr>
+
+<tr>
+  <td>Waypoint mark dropdown</td>
+  <td>Radio buttons with mark index (1–20), <code>MarkEncoder</code> maps index → name</td>
+  <td><code>OptionMenu</code> with <code>MARK_NAMES</code> strings directly — shows names "CheckMark", "Star", etc.</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<tr>
+  <td>Mark name → image mapping</td>
+  <td><code>MarkDecoder</code>/<code>MarkEncoder</code> dicts in <code>MarksConf.py</code></td>
+  <td><code>MARK_NAMES = [...]</code> list; image detected via <code>list_available_marks()</code> scanning <code>images/MapSettings/</code></td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Waypoint types</td>
+  <td><code>TypeDecoder = {1: "Walk", 2: "Rope", 3: "Shovel"}</code></td>
+  <td>Same <code>WAYPOINT_TYPES = {1: "Walk", 2: "Rope", 3: "Shovel"}</code></td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Script format</td>
+  <td>JSON array: <code>{"mark", "type", "status", "x", "y"}</code></td>
+  <td>Identical JSON schema. Adds <code>"NotConfigured"</code> status for empty scripts</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>Add waypoint</td>
+  <td><code>AddWalker()</code> — inserts after active mark, shifts status</td>
+  <td><code>_add_waypoint()</code> — same logic, but captures mouse position via <code>PositionCaptureService</code></td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>Remove waypoint</td>
+  <td><code>RemoveWalker()</code> — deletes active, shifts status to previous</td>
+  <td><code>_remove_waypoint()</code> — identical logic</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Reset marks</td>
+  <td><code>ResetMarks()</code> — sets all status to False, first to True</td>
+  <td><code>_reset_waypoints()</code> — identical</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Prev/Next waypoint</td>
+  <td><code>LoadPrevious()</code>/<code>LoadNext()</code> — cyclic navigation</td>
+  <td><code>_prev_waypoint()</code>/<code>_next_waypoint()</code> — same cyclic navigation</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Live waypoint preview</td>
+  <td>3 labels + 3 images (Prev/Curr/Next) using PNG thumbnails</td>
+  <td>3 labels only (no image thumbnails). Adds live mark+type preview label</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>Script management (list/load/save/delete)</td>
+  <td>Built-in to CaveBot module UI</td>
+  <td>Dedicated <code>list_scripts()</code>/<code>load_script()</code>/<code>create_default_script()</code>/<code>delete_script()</code> static methods</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<!-- === WALKING === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Walking & Navigation</td></tr>
+
+<tr>
+  <td>Image-based mark location</td>
+  <td><code>LocateCenterImage('images/MapSettings/X.png', Region=map, Precision=0.8)</code></td>
+  <td><code>_locate_mark_on_minimap()</code> — same OpenCV template matching, configurable precision</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Coordinate fallback walking</td>
+  <td>None — if image not found, retries <code>WalkForRefresh</code> arrow scrolls</td>
+  <td>Falls back to saved coordinate click or map-centre click when image detection fails</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<tr>
+  <td>Arrow-key minimap refresh</td>
+  <td><code>WalkForRefresh</code> — up/left/down/right arrow press sequence</td>
+  <td><code>_do_arrow_refresh()</code> — same sequence, gated by <code>walk_for_debug</code> toggle</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Human-like mouse movement</td>
+  <td>None — direct click at mark position, optional return to previous position</td>
+  <td><code>router.human_move_and_click()</code> — Bezier curve + jitter + variable speed</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<tr>
+  <td>Max image retries</td>
+  <td>Infinite loop until mark found</td>
+  <td><code>MAX_IMAGE_RETRIES = 3</code> then falls back to coordinates</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<!-- === ARRIVAL DETECTION === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Arrival Detection</td></tr>
+
+<tr>
+  <td>CheckWaypoint arrival</td>
+  <td><code>CheckWaypoint(image, map_positions)</code> — crops centre region (48px margin), <code>LocateImage</code> at 0.7 precision</td>
+  <td><code>_check_arrived_at_waypoint()</code> — same centre crop (48px margin), same logic, configurable precision</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Arrival retry with wait</td>
+  <td>Single shot — returns True/False</td>
+  <td>3 quick retries (300ms), then 5 slow retries (500ms) — progressive patience</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<!-- === MONSTER TARGETING === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Monster Targeting (Chase Target)</td></tr>
+
+<tr>
+  <td>Monster count on battle list</td>
+  <td><code>NumberOfTargets()</code> — <code>LocateAllImages('images/Targets/Names/X.png')</code></td>
+  <td>Not implemented as image-based count. ChaseTarget uses continuous scan loop with <code>scan_interval_ms</code></td>
+  <td><span class="badge badge-missing">Missing</span></td>
+</tr>
+
+<tr>
+  <td>Scan target in battle list</td>
+  <td><code>ScanTarget()</code> — <code>LocateCenterImage('images/Targets/Names/X.png')</code> with 0.86 precision</td>
+  <td>Not image-based. Uses <code>attack_key</code> (e.g. F1) press + <code>scan_interval_ms</code> cycling</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>IsAttacking detection</td>
+  <td>Complex 16-image border analysis (<code>MonstersAttack/LeftRed.png</code>, <code>TopRed.png</code>, etc.) — checks 4 corners × 4 colour variants</td>
+  <td>Not implemented. Relies on timing + stand seconds for attack window</td>
+  <td><span class="badge badge-missing">Missing</span></td>
+</tr>
+
+<tr>
+  <td>Follow mode</td>
+  <td>Built-in Follow Mode — clicks on character during attack</td>
+  <td>Separate <code>follow_mode</code> toggle in CaveBot + ChaseTarget controls</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Multiple monster priority</td>
+  <td>4 monster slots (M1–M4), each with checkbox, processed sequentially</td>
+  <td>4 monster name entries, processed sequentially in the same order</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<!-- === LOOTING === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Looting</td></tr>
+
+<tr>
+  <td>AutoLooter</td>
+  <td>Right-clicks at SQM positions — simple position-based loot</td>
+  <td><code>AutoLooterService</code> — same right-click approach, delay config per cycle</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Loot cycle delay</td>
+  <td>Fixed delay</td>
+  <td>Configurable <code>loot_delay_min_ms</code> / <code>loot_delay_max_ms</code> with random range</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<tr>
+  <td>SQM position management</td>
+  <td>Fixed from config</td>
+  <td>Add/remove/clear SQM from UI, copy from CaveBot's positions</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<tr>
+  <td>Jitter on loot clicks</td>
+  <td>None</td>
+  <td><code>random.randint(-2, 2)</code> pixel offset per click</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<!-- === INPUT === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Input Methods</td></tr>
+
+<tr>
+  <td>Hardware input (cursor moves)</td>
+  <td><code>MOUSE_OPTION == 1</code> — physical mouse via pynput</td>
+  <td><code>"hardware"</code> mode — same pynput-based movement and clicks</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Background / window injection</td>
+  <td><code>MOUSE_OPTION == 0</code> — <code>SendToClient</code> using <code>PostMessage</code> (same basic approach)</td>
+  <td><code>"direct"</code> mode — <code>SendMessage</code> (not PostMessage) with HWND auto-detection</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>HWND resolution</td>
+  <td>Static from <code>conf.json</code></td>
+  <td>Auto-detect via exact title / partial title / explicit handle — 3 strategies</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<tr>
+  <td>Input coordination</td>
+  <td>No coordination — modules can conflict</td>
+  <td><code>ExecutionGate</code> (FIFO) + <code>MouseGate</code> — prevents module input conflicts</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<!-- === SCREEN CAPTURE === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Screen Capture</td></tr>
+
+<tr>
+  <td>Game window capture</td>
+  <td><code>HookWindow</code> — <code>PrintWindow</code> Win32 API (captures hidden windows too)</td>
+  <td><code>_capture_region()</code> — <code>mss</code> screen capture (visible screen only, but simpler)</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>Template matching</td>
+  <td><code>LocateImage</code> / <code>LocateCenterImage</code> / <code>LocateAllImages</code> — OpenCV <code>TM_CCOEFF_NORMED</code></td>
+  <td>Same 3 functions in <code>ImageFinder</code> — same OpenCV method</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Pixel matching</td>
+  <td><code>PixelMatchesColor()</code> — exact RGB comparison</td>
+  <td><code>pixel_matches_color()</code> — adds configurable tolerance</td>
+  <td><span class="badge badge-improved">Improved</span></td>
+</tr>
+
+<tr>
+  <td>Digit scanning</td>
+  <td><code>ScanCap</code> — digit-by-digit using <code>pyautogui.locateOnScreen</code></td>
+  <td><code>scan_digit()</code> / <code>scan_number()</code> — OpenCV template matching, scans 9→0</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Minimap auto-detection</td>
+  <td>Not present</td>
+  <td><code>detect_minimap_region()</code> — finds CenterButton, zoom controls, or map border</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<tr>
+  <td>Reference image capture</td>
+  <td>Not present</td>
+  <td><code>save_reference_image()</code> / <code>find_reference()</code> — user captures game-specific UI elements</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<!-- === COMPANION SERVICES === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Companion Services</td></tr>
+
+<tr>
+  <td>Auto-healer</td>
+  <td>Separate <code>AutoHeal.py</code> module</td>
+  <td><code>AutoHealerService</code> — integrated, shares ExecutionGate</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+<tr>
+  <td>Auto-ring swapper</td>
+  <td><code>AutoRing.py</code> — Energy/Might ring detection</td>
+  <td>Not yet implemented in cavebot integration</td>
+  <td><span class="badge badge-missing">Missing</span></td>
+</tr>
+
+<tr>
+  <td>Food eater</td>
+  <td><code>FoodEater.py</code> — separate module</td>
+  <td>Not implemented (food handled by separate RightClickService)</td>
+  <td><span class="badge badge-missing">Missing</span></td>
+</tr>
+
+<tr>
+  <td>Mana/HP monitoring</td>
+  <td>Not in CaveBot — separate <code>AutoMana.py</code></td>
+  <td>Integrated <code>HpService</code> + <code>MpService</code> with threshold hysteresis</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<!-- === MODULE MANAGEMENT === -->
+<tr><td colspan="4" style="background:#161b22; color:var(--teal); font-weight:600;">Module & Control</td></tr>
+
+<tr>
+  <td>Companion auto-start</td>
+  <td>Not automatic — user starts each module separately</td>
+  <td>CaveBot auto-starts ChaseTarget and AutoLooter if configured</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<tr>
+  <td>Global pause/resume</td>
+  <td><code>ScanForPause()</code> — keyboard listener for Page Up</td>
+  <td><code>PauseController</code> — all modules respect <code>PauseController.wait()</code>, F5 hotkey</td>
+  <td><span class="badge badge-adapted">Adapted</span></td>
+</tr>
+
+<tr>
+  <td>Emergency stop (HOME key)</td>
+  <td>Not present</td>
+  <td>HOME key kills all jobs + cavebot + companions</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<tr>
+  <td>Image detection status indicator</td>
+  <td>Not present</td>
+  <td>Shows <code>🖼 N marks</code> or <code>⚠️ No mark images</code> in the UI</td>
+  <td><span class="badge badge-new">New</span></td>
+</tr>
+
+<tr>
+  <td>Walk for debug toggle</td>
+  <td>Checkbox via <code>CheckDebugging</code></td>
+  <td>Same — <code>walk_for_debug</code> checkbox, controls arrow refresh</td>
+  <td><span class="badge badge-match">Direct Port</span></td>
+</tr>
+
+</tbody>
+</table>
+
+<!-- ========== ARCHITECTURE SUMMARY ========== -->
+
+<h2>🧩 File Mapping</h2>
+
+<table>
+<thead>
+<tr><th>TibiaAuto12 File</th><th>Auto_tool Equivalent</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>modules/CaveBot.py</code></td><td><code>systool/ui/tabs/cavebot_tab.py</code></td><td>tkinter GUI for waypoint management</td></tr>
+<tr><td><code>engine/CaveBot/CaveBotController.py</code></td><td><code>systool/services/cavebot.py</code></td><td>Main waypoint walk loop + image detection</td></tr>
+<tr><td><code>engine/CaveBot/Scanners.py</code></td><td>Partially in <code>systool/services/chase_target.py</code></td><td>Auto_tool uses key-press strategy instead of image-based targeting</td></tr>
+<tr><td><code>modules/AutoLooter.py</code></td><td><code>systool/services/auto_looter.py</code></td><td>Same right-click SQM approach</td></tr>
+<tr><td><code>core/HookWindow.py</code></td><td><code>systool/services/image_finder.py</code></td><td>Same 4 core functions (Locate*, PixelMatches, digit scan)</td></tr>
+<tr><td><code>core/MoveMouse.py</code></td><td><code>systool/services/input_router.py</code></td><td>Dual-mode input (hardware + direct)</td></tr>
+<tr><td><code>core/SendToClient.py</code></td><td><code>systool/services/input_router.py</code></td><td>Integrated into InputRouter</td></tr>
+<tr><td><code>conf/MarksConf.py</code></td><td>Inline in <code>cavebot_tab.py</code> as <code>MARK_NAMES</code></td><td>Same 20 marks</td></tr>
+<tr><td><code>conf/Constants.py</code></td><td><code>systool/constants.py</code> + <code>systool/runtime.py</code></td><td>Separated constants from runtime</td></tr>
+<tr><td><code>conf/Hotkeys.py</code></td><td><code>systool/services/input_router.py</code></td><td>Integrated into router</td></tr>
+<tr><td><code>core/ThreadManager.py</code></td><td><code>threading.Thread</code> + <code>ExecutionGate</code></td><td>Auto_tool uses FIFO scheduler + stop events</td></tr>
+<tr><td><code>core/GUI.py</code> / <code>GUIManager.py</code></td><td><code>systool/ui/</code> (modular tab system)</td><td>Tab-based UI vs single window</td></tr>
+<tr><td><code>images/MapSettings/</code></td><td><code>images/MapSettings/</code></td><td>Same directory structure (currently empty — needs images)</td></tr>
+</tbody>
+</table>
+
+<!-- ========== KEY IMPROVEMENTS ========== -->
+
+<h2>⚡ Key Improvements in Auto_tool</h2>
+
+<table>
+<thead>
+<tr><th>Area</th><th>Improvement</th><th>Why It Matters</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Mark dropdown</strong></td>
+  <td>Shows names ("CheckMark", "Star") instead of numbers (1–20)</td>
+  <td>No mental mapping required — you see exactly what you're selecting</td>
+</tr>
+<tr>
+  <td><strong>Live preview</strong></td>
+  <td>Updates in real-time as Mark or Type dropdown changes</td>
+  <td>Immediate visual feedback when browsing options</td>
+</tr>
+<tr>
+  <td><strong>Input safety</strong></td>
+  <td><code>ExecutionGate</code> FIFO scheduler prevents input conflicts between modules</td>
+  <td>CaveBot, ChaseTarget, AutoLooter, and AutoHealer can't click over each other</td>
+</tr>
+<tr>
+  <td><strong>Dual input mode</strong></td>
+  <td>Hardware (physical cursor) OR Direct (background window injection)</td>
+  <td>Background hunting works while user does other tasks</td>
+</tr>
+<tr>
+  <td><strong>Human-like movement</strong></td>
+  <td>Bezier curves + jitter + variable speed</td>
+  <td>Less detectable as automation (anti-cheat evasion)</td>
+</tr>
+<tr>
+  <td><strong>Coordinate fallback</strong></td>
+  <td>If image detection fails 3 times, uses saved coordinates</td>
+  <td>More reliable — doesn't get stuck in infinite image search loops</td>
+</tr>
+<tr>
+  <td><strong>Arrival retry</strong></td>
+  <td>3 quick + 5 slow retries with progressive patience</td>
+  <td>Handles lag spikes without false "not arrived" assertions</td>
+</tr>
+<tr>
+  <td><strong>Auto-start companions</strong></td>
+  <td>CaveBot auto-launches ChaseTarget and AutoLooter</td>
+  <td>One-click start — no manual module enabling</td>
+</tr>
+<tr>
+  <td><strong>Global pause/stop</strong></td>
+  <td>F5 for pause, HOME for emergency kill</td>
+  <td>Instant shutdown from keyboard — no mouse to GUI needed</td>
+</tr>
+<tr>
+  <td><strong>DI architecture</strong></td>
+  <td>Container + typed runtime state vs global variables</td>
+  <td>Testable, debuggable, maintainable codebase</td>
+</tr>
+<tr>
+  <td><strong>Modular tab UI</strong></td>
+  <td>Each module is a separate tab with responsive columns</td>
+  <td>Clean separation — modules don't interfere with each other's UI state</td>
+</tr>
+<tr>
+  <td><strong>Pixel tolerance</strong></td>
+  <td><code>pixel_matches_color()</code> with configurable tolerance</td>
+  <td>Works with game rendering variations (shadows, anti-aliasing)</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ========== MISSING FEATURES ========== -->
+
+<h2>❌ Missing Features (Not Yet Ported)</h2>
+
+<table>
+<thead>
+<tr><th>TibiaAuto12 Feature</th><th>What It Does</th><th>Priority</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>IsAttacking()</code> — 16-image border analysis</td>
+  <td>Checks 4 battle frame corners × 4 colour variants to detect if actively attacking</td>
+  <td>Low — timing-based attack window works for most scenarios</td>
+</tr>
+<tr>
+  <td><code>NumberOfTargets()</code> — image-based monster count</td>
+  <td>Counts monsters on battle list via <code>LocateAllImages</code></td>
+  <td>Low — key-press targeting works without counting</td>
+</tr>
+<tr>
+  <td><code>ScanTarget()</code> — image-based target click</td>
+  <td>Finds monster name on battle list, clicks its health bar</td>
+  <td>Low — F1 key targeting is simpler and faster</td>
+</tr>
+<tr>
+  <td><code>AutoRing</code> — automatic ring swapping</td>
+  <td>Detects depleted Energy/Might rings and replaces them from inventory</td>
+  <td>Medium — useful for extended hunting sessions</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ========== WAYPOINT MARKS ========== -->
+
+<h2>🎯 Waypoint Marks (Both Identical)</h2>
+
+<table>
+<thead>
+<tr><th>#</th><th>Name</th><th>#</th><th>Name</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>CheckMark</td><td>11</td><td>Lock</td></tr>
+<tr><td>2</td><td>QuestionMark</td><td>12</td><td>Bag</td></tr>
+<tr><td>3</td><td>ExclimationMark</td><td>13</td><td>Skull</td></tr>
+<tr><td>4</td><td>Star</td><td>14</td><td>Money</td></tr>
+<tr><td>5</td><td>Cross</td><td>15</td><td>ArrowUp</td></tr>
+<tr><td>6</td><td>Church</td><td>16</td><td>ArrowDown</td></tr>
+<tr><td>7</td><td>Mouth</td><td>17</td><td>ArrowRight</td></tr>
+<tr><td>8</td><td>Shovel</td><td>18</td><td>ArrowLeft</td></tr>
+<tr><td>9</td><td>Sword</td><td>19</td><td>Above</td></tr>
+<tr><td>10</td><td>Flag</td><td>20</td><td>Bellow</td></tr>
+</tbody>
+</table>
+
+<hr style="border-color: var(--border); margin: 28px 0;">
+<p style="color: var(--muted); font-size: 0.85em;">
+Generated from Auto_tool source (<code>feature/cavebot</code> branch) and TibiaAuto12 (MuriloChianfa/TibiaAuto12).
+Auto_tool refs: <code>systool/services/cavebot.py</code>, <code>systool/ui/tabs/cavebot_tab.py</code>,
+<code>systool/services/image_finder.py</code>, <code>systool/services/input_router.py</code>,
+<code>systool/services/chase_target.py</code>, <code>systool/services/auto_looter.py</code>.
+TibiaAuto12 refs: <code>modules/CaveBot.py</code>, <code>engine/CaveBot/CaveBotController.py</code>,
+<code>engine/CaveBot/Scanners.py</code>, <code>core/HookWindow.py</code>, <code>conf/MarksConf.py</code>,
+<code>modules/AutoLooter.py</code>.
+</p>
+
+</body>
+</html>
