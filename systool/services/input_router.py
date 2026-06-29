@@ -145,48 +145,62 @@ class InputRouter:
     # ── Direct mode (Win32 SendMessage) ─────────────────────────────
 
     def _get_hwnd(self) -> int | None:
-        """Resolve the target window handle."""
+        """Resolve the target window handle. Caches the result in game_hwnd."""
         state = self.runtime.state
-        # Priority: explicit game_hwnd > attached HWND > window title match
         if state.game_hwnd:
             return state.game_hwnd
+        if not HAS_WIN32:
+            return None
         if state.game_window_title:
             try:
                 hwnd = win32gui.FindWindow(None, state.game_window_title)
                 if hwnd:
+                    state.game_hwnd = hwnd  # cache for next call
                     return hwnd
             except Exception:
                 pass
-            if HAS_WIN32:
-                # Fallback: partial title match
-                found = [None]
+            # Fallback: partial title match via EnumWindows
+            found = [None]
 
-                def enum_cb(hwnd, _):
-                    if found[0]:
-                        return
-                    try:
-                        title = win32gui.GetWindowText(hwnd)
-                        if state.game_window_title.lower() in title.lower() and win32gui.IsWindowVisible(hwnd):
-                            found[0] = hwnd
-                    except Exception:
-                        pass
-
+            def enum_cb(hwnd, _):
+                if found[0]:
+                    return
                 try:
-                    win32gui.EnumWindows(enum_cb, None)
+                    title = win32gui.GetWindowText(hwnd)
+                    if state.game_window_title.lower() in title.lower() and win32gui.IsWindowVisible(hwnd):
+                        found[0] = hwnd
                 except Exception:
                     pass
+
+            try:
+                win32gui.EnumWindows(enum_cb, None)
+            except Exception:
+                pass
+            if found[0]:
+                state.game_hwnd = found[0]  # cache for next call
                 return found[0]
         return None
 
     def _direct_click(self, x: int, y: int, button: str) -> None:
         hwnd = self._get_hwnd()
         if not hwnd or not HAS_WIN32:
-            logger.warning("direct input: no target HWND available")
+            self._warn_direct_fail("no target HWND — configure game_window_title in Config tab")
             return
+
+        # Verify the HWND is still valid
+        try:
+            if not win32gui.IsWindow(hwnd):
+                self.runtime.state.game_hwnd = None  # invalidate cache
+                self._warn_direct_fail("HWND is no longer valid — re-detect the window")
+                return
+        except Exception:
+            pass
+
         try:
             client_pt = win32gui.ScreenToClient(hwnd, (x, y))
             lparam = win32api.MAKELONG(client_pt[0], client_pt[1])
-        except Exception:
+        except Exception as exc:
+            self._warn_direct_fail(f"ScreenToClient failed: {exc}")
             return
 
         # Post mouse-move so the window knows where the cursor is
@@ -195,23 +209,30 @@ class InputRouter:
         except Exception:
             pass
 
+        success = False
         if button == "left":
             try:
                 win32api.SendMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
                 win32api.SendMessage(hwnd, win32con.WM_LBUTTONUP, win32con.MK_LBUTTON, lparam)
-            except Exception:
-                pass
+                success = True
+            except Exception as exc:
+                self._warn_direct_fail(f"SendMessage left-click: {exc}")
         else:
             try:
                 win32api.SendMessage(hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
                 win32api.SendMessage(hwnd, win32con.WM_RBUTTONUP, win32con.MK_RBUTTON, lparam)
-            except Exception:
-                pass
+                success = True
+            except Exception as exc:
+                self._warn_direct_fail(f"SendMessage right-click: {exc}")
+
+        if not success:
+            # Invalidate cache if SendMessage fails — the window may have died
+            self.runtime.state.game_hwnd = None
 
     def _direct_key(self, key_str: str, hold_seconds: float) -> None:
         hwnd = self._get_hwnd()
         if not hwnd or not HAS_WIN32:
-            logger.warning("direct input: no target HWND available")
+            self._warn_direct_fail("no target HWND for key press")
             return
         vk = _key_str_to_vk(key_str)
         if vk is None:
@@ -220,10 +241,19 @@ class InputRouter:
             win32api.SendMessage(hwnd, win32con.WM_KEYDOWN, vk, 0)
             time.sleep(max(0.01, hold_seconds))
             win32api.SendMessage(hwnd, win32con.WM_KEYUP, vk, 0)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._warn_direct_fail(f"SendMessage key '{key_str}': {exc}")
 
     # ── Helpers ─────────────────────────────────────────────────────
+
+    _last_warn_ts: float = 0.0  # class-level throttle for direct mode warnings
+
+    def _warn_direct_fail(self, msg: str) -> None:
+        """Log a warning to the UI, throttled to one per 5 seconds."""
+        now = time.monotonic()
+        if now - self._last_warn_ts > 5.0:
+            InputRouter._last_warn_ts = now
+            self.runtime.ui.log(f"⚠️  [direct input] {msg}")
 
     @staticmethod
     def _jitter_delay() -> float:
