@@ -1327,6 +1327,20 @@ class SystemMonitorApp:
         self.runtime.state.character_name = identity.character_name
         self.runtime.state.character_name_normalized = identity.normalized_name
 
+        # Auto-capture game HWND for InputRouter direct mode
+        try:
+            from .character_profiles import find_game_window
+            hwnd = find_game_window(
+                pid=int(pid or 0),
+                process_name=self.runtime.state.light_process_name,
+                preferred_title=identity.window_title,
+            )
+            if hwnd:
+                self.runtime.state.game_hwnd = int(hwnd)
+                self.runtime.state.game_window_title = identity.window_title
+        except Exception:
+            pass
+
         # Prefer the most recent autosave matching this character name (case-insensitive).
         profile_path = find_latest_profile_for(identity.normalized_name)
 

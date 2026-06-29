@@ -72,9 +72,14 @@ from ..character_profiles import GAME_CLIENT_PATTERN, ensure_autosave_directory,
 
 try:
     import ctypes
+    from ctypes import wintypes
     HAS_CTYPES = True
+    HAS_PRINTWINDOW = HAS_WIN32 and HAS_CTYPES
 except ImportError:
+    ctypes = None
+    wintypes = None
     HAS_CTYPES = False
+    HAS_PRINTWINDOW = False
 from ..theme import GREEN, ORANGE, RED, TEAL
 from ..config import CHAR_STATUS_POLL_MS_MIN
 from ..constants import (  # Monitoring timing and alarm constants
@@ -1038,6 +1043,114 @@ class AlarmService:
     def _has_attached_game_window(self) -> bool:
         return self._resolve_attached_game_window() is not None
 
+    def _capture_window_region(self, region: tuple[int, int, int, int], hwnd: int | None = None) -> np.ndarray | None:
+        """Capture a region from a specific window using PrintWindow or fallback to screen capture.
+
+        Args:
+            region: (left, top, width, height) in screen coordinates
+            hwnd: Window handle. If None, tries _resolve_attached_game_window().
+
+        Returns:
+            RGB numpy array, or None if capture failed.
+        """
+        if not HAS_CV2 or np is None:
+            return None
+
+        hwnd = hwnd or self._resolve_attached_game_window()
+        if not hwnd:
+            return None
+
+        left, top, width, height = region
+        win_width = width if width > 0 else 1
+        win_height = height if height > 0 else 1
+
+        # Try PrintWindow first — captures the window's visual content even when
+        # the window is in the background.
+        if HAS_PRINTWINDOW and ctypes is not None and ctypes.windll is not None:
+            try:
+                # Create a compatible DC and bitmap
+                hdc_window = ctypes.windll.user32.GetDC(ctypes.c_void_p(hwnd))
+                hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_window)
+                hbitmap = ctypes.windll.gdi32.CreateCompatibleBitmap(hdc_window, win_width, win_height)
+                ctypes.windll.gdi32.SelectObject(hdc_mem, hbitmap)
+
+                # PrintWindow copies the window's visual into our DC
+                PW_CLIENTONLY = 0x00000001
+                result = ctypes.windll.user32.PrintWindow(
+                    ctypes.c_void_p(int(hwnd)),
+                    hdc_mem,
+                    PW_CLIENTONLY,
+                )
+
+                if result:
+                    # Copy pixel data from bitmap
+                    bmp_info = ctypes.create_string_buffer(64)
+                    ctypes.windll.gdi32.GetObjectA(ctypes.c_void_p(hbitmap), 64, bmp_info)
+                    bits = ctypes.create_string_buffer(win_width * win_height * 4)
+                    bmp_info_struct = ctypes.create_string_buffer(64)
+                    ctypes.windll.gdi32.GetBitmapBits(ctypes.c_void_p(hbitmap), win_width * win_height * 4, bits)
+
+                    # Convert to numpy array
+                    img = np.frombuffer(bits, dtype=np.uint8).reshape(win_height, win_width, 4)
+                    # BGRA → BGR (remove alpha)
+                    img_bgr = img[:, :, :3].copy()
+                    # BGR → RGB for consistency with mss output
+                    img_rgb = img_bgr[:, :, ::-1].copy()
+
+                    # Cleanup
+                    ctypes.windll.gdi32.DeleteObject(ctypes.c_void_p(hbitmap))
+                    ctypes.windll.gdi32.DeleteDC(hdc_mem)
+                    ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(hwnd), hdc_window)
+
+                    # Crop to region within the captured window client area
+                    if left > 0 or top > 0:
+                        h, w = img_rgb.shape[:2]
+                        crop_left = min(left, w)
+                        crop_top = min(top, h)
+                        crop_right = min(left + width, w)
+                        crop_bottom = min(top + height, h)
+                        if crop_right > crop_left and crop_bottom > crop_top:
+                            return img_rgb[crop_top:crop_bottom, crop_left:crop_right]
+                    return img_rgb
+
+                # Cleanup on failure
+                ctypes.windll.gdi32.DeleteObject(ctypes.c_void_p(hbitmap))
+                ctypes.windll.gdi32.DeleteDC(hdc_mem)
+                ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(hwnd), hdc_window)
+            except Exception:
+                logger.debug("PrintWindow failed, falling back to mss screen capture", exc_info=True)
+
+        # Fallback: use mss screen capture at the window's screen region
+        try:
+            if not HAS_MSS or mss is None:
+                return None
+            with mss.mss() as sct:
+                # Get window rect for the full window
+                if hwnd:
+                    try:
+                        rect = ctypes.windll.user32.GetWindowRect(ctypes.c_void_p(int(hwnd))) if HAS_CTYPES and ctypes else win32gui.GetWindowRect(hwnd)
+                        if isinstance(rect, tuple):
+                            win_left, win_top, win_right, win_bottom = rect
+                        else:
+                            win_left, win_top, win_right, win_bottom = rect.left, rect.top, rect.right, rect.bottom
+                        win_w = win_right - win_left
+                        win_h = win_bottom - win_top
+                        if win_w > 0 and win_h > 0:
+                            frame = np.array(sct.grab({
+                                "top": win_top + top,
+                                "left": win_left + left,
+                                "width": width,
+                                "height": height,
+                                "mon": 1,
+                            }))[:, :, :3]
+                            return frame
+                    except Exception:
+                        pass
+        except Exception:
+            logger.debug("mss fallback capture failed", exc_info=True)
+
+        return None
+
     def _prepare_battle_frame(self, frame):
         if frame is None or frame.size == 0:
             return None
@@ -1062,10 +1175,6 @@ class AlarmService:
         return float(np.mean(diff > 18))
 
     def _execute_battle_hotkey(self) -> bool:
-        if not HAS_PYAUTOGUI:
-            self.runtime.ui.log("Battle reaction needs pyautogui")
-            return False
-
         # ============================================================
         # Rate limit: max 3 executions every 60 seconds
         # ============================================================
@@ -1086,25 +1195,74 @@ class AlarmService:
 
         self._battle_hotkey_count += 1
 
+        # Use InputRouter for the hotkey — works in both hardware and direct mode
+        try:
+            router = self.runtime.input_router
+            # Send Ctrl+Q via the router
+            if router and hasattr(router, "tap_key"):
+                # Direct mode: send raw keydown/keyup for Ctrl, then Q
+                # Hardware mode: use pynput to press Ctrl+Q
+                if self.runtime.state.input_mode == "direct":
+                    from ..runtime import win32api, win32con, HAS_WIN32
+                    hwnd = None
+                    try:
+                        hwnd = router._get_hwnd()
+                    except Exception:
+                        pass
+                    if hwnd and HAS_WIN32:
+                        win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x11, 0)  # Ctrl down
+                        time.sleep(0.02)
+                        win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x51, 0)  # Q down
+                        time.sleep(0.05)
+                        win32api.PostMessage(hwnd, win32con.WM_KEYUP, 0x51, 0)    # Q up
+                        time.sleep(0.02)
+                        win32api.PostMessage(hwnd, win32con.WM_KEYUP, 0x11, 0)    # Ctrl up
+                        return True
+                    else:
+                        self.runtime.ui.log("⚠️  Battle hotkey: no HWND for direct mode")
+                        return False
+                else:
+                    # Hardware mode: use pynput for Ctrl+Q
+                    try:
+                        from pynput.keyboard import Key, Controller as KbController
+                        kb = KbController()
+                        kb.press(Key.ctrl)
+                        time.sleep(0.02)
+                        kb.press("q")
+                        time.sleep(0.05)
+                        kb.release("q")
+                        kb.release(Key.ctrl)
+                        return True
+                    except Exception as exc:
+                        self.runtime.ui.log(f"Battle hotkey failed: {exc}")
+                        return False
+            else:
+                # Fallback to pyautogui if no router
+                return self._execute_battle_hotkey_fallback()
+        except Exception as exc:
+            self.runtime.ui.log(f"Battle hotkey failed: {exc}")
+            return False
+
+    def _execute_battle_hotkey_fallback(self) -> bool:
+        """Fallback using pyautogui when InputRouter is unavailable."""
+        if not HAS_PYAUTOGUI:
+            self.runtime.ui.log("Battle reaction needs pyautogui")
+            return False
         try:
             pyautogui.keyDown("ctrl")
             time.sleep(0.02)
-
             pyautogui.keyDown("q")
             time.sleep(0.05)
-
             pyautogui.keyUp("q")
             return True
-
         except Exception as exc:
             self.runtime.ui.log(f"Battle CTRL+Q failed: {exc}")
             return False
-
         finally:
             try:
                 pyautogui.keyUp("ctrl")
             except Exception:
-                logger.debug("Battle CTRL key release failed")
+                pass
 
     def play_alarm(
         self,
@@ -1347,13 +1505,18 @@ class AlarmService:
                     self.runtime.ui.log("Battle monitor started")
                     battle_started_logged = True
                 try:
-                    battle_frame = np.array(sct.grab({
-                        "top": battle_region[1],
-                        "left": battle_region[0],
-                        "width": battle_region[2],
-                        "height": battle_region[3],
-                        "mon": 1,
-                    }))[:, :, :3]
+                    # Use window-aware capture when a game window is attached,
+                    # falls back to screen capture for unattached mode
+                    battle_frame = self._capture_window_region(battle_region)
+                    if battle_frame is None:
+                        # Fallback: direct screen capture
+                        battle_frame = np.array(sct.grab({
+                            "top": battle_region[1],
+                            "left": battle_region[0],
+                            "width": battle_region[2],
+                            "height": battle_region[3],
+                            "mon": 1,
+                        }))[:, :, :3]
                 except Exception as exc:
                     self.runtime.ui.log(f"Battle capture: {exc}")
                     continue
