@@ -19,8 +19,6 @@ Without this hook the frozen .exe crashes with:
 
 import importlib
 import os
-import sys
-from pathlib import Path
 
 # Use packaging.tags to build the interpreter tag, since
 # sysconfig.get_python_tag() was removed in Python 3.12.
@@ -37,13 +35,6 @@ binaries = []
 # sysconfig.get_platform() returns "win-amd64" (dash), but .pyd
 # filenames use "win_amd64" (underscore), so we normalise.
 _platform_tag = f"{_tags.interpreter_name()}{_tags.interpreter_version()}-{sysconfig.get_platform().replace('-', '_')}"
-
-# Also collect native DLLs from tesseract install directory
-# These include: libtesseract*.dll, liblept*.dll, and their dependencies
-_tesseract_vendor = Path(__file__).resolve().parent.parent / "vendor" / "tesseract"
-if _tesseract_vendor.exists():
-    for dll in _tesseract_vendor.glob("*.dll"):
-        binaries.append((str(dll), "tesseract"))
 
 
 def _collect_package(pkg_name):

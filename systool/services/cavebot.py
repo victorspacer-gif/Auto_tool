@@ -1,16 +1,20 @@
-"""CaveBot service — waypoint navigation orchestrator.
+"""CaveBot service — waypoint navigation orchestrator with image-based detection.
 
 Adapted from the TibiaAuto12 CaveBotController:
   1. Load script → find active waypoint
-  2. Walk to waypoint coordinate (minimap click)
+  2. Walk to waypoint (image-detected mark OR coordinate fallback)
   3. Stand still for N seconds
   4. Signal ChaseTarget to attack monsters
   5. Signal AutoLooter to loot
   6. Advance to next waypoint
   7. Loop back to start on completion
 
-When walking is disabled, the cavebot stays at the current position and
-only runs the attack + loot cycle (camping mode).
+Walking uses OpenCV template matching to locate the waypoint mark icon on the
+minimap (like TibiaAuto12), falling back to absolute coordinate clicks when
+image detection fails or is disabled.
+
+Arrival detection uses the same technique — checks whether the mark icon is
+near the centre of the minimap to confirm arrival before advancing.
 
 All mouse/keyboard input goes through InputRouter which supports two modes:
   - "hardware" (pynput — physical cursor movement)
@@ -31,19 +35,30 @@ logger = logging.getLogger(__name__)
 
 from ..runtime import (
     AppRuntime,
-    HAS_PYNPUT,
-    HAS_WIN32,
-    pynput_kb,
+    HAS_CV2,
+    HAS_MSS,
+    HAS_NUMPY,
+    cv2,
+    mss,
+    np,
 )
 from ..constants import (
     EXEC_WAIT_TIMEOUT_DEFAULT,
     INPUT_POST_CLICK_SLEEP,
 )
 from ..theme import GREEN, ORANGE, RED
-from .input_services import HumanMouse, SafeKeyboardSession
+from .image_finder import (
+    locate_center_image,
+    locate_image,
+    get_map_settings_dir,
+    list_available_images as _list_marks,
+)
 
 # Default scripts directory
 SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "scripts")
+
+# Maximum retries for image-based waypoint location before falling back to coords
+MAX_IMAGE_RETRIES = 3
 
 
 def _ensure_scripts_dir() -> str:
@@ -51,6 +66,11 @@ def _ensure_scripts_dir() -> str:
     scripts_dir = os.path.abspath(scripts_dir)
     os.makedirs(scripts_dir, exist_ok=True)
     return scripts_dir
+
+
+def _get_project_root() -> str:
+    """Return the Auto_tool project root directory."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class CaveBotService:
@@ -136,12 +156,98 @@ class CaveBotService:
         if os.path.isfile(path):
             os.remove(path)
 
+    # ── Image assets ──────────────────────────────────────────────────
+
+    @staticmethod
+    def list_available_marks() -> list[str]:
+        """Return names of available mark images (without extension)."""
+        return _list_marks("MapSettings")
+
+    # ── Image-based waypoint detection ────────────────────────────────
+
+    def _locate_mark_on_minimap(self, mark_name: str, map_region: tuple[int, int, int, int]) -> tuple[int, int] | None:
+        """Find a waypoint mark icon on the minimap using OpenCV template matching.
+
+        This is the core navigation method, matching TibiaAuto12's approach in
+        CaveBotController.py line 67: ``LocateCenterImage('images/MapSettings/X.png', Region=map, Precision=0.8)``
+
+        Uses ImageFinder's ``locate_center_image()`` which captures the minimap
+        region via mss and runs ``cv2.matchTemplate()`` against the mark PNG.
+
+        Args:
+            mark_name: The mark name (e.g. 'CheckMark', 'Star').
+            map_region: (left, top, width, height) of the minimap area.
+
+        Returns:
+            (centre_x, centre_y) in **screen** coordinates, or None if not found.
+        """
+        if not HAS_CV2 or not HAS_MSS or not HAS_NUMPY:
+            return None
+
+        img_dir = get_map_settings_dir()
+        mark_path = os.path.join(img_dir, f"{mark_name}.png")
+        if not os.path.isfile(mark_path):
+            return None
+
+        precision = self.runtime.state.cavebot.image_detection_precision
+        return locate_center_image(mark_path, region=map_region, precision=precision)
+
+    def _check_arrived_at_waypoint(self, mark_name: str, map_region: tuple[int, int, int, int]) -> bool:
+        """Check if the player has arrived at the waypoint.
+
+        Mirrors TibiaAuto12's ``CheckWaypoint()`` (Scanners.py line 32):
+        checks whether the mark icon is found **near the centre** of the minimap
+        (with a 48px margin), indicating the character has walked close enough.
+
+        Uses ImageFinder's ``locate_image()`` on the centre-cropped minimap region.
+
+        Args:
+            mark_name: The mark name (e.g. 'CheckMark').
+            map_region: (left, top, width, height) of the minimap area.
+
+        Returns:
+            True if the mark is found in the centre region of the minimap.
+        """
+        if not HAS_CV2 or not HAS_MSS or not HAS_NUMPY:
+            return False
+
+        img_dir = get_map_settings_dir()
+        mark_path = os.path.join(img_dir, f"{mark_name}.png")
+        if not os.path.isfile(mark_path):
+            return False
+
+        precision = self.runtime.state.cavebot.image_detection_precision
+
+        # Crop to centre region (48px margin on each side, matching TibiaAuto12)
+        left, top, width, height = map_region
+        centre_margin = 48
+        if width > centre_margin * 2 and height > centre_margin * 2:
+            centre_region = (
+                left + centre_margin,
+                top + centre_margin,
+                width - centre_margin * 2,
+                height - centre_margin * 2,
+            )
+        else:
+            centre_region = map_region
+
+        pos = locate_image(mark_path, region=centre_region, precision=precision)
+        return pos is not None
+
     # ── Internal worker ──────────────────────────────────────────────
 
     def _worker(self) -> None:
         state = self.runtime.state.cavebot
         router = self.runtime.input_router
-        self.runtime.ui.log(f"▶ CaveBot started — script: {state.script_name} (input: {self.runtime.state.input_mode})")
+
+        # Log image availability
+        img_status = "enabled" if (state.image_detection_enabled and HAS_CV2 and HAS_MSS) else "disabled"
+        avail_marks = len(self.list_available_marks())
+        self.runtime.ui.log(
+            f"▶ CaveBot started — script: {state.script_name} "
+            f"(input: {self.runtime.state.input_mode}, image-detection: {img_status}, "
+            f"marks-available: {avail_marks})"
+        )
 
         script_data = self.load_script(state.script_name)
         if not script_data:
@@ -192,13 +298,40 @@ class CaveBotService:
                     if not self._wait_interruptible(state.stand_seconds):
                         break
 
-                # ── Phase 3: Attack window ────────────────────
+                # ── Phase 3: Arrival check (image detection) ──
+                if state.arrival_detection_enabled and state.image_detection_enabled and mark_name and state.map_region:
+                    arrived = False
+                    for attempt in range(3):
+                        if self._stop_event.is_set():
+                            break
+                        if self._check_arrived_at_waypoint(mark_name, state.map_region):
+                            arrived = True
+                            break
+                        if not self._wait_interruptible(0.3):
+                            break
+                    if not arrived and mark_name:
+                        self.runtime.ui.log(f"   ⏳ Waiting for arrival at {mark_name}...")
+                        # Retry with longer wait
+                        for _ in range(5):
+                            if self._stop_event.is_set():
+                                break
+                            if self._check_arrived_at_waypoint(mark_name, state.map_region):
+                                arrived = True
+                                break
+                            if not self._wait_interruptible(0.5):
+                                break
+                    if arrived:
+                        self.runtime.ui.log(f"   ✅ Arrived at {mark_name}")
+                    else:
+                        self.runtime.ui.log(f"   ⚠️  Could not confirm arrival at {mark_name} (continuing)")
+
+                # ── Phase 4: Attack window ────────────────────
                 if state.monsters_to_attack:
                     attack_time = max(2.0, state.stand_seconds * 2)
                     if not self._wait_interruptible(attack_time):
                         break
 
-                # ── Phase 4: Loot ─────────────────────────────
+                # ── Phase 5: Loot ─────────────────────────────
                 if state.looting_enabled and state.sqm_positions:
                     self._loot_cycle(state, router)
                     if not self._wait_interruptible(random.uniform(0.3, 0.6)):
@@ -245,42 +378,80 @@ class CaveBotService:
             self.runtime.ui.log("⚠️  Map region not configured — cannot walk")
             return
 
-        if wp_x > 0 and wp_y > 0:
-            click_x, click_y = wp_x, wp_y
-        else:
-            click_x = map_region[0] + map_region[2] // 2
-            click_y = map_region[1] + map_region[3] // 2
-
-        max_attempts = 3
-        for attempt in range(max_attempts):
-            if self._stop_event.is_set():
-                return
-
-            jx, jy = click_x + random.randint(-3, 3), click_y + random.randint(-3, 3)
-
-            if not self.runtime.execution.acquire(
-                self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
-            ):
+        # ── Strategy 1: Image-based mark detection (primary) ──────
+        image_clicked = False
+        if state.image_detection_enabled and HAS_CV2 and HAS_MSS and mark_name:
+            for attempt in range(MAX_IMAGE_RETRIES):
                 if self._stop_event.is_set():
                     return
-                continue
 
-            try:
-                router.human_move_and_click(jx, jy, "left")
-                time.sleep(INPUT_POST_CLICK_SLEEP)
-            finally:
-                self.runtime.execution.release()
+                pos = self._locate_mark_on_minimap(mark_name, map_region)
+                if pos is not None:
+                    click_x, click_y = pos
+                    # Add jitter for human-like movement
+                    jx, jy = click_x + random.randint(-2, 2), click_y + random.randint(-2, 2)
 
-            if not self._wait_interruptible(random.uniform(0.8, 1.2)):
-                return
+                    if not self.runtime.execution.acquire(
+                        self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
+                    ):
+                        if self._stop_event.is_set():
+                            return
+                        continue
 
-            if state.walk_for_debug:
-                self._do_arrow_refresh(router)
+                    try:
+                        router.human_move_and_click(jx, jy, "left")
+                        time.sleep(INPUT_POST_CLICK_SLEEP)
+                    finally:
+                        self.runtime.execution.release()
 
-        mode = self.runtime.state.input_mode
-        self.runtime.ui.log(f"   Walked → ({click_x}, {click_y}) [{mode}]")
+                    image_clicked = True
+                    self.runtime.ui.log(f"   [img] Found {mark_name} → clicked ({jx}, {jy})")
+                    break
+                else:
+                    # Arrow refresh to scroll minimap (like TibiaAuto12 WalkForRefresh)
+                    if state.walk_for_debug:
+                        self._do_arrow_refresh(router)
+                    if not self._wait_interruptible(random.uniform(0.5, 1.0)):
+                        return
+
+        # ── Strategy 2: Coordinate fallback ────────────────────────
+        if not image_clicked:
+            if wp_x > 0 and wp_y > 0:
+                click_x, click_y = wp_x, wp_y
+            else:
+                click_x = map_region[0] + map_region[2] // 2
+                click_y = map_region[1] + map_region[3] // 2
+
+            for attempt in range(3):
+                if self._stop_event.is_set():
+                    return
+
+                jx, jy = click_x + random.randint(-3, 3), click_y + random.randint(-3, 3)
+
+                if not self.runtime.execution.acquire(
+                    self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
+                ):
+                    if self._stop_event.is_set():
+                        return
+                    continue
+
+                try:
+                    router.human_move_and_click(jx, jy, "left")
+                    time.sleep(INPUT_POST_CLICK_SLEEP)
+                finally:
+                    self.runtime.execution.release()
+
+                if not self._wait_interruptible(random.uniform(0.8, 1.2)):
+                    return
+
+                if state.walk_for_debug:
+                    self._do_arrow_refresh(router)
+
+            mode = "coord" if (wp_x > 0 and wp_y > 0) else "map-centre"
+            self.runtime.ui.log(f"   Walked → ({click_x}, {click_y}) [{mode}]")
 
     def _do_arrow_refresh(self, router) -> None:
+        """Press arrow keys to scroll the minimap (helps find lost marks)."""
         if not self.runtime.execution.acquire(
             self._stop_event, max_wait=EXEC_WAIT_TIMEOUT_DEFAULT, module_id="cavebot"
         ):

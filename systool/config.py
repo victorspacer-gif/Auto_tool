@@ -107,6 +107,7 @@ CAVEBOT_SUSPEND_AFTER_DEFAULT: int = 5
 CAVEBOT_MONSTERS_RANGE_DEFAULT: int = 3
 CAVEBOT_SKILL_KEY_DEFAULT: str = "f1"
 CAVEBOT_ATTACK_MODE_DEFAULT: str = "normal"
+CAVEBOT_IMAGE_PRECISION_DEFAULT: float = 0.8
 
 # ── Chase Target ──────────────────────────────────────────────────────
 CHASE_SCAN_INTERVAL_MS_DEFAULT: int = 300
@@ -125,7 +126,8 @@ JOB_JSON_MAX_MS_DEFAULT: int = 3_000
 # Fields that need special handling during serialization (non-dataclass types).
 _JSON_SPECIAL = frozenset({
     "hotkey_bindings", "jobs", "fish_spots", "__meta__", "cavebot_monsters_to_attack",
-    "cavebot_sqm_positions", "cavebot_map_region",
+ "cavebot_sqm_positions", "cavebot_map_region",
+ "cavebot_image_detection_precision",
     "chase_monster_names", "looter_sqm_positions",
 })
 
@@ -668,6 +670,15 @@ class ConfigSerializer:
         state.chase_target.suspend_after_unreachable = max(NON_NEGATIVE_INT_MIN, get_int("chase_target.suspend_after_unreachable", state.chase_target.suspend_after_unreachable))
         state.chase_target.monsters_range = max(NON_NEGATIVE_INT_MIN, get_int("chase_target.monsters_range", state.chase_target.monsters_range))
         state.chase_target.battle_list_x = max(NON_NEGATIVE_INT_MIN, get_int("chase_target.battle_list_x", state.chase_target.battle_list_x))
+        raw_chase_battle_region = cfg.get("chase_target.battle_region")
+        if raw_chase_battle_region and raw_chase_battle_region not in ("None", ""):
+            try:
+                parsed = json.loads(raw_chase_battle_region) if isinstance(raw_chase_battle_region, str) else raw_chase_battle_region
+                state.chase_target.battle_region = tuple(parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.chase_target.battle_region = None
+        state.chase_target.image_targeting_enabled = get_bool("chase_target.image_targeting_enabled", state.chase_target.image_targeting_enabled)
+        state.chase_target.image_targeting_precision = max(0.5, min(1.0, get_float("chase_target.image_targeting_precision", state.chase_target.image_targeting_precision)))
         raw_chase_monsters = cfg.get("chase_target.monster_names")
         if raw_chase_monsters and raw_chase_monsters not in ("None", ""):
             try:

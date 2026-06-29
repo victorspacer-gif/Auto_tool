@@ -284,14 +284,34 @@ class CaveBotTab:
         cb = tk.Checkbutton(chase_toggles, text="Follow", variable=self._chase_follow_var, bg=PANEL, fg=FG,
                             selectcolor=BG, font=SMALL)
         cb.pack(side="left", padx=2)
+        self._chase_img_target_var = tk.BooleanVar(value=chase_state.image_targeting_enabled)
+        cb_img = tk.Checkbutton(chase_toggles, text="🔍 Img Target", variable=self._chase_img_target_var,
+                                bg=PANEL, fg=FG, selectcolor=BG, font=SMALL)
+        cb_img.pack(side="left", padx=2)
 
-        # Battle list X for chase
+        # Battle list X + region for chase
         chase_battle = tk.Frame(chase_panel, bg=PANEL)
         chase_battle.pack(fill="x", pady=(0, 4))
         self._chase_battle_x_var = tk.StringVar(value=str(chase_state.battle_list_x))
         tk.Label(chase_battle, text="Battle X:", font=SMALL_B, bg=PANEL, fg=FG).pack(side="left", padx=(0, 4))
         tk.Entry(chase_battle, textvariable=self._chase_battle_x_var, font=MONO, bg=BG, fg=FG, relief="flat", bd=2, width=6).pack(side="left", padx=(0, 4))
         self.helpers["btn"](chase_battle, "🎯 Record X", self._record_battle_list_x, PURPLE).pack(side="left", padx=2)
+
+        # Image targeting precision + battle region
+        chase_img_opts = tk.Frame(chase_panel, bg=PANEL)
+        chase_img_opts.pack(fill="x", pady=(0, 4))
+        tk.Label(chase_img_opts, text="Img Prec:", font=SMALL, bg=PANEL, fg=FG).pack(side="left", padx=(0, 2))
+        self._chase_img_prec_var = tk.StringVar(value=str(chase_state.image_targeting_precision))
+        tk.Entry(chase_img_opts, textvariable=self._chase_img_prec_var, font=MONO, bg=BG, fg=FG,
+                 relief="flat", bd=2, width=4).pack(side="left", padx=(0, 4))
+        self.helpers["btn"](chase_img_opts, "🗺 Detect Battle Window", self._detect_battle_window_chase, PURPLE).pack(side="left", padx=2)
+
+        # Battle region status indicator
+        self._chase_region_label = tk.Label(
+            chase_img_opts, text=self._format_battle_region(chase_state.battle_region),
+            font=SMALL, bg=PANEL, fg=MUTED
+        )
+        self._chase_region_label.pack(side="left", padx=2)
 
         # ── Auto Looter ───────────────────────────────────────────
         looter_panel = tk.LabelFrame(
@@ -637,6 +657,13 @@ class CaveBotTab:
         except (ValueError, TypeError):
             chase.scan_interval_ms = 300
         chase.follow_mode = self._chase_follow_var.get()
+        chase.image_targeting_enabled = self._chase_img_target_var.get()
+        try:
+            val = float(self._chase_img_prec_var.get())
+            if 0.5 <= val <= 1.0:
+                chase.image_targeting_precision = val
+        except (ValueError, TypeError):
+            pass
         try:
             chase.battle_list_x = int(self._chase_battle_x_var.get())
         except (ValueError, TypeError):
@@ -662,6 +689,34 @@ class CaveBotTab:
         self.runtime.state.chase_target.battle_list_x = x
         self.runtime.state.cavebot.battle_list_x = x
         self.runtime.ui.log(f"⚔️ Battle list X set to {x}")
+
+    @staticmethod
+    def _format_battle_region(region: tuple[int, int, int, int] | None) -> str:
+        if region is None:
+            return "⚠️ No battle region"
+        return f"🗺 ({region[0]},{region[1]} {region[2]}×{region[3]})"
+
+    def _detect_battle_window_chase(self) -> None:
+        """Auto-detect the battle window region for image-based targeting."""
+        from ...services.image_finder import detect_battle_window, HAS_CV2
+
+        if not HAS_CV2:
+            self.runtime.ui.log("❌ OpenCV not available — cannot detect battle window")
+            return
+
+        self.runtime.ui.log("🔍 Detecting battle window...")
+        region = detect_battle_window(precision=0.8)
+        if region is not None:
+            self.runtime.state.chase_target.battle_region = region
+            self.runtime.state.cavebot.map_region = region  # Also set for cavebot use
+            if self._chase_region_label:
+                self._chase_region_label.config(text=self._format_battle_region(region))
+            self.runtime.ui.log(f"🗺 Battle window region: {region}")
+            self.runtime.ui.set_status(f"Battle: {region}", GREEN)
+        else:
+            self.runtime.ui.log("⚠️ Could not detect battle window. Capture a Battle reference first.")
+            self.runtime.ui.log("   💡 Use 'Capture Ref' button to save a Battle.png from your game.")
+            self.runtime.ui.set_status("Battle window not found", ORANGE)
 
     def _detect_minimap_region(self) -> None:
         """Auto-detect the minimap region using image matching.

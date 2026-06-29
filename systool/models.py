@@ -193,6 +193,10 @@ class CaveBotState:
     load_auto_banker: bool = False
     looting_enabled: bool = True
     skill_key: str = app_config.CAVEBOT_SKILL_KEY_DEFAULT
+    # Image-based waypoint detection (from TibiaAuto12)
+    image_detection_enabled: bool = True
+    arrival_detection_enabled: bool = True
+    image_detection_precision: float = app_config.CAVEBOT_IMAGE_PRECISION_DEFAULT
     # Region for minimap / crosshair click area (left, top, width, height)
     map_region: tuple[int, int, int, int] | None = None
     # SQM click positions for looting (9 around character)
@@ -220,6 +224,11 @@ class ChaseTargetState:
     suspend_after_unreachable: int = app_config.CAVEBOT_SUSPEND_AFTER_DEFAULT
     monsters_range: int = app_config.CAVEBOT_MONSTERS_RANGE_DEFAULT
     battle_list_x: int = 0
+    # Image-based targeting region (left, top, width, height) of battle list
+    battle_region: tuple[int, int, int, int] | None = None
+    # Toggle between key-press (False) and image-based (True) targeting
+    image_targeting_enabled: bool = False
+    image_targeting_precision: float = app_config.CAVEBOT_IMAGE_PRECISION_DEFAULT
 
 
 @dataclasses.dataclass
@@ -470,6 +479,9 @@ class AppState:
     cavebot_load_auto_banker = _group_property("cavebot", "load_auto_banker")
     cavebot_looting_enabled = _group_property("cavebot", "looting_enabled")
     cavebot_skill_key = _group_property("cavebot", "skill_key")
+    cavebot_image_detection_enabled = _group_property("cavebot", "image_detection_enabled")
+    cavebot_arrival_detection_enabled = _group_property("cavebot", "arrival_detection_enabled")
+    cavebot_image_detection_precision = _group_property("cavebot", "image_detection_precision")
     cavebot_map_region = _group_property("cavebot", "map_region")
     cavebot_sqm_positions = _group_property("cavebot", "sqm_positions")
     cavebot_battle_list_x = _group_property("cavebot", "battle_list_x")

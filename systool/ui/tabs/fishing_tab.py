@@ -50,7 +50,10 @@ class FishingTab:
         self.helpers["register_module_indicator"](rod_panel, "fish", self.runtime.state.fish_active)
         self.rod_label = tk.Label(rod_panel, text="Rod: 0, 0", font=MONO, fg=TEAL, bg=PANEL)
         self.rod_label.pack(anchor="w", pady=(0, 4))
-        self.helpers["btn"](rod_panel, "🎯 Record Rod Pos", self.record_rod_pos, BLUE).pack(fill="x")
+        rod_btn_row = tk.Frame(rod_panel, bg=PANEL)
+        rod_btn_row.pack(fill="x", pady=(0, 4))
+        self.helpers["btn"](rod_btn_row, "🎯 Record Rod Pos", self.record_rod_pos, BLUE).pack(side="left", padx=1)
+        self.helpers["btn"](rod_btn_row, "🔍 Auto Detect Rod", self._auto_detect_rod, GREEN).pack(side="left", padx=1)
         rod_jitter = tk.StringVar(value=str(self.runtime.state.fish_rod_jitter))
         self.ui_vars["fish_rod_jit_var"] = rod_jitter
         self.helpers["label_entry"](rod_panel, "Rod jitter (px ±):", rod_jitter, width=5)
@@ -227,6 +230,39 @@ class FishingTab:
                 self.rod_label.config(text=f"Rod: {pos[0]}, {pos[1]}")
 
         self.services["position_capture"].capture(on_done, "fishing rod in bag")
+
+    def _auto_detect_rod(self) -> None:
+        """Auto-detect the fishing rod position in inventory using image matching."""
+        from ...services.image_finder import find_item_in_inventory, list_available_tools, HAS_CV2
+
+        if not HAS_CV2:
+            self.runtime.ui.log("❌ OpenCV not available — cannot auto-detect")
+            return
+
+        tools = list_available_tools()
+        rod_images = [t for t in tools if "rod" in t.lower() or "FishingRod" == t]
+        if not rod_images:
+            self.runtime.ui.log("⚠️  No rod images found in images/Items/Frames/Tools/")
+            return
+
+        rod_name = rod_images[0]
+        self.runtime.ui.log(f"🔍 Searching for {rod_name} in inventory...")
+
+        # Search the full screen (no inventory region configured)
+        pos = find_item_in_inventory(rod_name, inventory_region=None, precision=0.85, use_frame=True)
+        if pos is None:
+            # Retry without frame border
+            pos = find_item_in_inventory(rod_name, inventory_region=None, precision=0.8, use_frame=False)
+
+        if pos is not None:
+            self.runtime.state.fish_rod_pos = pos
+            self.runtime.ui.log(f"✅ Rod auto-detected at {pos}")
+            self.runtime.ui.set_status(f"Rod auto-detected: {pos}", GREEN)
+            if self.rod_label:
+                self.rod_label.config(text=f"Rod: {pos[0]}, {pos[1]}")
+        else:
+            self.runtime.ui.log("❌ Could not find fishing rod on screen. Make sure your inventory is visible.")
+            self.runtime.ui.set_status("Rod not found", ORANGE)
 
     def record_spot(self) -> None:
         if self._fish_spot_recording:

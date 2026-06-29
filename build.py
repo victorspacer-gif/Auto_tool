@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 import subprocess
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ PYTHON_WHEELS = ROOT / "vendor" / "python-wheels"
 TESSERACT_VENDOR = ROOT / "vendor" / "tesseract"
 SPEC_FILE = ROOT / "SystemMonitor.spec"
 REQUIREMENTS_FILE = ROOT / "requirements.txt"
+OCR_DIAG_JSON = ROOT / "build" / "ocr-diag.json"
 OUTPUT_EXE = ROOT / "dist" / "SystemMonitor" / "SystemMonitor.exe"
 
 REQUIRED_MODULES = [
@@ -141,6 +143,9 @@ def run_build(options: BuildOptions) -> None:
     compile_app(options.clean)
     remove_stray_bootloader()
 
+    print("[7/7] Validating OCR bundle...")
+    validate_ocr_bundle()
+
     print("Build complete.")
     print(f'Executable path: "{OUTPUT_EXE}"')
 
@@ -157,11 +162,13 @@ def check_environment() -> None:
     arch = platform.architecture()[0]
     print(f"Using Python {platform.python_version()} {arch} at {sys.executable}")
 
-    if sys.version_info[:2] != (3, 12) or arch != "64bit":
+    if sys.version_info[:2] not in ((3, 12), (3, 14)) or arch != "64bit":
+        py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
         raise BuildError(
-            "This build requires 64-bit Python 3.12 because the bundled "
-            "tesserocr/cysignals wheels are cp312-win_amd64. Install Python "
-            "3.12 x64 from python.org, then rerun this script."
+            f"This build requires 64-bit Python 3.12 or 3.14 (detected {py_tag} "
+            f"{arch}) because the bundled tesserocr/cysignals wheels are "
+            f"cp312-win_amd64 and cp314-win_amd64. Install Python 3.12 or "
+            f"3.14 x64 from python.org, then rerun this script."
         )
 
     require_file(SPEC_FILE)
@@ -217,7 +224,7 @@ def manage_dependencies(options: BuildOptions) -> None:
     )
 
     install_preferred_wheel("cysignals", required=True)
-    install_preferred_wheel("tesserocr", required=False)
+    install_preferred_wheel("tesserocr", required=True)
     importlib.invalidate_caches()
 
 
@@ -225,8 +232,15 @@ def missing_modules() -> list[str]:
     return [module for module in REQUIRED_MODULES if importlib.util.find_spec(module) is None]
 
 
+def _py_ver_tag() -> str:
+    """Return the CPython version tag for wheel filenames, e.g. 'cp312'."""
+    return f"cp{sys.version_info.major}{sys.version_info.minor}"
+
+
 def install_preferred_wheel(package: str, *, required: bool) -> None:
-    wheels = sorted(PYTHON_WHEELS.glob(f"{package}-*-cp312-cp312-win_amd64.whl"))
+    tag = _py_ver_tag()
+    pattern = f"{package}-*-{tag}-{tag}-win_amd64.whl"
+    wheels = sorted(PYTHON_WHEELS.glob(pattern))
     if wheels:
         wheel = wheels[-1]
         print(f"Installing bundled {package} wheel:")
@@ -234,7 +248,7 @@ def install_preferred_wheel(package: str, *, required: bool) -> None:
         run_python_module(["pip", "install", "--upgrade", str(wheel)], f"installing {package} wheel")
         return
 
-    print(f"WARNING: No bundled {package} cp312 wheel was found in {PYTHON_WHEELS}.")
+    print(f"WARNING: No bundled {package} {tag} wheel was found in {PYTHON_WHEELS}.")
     if required:
         print("         Falling back to pip...")
         run_python_module(["pip", "install", "--upgrade", package], f"installing {package} from pip")
@@ -330,6 +344,52 @@ def post_build_cleanup() -> None:
     doc_dir = TESSERACT_VENDOR / "doc"
     for filename in ["AUTHORS", "LICENSE", "README.md"]:
         remove_file(doc_dir / filename, missing_ok=True)
+
+
+def validate_ocr_bundle() -> None:
+    """Run the frozen .exe's OCR diagnostics and confirm tesserocr is bundled.
+
+    This catches silent failures where the .exe falls back to pytesseract
+    because tesserocr's .pyd or native DLLs were not bundled correctly.
+    """
+    if not OUTPUT_EXE.exists():
+        raise BuildError(f"Cannot validate OCR: {OUTPUT_EXE} was not found.")
+
+    diag_path = str(OCR_DIAG_JSON)
+    result = run_subprocess(
+        [str(OUTPUT_EXE), "--diagnose-ocr-env", diag_path],
+        action="running OCR diagnostics on built executable",
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise BuildError(
+            f"OCR diagnostics failed (exit code {result.returncode}).\n"
+            f"  {stderr if stderr else 'No stderr output.'}"
+        )
+
+    try:
+        with open(OCR_DIAG_JSON, encoding="utf-8") as handle:
+            diag = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BuildError(f"Could not read OCR diagnostics JSON: {exc}")
+
+    if not diag.get("has_tesserocr"):
+        error = diag.get("tesserocr_error", "unknown error")
+        fallback = diag.get("ocr_engine_backend", "none")
+        print(f"  WARNING: tesserocr is NOT available in the bundle ({error}).")
+        print(f"  OCR will use the fallback backend: {fallback}")
+        print(f"  Full diagnostics: {json.dumps(diag, indent=2)}")
+    else:
+        print(f"  tesserocr=ready  |  backend={diag.get('ocr_engine_backend', '?')}  "
+              f"|  tesseract_cmd={diag.get('tesseract_cmd', '?')}")
+
+    # Clean up diagnostics file
+    try:
+        OCR_DIAG_JSON.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def require_file(path: Path) -> None:
