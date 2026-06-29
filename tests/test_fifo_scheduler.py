@@ -141,46 +141,29 @@ class TestFishingCycle:
         state.fish_session_deadline = time.monotonic() + 60
 
         release_calls: list[str] = []
-        moves: list[tuple[int, int]] = []
-        clicks: list[tuple[str, tuple[int, int]]] = []
+        move_click_calls: list[tuple] = []
 
-        class FakeMouse:
-            def __init__(self) -> None:
-                self.position = (10, 20)
-
-            def click(self, button, _count: int) -> None:
-                clicks.append((button, self.position))
-
-        def fake_move(mouse, target: tuple[int, int], duration: float | None = None) -> None:
-            _ = duration
-            moves.append(target)
-            mouse.position = target
+        class FakeRouter:
+            def human_move_and_click(self, x, y, button, duration=None):
+                move_click_calls.append((button, (x, y)))
 
         runtime.pause.wait = lambda: None
         runtime.pause.wait_interruptible = lambda _seconds, _stop_evt: False
         runtime.mouse.acquire = lambda *_args, **_kwargs: True
         runtime.mouse.release = lambda: release_calls.append("released")
-
-        fake_pynput_mouse = SimpleNamespace(
-            Controller=FakeMouse,
-            Button=SimpleNamespace(right="right", left="left"),
-        )
+        runtime.input_router = FakeRouter()
 
         service = FishingService(runtime)
 
-        with patch("systool.services.fishing.HAS_PYNPUT", True), patch(
-            "systool.services.fishing.pynput_mouse", fake_pynput_mouse
-        ), patch("systool.services.HumanMouse.jitter", side_effect=lambda pos, _amount: pos), patch(
-            "systool.services.HumanMouse.move",
-            side_effect=fake_move,
+        with patch(
+            "systool.services.HumanMouse.jitter", side_effect=lambda pos, _amount: pos
         ):
             service._worker()
 
-        assert clicks == [
+        assert move_click_calls == [
             ("right", (100, 200)),
             ("left", (300, 400)),
         ]
-        assert moves == [(100, 200), (300, 400)]
         assert release_calls == ["released"]
         assert state.stats["fish_casts"] == 1
         assert state.fish_active is False
