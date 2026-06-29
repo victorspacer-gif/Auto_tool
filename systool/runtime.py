@@ -364,20 +364,197 @@ class ExecutionGate:
                     break
 
 
+class PriorityGate:
+    """Priority-based input gate inspired by OTibia_Bot's tiered lock model.
+
+    OTibia_Bot uses two locks with implicit priority:
+      - ``walker_Lock``: combat threads hold it → walker yields
+      - ``attack_Lock``: checked before spell/attack → avoids double-fire
+
+    This gate models N priority tiers:
+      - **CRITICAL (0)**: healer — preempts everything, never preempted
+      - **HIGH   (1)**: attack/spell combat — preempts NORMAL/LOW
+      - **NORMAL (2)**: walker/fishing/runes — normal automation
+      - **LOW    (3)**: AFK/right-click — background tasks
+
+    Within the same priority level, requests are FIFO.
+    Higher-priority requests preempt the current owner.
+    """
+
+    CRITICAL = 0
+    HIGH = 1
+    NORMAL = 2
+    LOW = 3
+
+    _LABELS = {0: "CRITICAL", 1: "HIGH", 2: "NORMAL", 3: "LOW"}
+
+    @classmethod
+    def label(cls, priority: int) -> str:
+        return cls._LABELS.get(priority, str(priority))
+
+    def __init__(self, pause: PauseController) -> None:
+        self._pause = pause
+        self._owner_priority: int | None = None
+        self._owner_module: str | None = None
+        self._owner_token: object | None = None
+        self._owner_event: threading.Event | None = None
+        # Each priority level has its own FIFO queue
+        self._queues: dict[int, list[tuple[object, str, threading.Event | None]]] = {}
+        self._condition = threading.Condition()
+
+    def acquire(
+        self,
+        stop_evt: threading.Event,
+        priority: int = NORMAL,
+        max_wait: float | None = None,
+        module_id: str = "anonymous",
+    ) -> bool:
+        """Request input ownership at a given priority level.
+
+        Returns True when ownership is granted, False if the stop event is set
+        or the request times out.
+        """
+        request_token = object()
+        with self._condition:
+            # Enqueue at this priority level
+            q = self._queues.setdefault(priority, [])
+            q.append((request_token, module_id, stop_evt))
+            # If we can preempt the current owner, do it
+            if self._should_preempt_locked(priority):
+                self._preempt_owner_locked()
+            self._condition.notify_all()
+
+        deadline = (time.monotonic() + max_wait) if max_wait is not None else None
+
+        while True:
+            if stop_evt.is_set():
+                self._discard(request_token, priority)
+                return False
+
+            if deadline is not None and time.monotonic() >= deadline:
+                self._discard(request_token, priority)
+                return False
+
+            self._pause.wait()
+
+            with self._condition:
+                if not self._is_queued_locked(request_token, priority):
+                    return False
+                if self._owner_token is None and self._is_next_in_any_queue_locked(request_token, priority):
+                    # Grant ownership
+                    self._owner_priority = priority
+                    self._owner_module = module_id
+                    self._owner_token = request_token
+                    self._owner_event = stop_evt
+                    self._remove_locked(request_token, priority)
+                    return True
+                self._condition.wait(timeout=0.05)
+
+    def release(self) -> None:
+        """Release ownership and notify waiting threads."""
+        with self._condition:
+            self._owner_priority = None
+            self._owner_module = None
+            self._owner_token = None
+            self._owner_event = None
+            self._condition.notify_all()
+
+    @property
+    def owner_module(self) -> str | None:
+        with self._condition:
+            return self._owner_module
+
+    @property
+    def owner_priority(self) -> int | None:
+        with self._condition:
+            return self._owner_priority
+
+    # ── Internal helpers ─────────────────────────────────────────────
+
+    def _should_preempt_locked(self, request_priority: int) -> bool:
+        """Check if the request should preempt the current owner."""
+        if self._owner_priority is None:
+            return False
+        return request_priority < self._owner_priority
+
+    def _preempt_owner_locked(self) -> None:
+        """Signal the current owner to release (via its stop_evt)."""
+        if self._owner_event is not None:
+            self._owner_event.set()
+
+    def _is_queued_locked(self, token: object, priority: int) -> bool:
+        q = self._queues.get(priority, [])
+        return any(t is token for t, _m, _e in q)
+
+    def _is_next_in_any_queue_locked(self, token: object, request_priority: int) -> bool:
+        """Check if this token is the next in line across all queues."""
+        # Find the highest-priority queue with items
+        for prio in sorted(self._queues.keys()):
+            q = self._queues[prio]
+            if q:
+                front_token = q[0][0]
+                return front_token is token and prio == request_priority
+        return False
+
+    def _remove_locked(self, token: object, priority: int) -> None:
+        q = self._queues.get(priority, [])
+        self._queues[priority] = [(t, m, e) for t, m, e in q if t is not token]
+        if not self._queues[priority]:
+            del self._queues[priority]
+
+    def _discard(self, token: object, priority: int) -> None:
+        with self._condition:
+            self._remove_locked(token, priority)
+            self._condition.notify_all()
+
+    def _cleanup_stale(self) -> None:
+        """Remove entries where the stop event is already set."""
+        with self._condition:
+            for prio in list(self._queues.keys()):
+                self._queues[prio] = [(t, m, e) for t, m, e in self._queues[prio]
+                                        if not e.is_set()]
+                if not self._queues[prio]:
+                    del self._queues[prio]
+            self._condition.notify_all()
+
+
 class MouseGate:
-    def __init__(self, execution: ExecutionGate) -> None:
+    """Thin wrapper around the active scheduling gate.
+
+    Can delegate to either the FIFO ExecutionGate or the priority-based
+    PriorityGate depending on ``scheduling_mode`` in AppState.
+    """
+
+    def __init__(self, execution: ExecutionGate, priority_gate: PriorityGate | None = None) -> None:
         self._execution = execution
+        self._priority = priority_gate  # May be None if not configured yet
+        # Resolved at call time based on AppState.scheduling_mode
+        self._get_mode: Callable[[], str] = lambda: "fifo"
+
+    def set_mode_resolver(self, resolver: Callable[[], str]) -> None:
+        """Set a callable that returns 'fifo' or 'priority'."""
+        self._get_mode = resolver
 
     def acquire(
         self,
         stop_evt: threading.Event,
         max_wait: float | None = None,
         module_id: str = "anonymous",
+        priority: int = 2,  # NORMAL by default
     ) -> bool:
+        mode = self._get_mode()
+        if mode == "priority" and self._priority is not None:
+            return self._priority.acquire(
+                stop_evt, priority=priority, max_wait=max_wait, module_id=module_id
+            )
         return self._execution.acquire(stop_evt, max_wait=max_wait, module_id=module_id)
 
     def release(self) -> None:
-        self._execution.release()
+        mode = self._get_mode()
+        if mode == "priority" and self._priority is not None:
+            self._priority.release()
+        else:
+            self._execution.release()
 
 
 class AppRuntime:
@@ -388,7 +565,12 @@ class AppRuntime:
         self.ui = UINotifier()
         self.pause = PauseController(self.ui, start_paused=True)
         self.execution = ExecutionGate(self.pause)
-        self.mouse = MouseGate(self.execution)
+        self.priority_gate = PriorityGate(self.pause)
+        self.mouse = MouseGate(self.execution, self.priority_gate)
+        # Mode resolver: reads from AppState, defaults to FIFO
+        self.mouse.set_mode_resolver(
+            lambda: getattr(self.state, "scheduling_mode", "fifo")
+        )
         self.afk_stop = threading.Event()
         self.rclick_stop = threading.Event()
         self.alarm_stop = threading.Event()

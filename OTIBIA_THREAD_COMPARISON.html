@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OTibia_Bot vs Auto_tool — Thread System & Architecture Comparison</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --panel: #16213e;
+  --accent: #0f3460;
+  --highlight: #4e8cff;
+  --green: #2ecc71;
+  --orange: #e67e22;
+  --red: #e74c3c;
+  --text: #e0e0e0;
+  --muted: #8892a4;
+  --border: #2a2a4a;
+  --code-bg: #0d1117;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.7;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+h1 {
+  font-size: 2.2em;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, #4e8cff, #2ecc71);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+h2 {
+  font-size: 1.4em;
+  color: var(--highlight);
+  margin: 36px 0 12px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-size: 1.1em;
+  color: #a8c0ff;
+  margin: 20px 0 8px 0;
+}
+p, li { color: var(--text); margin-bottom: 8px; }
+ul { padding-left: 20px; margin-bottom: 12px; }
+a { color: var(--highlight); }
+code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+pre {
+  background: var(--code-bg);
+  padding: 16px 20px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.85em;
+  line-height: 1.5;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 0.9em;
+}
+th {
+  background: var(--accent);
+  color: var(--text);
+  padding: 10px 14px;
+  text-align: left;
+  font-weight: 600;
+}
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+tr:hover td { background: rgba(78,140,255,0.06); }
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.78em;
+  font-weight: 600;
+}
+.badge-fifo { background: #2c3e50; color: #95a5a6; }
+.badge-otibia { background: #1a3a2a; color: #2ecc71; }
+.badge-both { background: #2a2a50; color: #4e8cff; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin: 16px 0;
+}
+.panel-title {
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--highlight);
+  margin-bottom: 8px;
+}
+.callout {
+  border-left: 4px solid var(--green);
+  padding: 12px 16px;
+  margin: 16px 0;
+  background: rgba(46,204,113,0.06);
+  border-radius: 0 8px 8px 0;
+}
+.callout-warn {
+  border-left-color: var(--orange);
+  background: rgba(230,126,34,0.06);
+}
+.note { color: var(--muted); font-size: 0.85em; }
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 16px 0;
+}
+@media (max-width: 700px) {
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<h1>OTibia_Bot vs Auto_tool</h1>
+<p style="font-size:1.1em; color:var(--muted);">Thread scheduling, input coordination, and architectural lessons</p>
+
+<p>This document compares the <strong>thread coordination systems</strong> of two MMORPG automation tools — <a href="https://github.com/victorspacer-gif/Auto_tool">Auto_tool (SystemMonitor)</a> and a reference OTibia bot — and documents architectural lessons worth importing.</p>
+
+<h2>1. Thread Scheduling Overview</h2>
+
+<div class="summary-grid">
+  <div class="panel">
+    <div class="panel-title"><span class="badge badge-otibia">OTibia_Bot</span> Lock-Based Priority</div>
+    <ul>
+      <li>Two global <code>threading.Lock()</code> instances: <code>walker_Lock</code> + <code>attack_Lock</code></li>
+      <li><strong>Implicit priority:</strong> combat threads hold <code>walker_Lock</code> → walker yields</li>
+      <li><code>attack_Lock</code> prevents spell/attack double-fire</li>
+      <li>Healer runs freely — no lock coordination needed</li>
+      <li>QThread daemon loops with <code>self.running</code> flags</li>
+      <li><strong>No notion of FIFO</strong> — priority is encoded in which locks are held</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span class="badge badge-fifo">Auto_tool</span> FIFO ExecutionGate</div>
+    <ul>
+      <li><code>ExecutionGate</code> with <code>threading.Condition</code> + token-based queue</li>
+      <li><strong>Strict FIFO:</strong> first to request gets exclusive input ownership</li>
+      <li>All services equally weighted — fair, no starvation</li>
+      <li><code>MouseGate</code> thin wrapper for discoverability</li>
+      <li>Timeout-based acquisition with pause integration</li>
+      <li>No concept of priority — healer, walker, fishing all compete equally</li>
+    </ul>
+  </div>
+</div>
+
+<h2>2. OTibia_Bot Lock Priority Model (Detailed)</h2>
+
+<div class="panel">
+  <div class="panel-title">The Two-Tier Lock Pattern</div>
+
+  <pre>
+# Addresses.py — global locks at module level
+walker_Lock = threading.Lock()   # Combat holds → walker yields
+attack_Lock = threading.Lock()   # Guards spell/attack to avoid double-fire
+
+# TargetThread — combat acquires walker_Lock
+while read_targeting_status() != 0:
+    if not walker_Lock.locked():
+        walker_Lock.acquire()    # Stop the walker while we fight!
+    # ... attack, cast, loot corpse ...
+if walker_Lock.locked():
+    walker_Lock.release()         # Release so walker resumes
+
+# WalkerThread — walker checks lock state
+while walker_Lock.locked() and wpt_action != 4:
+    QThread.msleep(200)            # Yield to combat threads
+
+# SpellThread / HealThread — check attack_Lock
+if not attack_Lock.locked():       # Don't cast if attack is in progress
+    if attack_monster(data):
+        press_hotkey(key)
+  </pre>
+</div>
+
+<table>
+  <tr>
+    <th>Priority Tier</th>
+    <th>Threads</th>
+    <th>Lock Behaviour</th>
+  </tr>
+  <tr>
+    <td><span class="badge badge-otibia">Critical</span></td>
+    <td>Healer (HealThread)</td>
+    <td>Runs freely — no lock coordination. Always acts when HP/MP thresholds met.</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-otibia">High</span></td>
+    <td>Target (TargetThread), Spell (SpellThread)</td>
+    <td>Acquire <code>walker_Lock</code> to pause walker. Check <code>attack_Lock</code> before casting.</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-fifo">Normal</span></td>
+    <td>Walker (WalkerThread)</td>
+    <td>Checks <code>walker_Lock.locked()</code> in busy-wait loop. Yields to combat.</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-fifo">Low</span></td>
+    <td>Hotkeys, SmartHotkeys, Looting</td>
+    <td>No lock coordination needed — low-impact background tasks.</td>
+  </tr>
+</table>
+
+<h2>3. The New PriorityGate (Imported into Auto_tool)</h2>
+
+<div class="panel">
+  <div class="panel-title"><span class="badge badge-both">NEW</span> PriorityGate — Tiered Preemption Model</div>
+
+  <p>The PriorityGate generalizes OTibia_Bot's two-lock model into <strong>N explicit priority tiers</strong> with preemption:</p>
+
+  <pre>
+class PriorityGate:
+    CRITICAL = 0  # Healer — preempts everything
+    HIGH     = 1  # Attack/Spell — preempts NORMAL/LOW
+    NORMAL   = 2  # Walker/Fishing/Runes
+    LOW      = 3  # AFK/Right-click
+
+# Usage in any service:
+cycle_locked = self.runtime.mouse.acquire(
+    stop_event, priority=PriorityGate.CRITICAL, module_id="healer"
+)
+  </pre>
+
+  <p><strong>Key behaviours:</strong></p>
+  <ul>
+    <li><strong>Within same priority:</strong> strict FIFO ordering</li>
+    <li><strong>Higher priority arrives:</strong> current owner's <code>stop_evt</code> is set — preempted</li>
+    <li><strong>Preempted service:</strong> naturally retries on next loop iteration</li>
+    <li><strong>Backward compatible:</strong> all existing callers still work with FIFO mode (default)</li>
+  </ul>
+
+  <p>Toggle in the Config Tab: <code>📋 FIFO</code> ↔ <code>⚔️ Priority (healer > combat > walker > background)</code></p>
+</div>
+
+<div class="callout">
+  <strong>Design Decision:</strong> The preemption mechanism uses <code>stop_evt.set()</code> instead of forcing a release. This means the preempted service's <em>current</em> action (a single click or keystroke) completes gracefully before the loop checks <code>stop_evt.is_set()</code> and releases the gate. This prevents mid-click corruption while still preempting within ~1 loop iteration.
+</div>
+
+<h2>4. Architectural Lessons Worth Importing</h2>
+
+<h3>4.1 Stuck Detection + Obstacle Discovery</h3>
+<div class="panel">
+  <p>OTibia_Bot tracks previous position and detects when stuck for &gt;0.4 seconds. The last target coordinate is added to a <code>discovered_obstacles</code> set, and the A* path is recalculated. This is shared between Walker and Target threads.</p>
+  <pre>
+# OTibia_Bot — WalkerThread & TargetThread
+previous_pos = (my_x, my_y, my_z)
+stuck_timer = 0
+
+# In main loop:
+my_x, my_y, my_z = read_my_wpt()
+if (my_x, my_y, my_z) == previous_pos:
+    stuck_timer += sleep_value
+    if stuck_timer > 400:  # 0.4 seconds
+        self.discovered_obstacles.add(self.last_target_pos)
+        stuck_timer = 0
+else:
+    previous_pos = (my_x, my_y, my_z)
+    stuck_timer = 0
+  </pre>
+  <p><strong>Auto_tool status:</strong> CaveBot has no stuck detection. The walker moves to waypoint coordinates and relies on arrival detection (image or timer). <span class="note">Gap identified.</span></p>
+</div>
+
+<h3>4.2 A* Pathfinding with Dynamic Obstacles</h3>
+<div class="panel">
+  <p>OTibia_Bot has a full <code>calculate_path_astar()</code> function (<code>Functions/PathfindingFunctions.py</code>) that accepts a blacklist of tile coordinates. Both the Walker and Target threads feed discovered obstacles into the same pathfinder, enabling them to navigate around dynamic barriers.</p>
+  <pre>
+# Both threads merge blacklist + discovered obstacles
+blacklist_2d = {(bx, by) for bx, by, bz in blacklist if bz == z}
+all_obstacles = self.discovered_obstacles | blacklist_2d
+path = calculate_path_astar(x, y, target_x, target_y, all_obstacles)
+if path:
+    next_step = path[0]
+    walk(x + next_step[0], y + next_step[1])  # Take one step
+  </pre>
+  <p><strong>Auto_tool status:</strong> No pathfinding. Walk is <code>InputRouter.tap_key</code> direction presses. <span class="note">Gap identified.</span></p>
+</div>
+
+<h3>4.3 One-Shot Looting (Target+Battle Drop Integration)</h3>
+<div class="panel">
+  <p>When targeting is active and a monster is killed, OTibia_Bot right-clicks the corpse SQM, waits for the container to open, then runs a <strong>one-shot looting thread</strong> to grab items. When targeting is <em>off</em>, looting runs continuously scanning the screen.</p>
+  <pre>
+# In TargetThread after monster kill:
+if open_corpse:
+    QThread.msleep(random.randint(1000, 1500))
+    mouse_function(corpse_x, corpse_y, option=1)   # Open corpse
+    QThread.msleep(random.randint(300, 500))
+    if self.loot_data:
+        self.looting_thread = LootThread(self.loot_data, one_shot=True)
+        self.looting_thread.start()
+  </pre>
+  <p><strong>Auto_tool status:</strong> AutoLooter runs as a standalone service cycling SQM positions. No kill-event triggering. <span class="note">Gap identified.</span></p>
+</div>
+
+<h3>4.4 Smart Hotkeys (Key-to-Screen Macros)</h3>
+<div class="panel">
+  <p>OTibia_Bot lets users bind an F-key to a screen coordinate with a mode: <strong>Crosshair</strong> (wherever cursor is), <strong>On Yourself</strong> (character centre), or <strong>On Target</strong> (relative to target position). When the key is pressed, the mouse automatically clicks the correct screen location.</p>
+  <pre>
+if win32api.GetAsyncKeyState(vk_code) & 1:  # Key just pressed
+    mouse_function(hotkey_x, hotkey_y, option=1)  # Use item
+    if option == 'On Target':
+        dx = (target_x - my_x) * square_size
+        dy = (target_y - my_y) * square_size
+        mouse_function(center_x + dx, center_y + dy, option=2)  # Click target
+    elif option == 'On Yourself':
+        mouse_function(center_x, center_y, option=2)
+    elif option == 'With Crosshair':
+        mouse_function(cursor_x, cursor_y, option=2)
+  </pre>
+  <p><strong>Auto_tool status:</strong> Hotkey jobs only send key presses (no mouse coordination). <span class="note">Gap identified.</span></p>
+</div>
+
+<h3>4.5 OCR Battle List Targeting</h3>
+<div class="panel">
+  <p>When the attack key is set to <strong>key 13</strong> (OCR mode), the Target thread captures the battle list region, runs OCR, and clicks on monster names directly — no hotkey spam needed.</p>
+  <pre>
+# scan_and_click_battle_list_ocr()
+screenshot = capture.get_screenshot()
+gray = cv.cvtColor(screenshot, cv.COLOR_BGR2GRAY)
+_, thresh = cv.threshold(gray, 150, 255, cv.THRESH_BINARY_INV)
+data = pytesseract.image_to_data(thresh, output_type=Output.DICT)
+for i in range(n_boxes):
+    if data['text'][i].strip().upper() in targets:
+        click_x = bx + x + w//2
+        click_y = by + y + h//2 - TITLE_BAR_OFFSET
+        mouse_function(click_x, click_y, option=2)
+        return
+  </pre>
+  <p><strong>Auto_tool status:</strong> ChaseTarget has image-based targeting (OpenCV template matching) but no OCR-based text targeting. <span class="note">Gap identified — but image matching is arguably more reliable than OCR for game text.</span></p>
+</div>
+
+<h3>4.6 Humanization Patterns</h3>
+<div class="panel">
+  <p>OTibia_Bot uses <code>random.randint()</code> extensively throughout all threads. Every sleep, click delay, and movement has jitter:</p>
+  <table>
+    <tr><th>Operation</th><th>Range (ms)</th></tr>
+    <tr><td>Healer loop sleep</td><td>10–20</td></tr>
+    <tr><td>Attack key press delay</td><td>150–250</td></tr>
+    <tr><td>Spell cycle delay</td><td>100–200</td></tr>
+    <tr><td>Rune/SD click delay</td><td>800–1000</td></tr>
+    <tr><td>Corpse open delay</td><td>1000–1500</td></tr>
+    <tr><td>Target loop sleep</td><td>70–100</td></tr>
+  </table>
+  <p><strong>Auto_tool status:</strong> Already has extensive humanization via <code>HumanMouse</code>, jitter ranges, and randomized delays. <strong>Parity achieved.</strong></p>
+</div>
+
+<h2>5. Side-by-Side Comparison</h2>
+
+<table>
+  <tr>
+    <th style="width:20%">Dimension</th>
+    <th style="width:40%"><span class="badge badge-otibia">OTibia_Bot</span></th>
+    <th style="width:40%"><span class="badge badge-fifo">Auto_tool</span></th>
+  </tr>
+  <tr>
+    <td>UI Framework</td>
+    <td>PyQt5 (QThread, pyqtSignal, QMutex)</td>
+    <td>Tkinter (UINotifier dispatch, threading.Event)</td>
+  </tr>
+  <tr>
+    <td>Thread Model</td>
+    <td>QThread subclass with <code>self.running</code> flags</td>
+    <td>Raw threading.Thread daemon + stop Event</td>
+  </tr>
+  <tr>
+    <td>Input Coordination</td>
+    <td>Global <code>threading.Lock()</code> × 2 — implicit priority</td>
+    <td>ExecutionGate (FIFO) + PriorityGate (NEW) — explicit modes</td>
+  </tr>
+  <tr>
+    <td>Pause System</td>
+    <td>No global pause — stop/start per thread</td>
+    <td>PauseController with threading.Event — global</td>
+  </tr>
+  <tr>
+    <td>Pathfinding</td>
+    <td>A* with expand_waypoints + dynamic obstacle blacklist</td>
+    <td>Directional key taps only (no pathfinding)</td>
+  </tr>
+  <tr>
+    <td>Stuck Detection</td>
+    <td>Position tracking + 0.4s timer → obstacle discovery</td>
+    <td>None currently</td>
+  </tr>
+  <tr>
+    <td>Looting Model</td>
+    <td>One-shot (on kill) + continuous (standalone) modes</td>
+    <td>Continuous SQM cycling only</td>
+  </tr>
+  <tr>
+    <td>Targeting</td>
+    <td>Hotkey + OCR battle list + image (OpenCV)</td>
+    <td>Hotkey + image-based (OpenCV template match)</td>
+  </tr>
+  <tr>
+    <td>Smart Hotkeys</td>
+    <td>Key + mouse position macros (crosshair/self/target)</td>
+    <td>Key-only hotkey jobs (no mouse coordination)</td>
+  </tr>
+  <tr>
+    <td>Save/Load</td>
+    <td>Per-module JSON profiles with dropdown selector</td>
+    <td>Single-file JSON config (all settings at once)</td>
+  </tr>
+  <tr>
+    <td>Module Windows</td>
+    <td>Separate popup QWidget windows per module</td>
+    <td>Single notebook with tabs</td>
+  </tr>
+  <tr>
+    <td>Memory Reading</td>
+    <td>ctypes.windll + ReadProcessMemory per stat</td>
+    <td>pymem backend + OCR fallback + pointer chains</td>
+  </tr>
+  <tr>
+    <td>Build System</td>
+    <td>PyInstaller spec (simple)</td>
+    <td>PyInstaller spec + wheel vendor + tesseract bundle + hook system</td>
+  </tr>
+</table>
+
+<h2>6. Recommendations</h2>
+
+<div class="callout">
+  <strong>✅ Done:</strong> PriorityGate imported from OTibia_Bot's lock-priority model into Auto_tool. Toggle available in Config tab.
+</div>
+
+<div class="callout callout-warn">
+  <strong>🎯 High-Value Gaps (worth importing):</strong>
+  <ol>
+    <li><strong>A* Pathfinding + Obstacle Discovery</strong> — Most impactful for CaveBot. Would replace blind direction-tap walking with intelligent navigation that auto-adapts to blocked tiles.</li>
+    <li><strong>Stuck Detection</strong> — Low complexity, high value. Track previous position, flag obstacles, recalculate. Can be added to CaveBot worker in ~50 lines.</li>
+    <li><strong>Kill-Triggered Looting</strong> — Link AutoLooter to ChaseTarget kill events for efficient one-shot looting.</li>
+  </ol>
+</div>
+
+<div class="callout" style="border-left-color: var(--highlight); background: rgba(78,140,255,0.06);">
+  <strong>📊 Lower Priority (nice-to-have):</strong>
+  <ul>
+    <li><strong>Smart Hotkeys</strong> — Requires global hotkey interception (already have pynput). Adds crosshair/self/target modes.</li>
+    <li><strong>OCR Battle List</strong> — Already have image-based targeting which is more reliable. OCR adds fallback for text-only monster identification.</li>
+    <li><strong>Per-Module Profiles</strong> — Current single-file config works well; per-module adds complexity without clear benefit.</li>
+  </ul>
+</div>
+
+<footer style="margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85em;">
+  <p>Generated from analysis of <code>~/projects/OTibia_Bot/</code> and <code>~/projects/Auto_tool/</code> — June 2026</p>
+</footer>
+
+</body>
+</html>

@@ -307,6 +307,8 @@ class AppState:
 
     # Input mode: "hardware" (physical cursor via pynput) or "direct" (Win32 SendMessage)
     input_mode: str = "hardware"
+    # Scheduling mode: "fifo" (ExecutionGate) or "priority" (PriorityGate, OTibia_Bot-style)
+    scheduling_mode: str = "fifo"
     game_window_title: str = ""  # Title fragment for detecting the game window
     game_hwnd: int | None = None  # Explicit window handle (overrides title search)
 

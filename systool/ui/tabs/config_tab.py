@@ -136,7 +136,44 @@ class ConfigTab:
         )
         help_text.pack(pady=(4, 0))
 
-    # ═══════════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════
+        # Scheduling Mode  (FIFO vs Priority — OTibia_Bot-style)
+        # ═══════════════════════════════════════════════════════════
+
+        sched_panel = tk.LabelFrame(
+            right, text=" ⏱️  Thread Scheduling Mode ", font=BOLD, fg=FG, bg=PANEL, bd=1, pady=8, padx=10
+        )
+        sched_panel.pack(fill="x", pady=(0, 12))
+
+        tk.Label(
+            sched_panel,
+            text="Controls how concurrent automation threads share\nmouse and keyboard input ownership.",
+            font=SMALL, fg=MUTED, bg=PANEL, justify="center"
+        ).pack(pady=(0, 8))
+
+        self._sched_mode_var = tk.StringVar(value=self.runtime.state.scheduling_mode)
+
+        sched_frame = tk.Frame(sched_panel, bg=PANEL)
+        sched_frame.pack(fill="x", pady=(0, 8))
+
+        for text, value in [
+            ("📋  FIFO (first-come, first-served — equal priority)", "fifo"),
+            ("⚔️  Priority (healer > combat > walker > background — OTibia_Bot-style)", "priority"),
+        ]:
+            rb = tk.Radiobutton(
+                sched_frame, text=text, variable=self._sched_mode_var, value=value,
+                bg=PANEL, fg=FG, selectcolor=BG, font=SMALL_B,
+                command=self._sync_scheduling_mode,
+                anchor="w", padx=10, pady=2
+            )
+            rb.pack(fill="x")
+
+        fifo_detail = tk.Label(
+            sched_panel,
+            text="• FIFO: All threads equal — fair, no starvation\\n• Priority: Healer always wins, combat preempts walker/runes/fishing\\n• Priority mode mirrors OTibia_Bot's walker_Lock / attack_Lock model",
+            font=SMALL, fg=MUTED, bg=PANEL, justify="left", anchor="w", wraplength=380
+        )
+        fifo_detail.pack(fill="x", pady=(4, 0))
     # Input Mode Helpers
     # ═══════════════════════════════════════════════════════════════
 
@@ -146,6 +183,11 @@ class ConfigTab:
         self.runtime.ui.log(f"🖱️  Global input mode set to {label}")
         if self._hwnd_label:
             self._hwnd_label.config(text=f"HWND: {self.runtime.state.game_hwnd or '—'}  |  Mode: {self.runtime.state.input_mode}")
+
+    def _sync_scheduling_mode(self) -> None:
+        self.runtime.state.scheduling_mode = self._sched_mode_var.get()
+        label = "Priority (healer > combat > walker)" if self._sched_mode_var.get() == "priority" else "FIFO (first-come, first-served)"
+        self.runtime.ui.log(f"⏱️  Scheduling mode set to {label}")
 
     def _detect_window(self) -> None:
         title = self._window_title_var.get().strip()
