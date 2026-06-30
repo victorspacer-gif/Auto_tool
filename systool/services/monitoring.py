@@ -1508,18 +1508,16 @@ class AlarmService:
                     self.runtime.ui.log("Battle monitor started")
                     battle_started_logged = True
                 try:
-                    # Use window-aware capture when a game window is attached,
-                    # falls back to screen capture for unattached mode
-                    battle_frame = self._capture_window_region(battle_region)
-                    if battle_frame is None:
-                        # Fallback: direct screen capture
-                        battle_frame = np.array(sct.grab({
-                            "top": battle_region[1],
-                            "left": battle_region[0],
-                            "width": battle_region[2],
-                            "height": battle_region[3],
-                            "mon": 1,
-                        }))[:, :, :3]
+                    # Use mss screen capture — avoids PrintWindow which sends
+                    # WM_PRINT to the game window, forcing a GDI repaint that
+                    # causes DirectX windows to flash white.
+                    battle_frame = np.array(sct.grab({
+                        "top": battle_region[1],
+                        "left": battle_region[0],
+                        "width": battle_region[2],
+                        "height": battle_region[3],
+                        "mon": 1,
+                    }))[:, :, :3]
                 except Exception as exc:
                     self.runtime.ui.log(f"Battle capture: {exc}")
                     continue
