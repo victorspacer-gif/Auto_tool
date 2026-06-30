@@ -58,6 +58,7 @@ from ..runtime import (
     TESSERACT_IMPORT_ERROR,
     create_ocr_engine,
     describe_ocr_environment,
+    ensure_pygame_mixer,
     cv2,
     mss,
     np,
@@ -1066,12 +1067,17 @@ class AlarmService:
 
         # Try PrintWindow first — captures the window's visual content even when
         # the window is in the background.
+        # IMPORTANT: use GetDC(NULL) to get the screen DC, NOT GetDC(hwnd).
+        # GetDC(hwnd) on a DirectX/OpenGL window forces a GDI-compatible surface
+        # switch, causing the window to flash white (visual flicker). The screen
+        # DC avoids all interaction with the game's hardware-accelerated surface.
         if HAS_PRINTWINDOW and ctypes is not None and ctypes.windll is not None:
             try:
-                # Create a compatible DC and bitmap
-                hdc_window = ctypes.windll.user32.GetDC(ctypes.c_void_p(hwnd))
-                hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_window)
-                hbitmap = ctypes.windll.gdi32.CreateCompatibleBitmap(hdc_window, win_width, win_height)
+                # Create a compatible DC and bitmap using the SCREEN DC (not the
+                # game window's DC) to avoid DirectX/GDI interference.
+                hdc_screen = ctypes.windll.user32.GetDC(None)
+                hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_screen)
+                hbitmap = ctypes.windll.gdi32.CreateCompatibleBitmap(hdc_screen, win_width, win_height)
                 ctypes.windll.gdi32.SelectObject(hdc_mem, hbitmap)
 
                 # PrintWindow copies the window's visual into our DC
@@ -1084,10 +1090,7 @@ class AlarmService:
 
                 if result:
                     # Copy pixel data from bitmap
-                    bmp_info = ctypes.create_string_buffer(64)
-                    ctypes.windll.gdi32.GetObjectA(ctypes.c_void_p(hbitmap), 64, bmp_info)
                     bits = ctypes.create_string_buffer(win_width * win_height * 4)
-                    bmp_info_struct = ctypes.create_string_buffer(64)
                     ctypes.windll.gdi32.GetBitmapBits(ctypes.c_void_p(hbitmap), win_width * win_height * 4, bits)
 
                     # Convert to numpy array
@@ -1100,7 +1103,7 @@ class AlarmService:
                     # Cleanup
                     ctypes.windll.gdi32.DeleteObject(ctypes.c_void_p(hbitmap))
                     ctypes.windll.gdi32.DeleteDC(hdc_mem)
-                    ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(hwnd), hdc_window)
+                    ctypes.windll.user32.ReleaseDC(None, hdc_screen)
 
                     # Crop to region within the captured window client area
                     if left > 0 or top > 0:
@@ -1116,7 +1119,7 @@ class AlarmService:
                 # Cleanup on failure
                 ctypes.windll.gdi32.DeleteObject(ctypes.c_void_p(hbitmap))
                 ctypes.windll.gdi32.DeleteDC(hdc_mem)
-                ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(hwnd), hdc_window)
+                ctypes.windll.user32.ReleaseDC(None, hdc_screen)
             except Exception:
                 logger.debug("PrintWindow failed, falling back to mss screen capture", exc_info=True)
 
@@ -1294,7 +1297,7 @@ class AlarmService:
 
                 # Play MP3 alarm sound via pygame or shell
                 if path and os.path.exists(path):
-                    if HAS_PYGAME:
+                    if HAS_PYGAME and ensure_pygame_mixer():
                         try:
                             pygame.mixer.music.load(path)
                             pygame.mixer.music.play()
