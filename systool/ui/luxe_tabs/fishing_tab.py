@@ -16,7 +16,6 @@ from ...config import (
 )
 from ...runtime import HAS_PYNPUT, pynput_kb, pynput_mouse
 from ...services import HotkeyService
-
 logger = logging.getLogger(__name__)
 
 
