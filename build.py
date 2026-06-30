@@ -377,25 +377,37 @@ def compile_app(clean_build: bool, spec: Path, name: str) -> None:
     args.append(str(spec))
 
     print(f"  PyInstaller args: {' '.join(args)}")
+    print(f"  Running: {sys.executable} -m PyInstaller {' '.join(args)}")
     try:
-        # Use subprocess instead of direct import to capture full output
         result = run_subprocess(
             [sys.executable, "-m", "PyInstaller", *args],
             action=f"building {name} executable",
-            capture_output=False,
+            capture_output=True,
             check=False,
         )
     except BuildError as exc:
         raise BuildError(f"PyInstaller failed: {exc}") from exc
 
+    # Always print PyInstaller's output so the user can see what happened
+    if result.stdout:
+        for line in result.stdout.strip().split("\n"):
+            print(f"  | {line}")
+    if result.stderr:
+        print("  ---- STDERR ----")
+        for line in result.stderr.strip().split("\n"):
+            print(f"  ! {line}")
+
     if result.returncode != 0:
-        error_text = result.stderr.strip() if result.stderr.strip() else "(no stderr — check output above)"
+        stderr_info = result.stderr.strip() if result.stderr.strip() else "(no stderr output)"
+        stdout_tail = "\n".join(result.stdout.strip().split("\n")[-10:]) if result.stdout.strip() else "(no stdout)"
         raise BuildError(
             f"PyInstaller failed with exit code {result.returncode} for {name}.\n"
             f"  Spec: {spec}\n"
-            f"  Error: {error_text}"
+            f"  Last stdout lines:\n"
+            f"{'    ' + stdout_tail.replace(chr(10), chr(10) + '    ')}\n"
+            f"  Stderr: {stderr_info}"
         )
-    print(f"  PyInstaller finished successfully for {name}.")
+    print(f"  ✅ PyInstaller finished successfully for {name}.")
 
 
 def remove_stray_bootloader(name: str) -> None:
