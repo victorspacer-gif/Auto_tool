@@ -656,17 +656,50 @@ class TestConfigureTesseractRuntime:
 
 
 class TestPygameMixerStubs:
-    """Verify pygame mixer is eager-initialized at import time."""
+    """Verify pygame mixer is lazy-initialized via ensure_pygame_mixer()."""
 
-    def test_mixer_initialized_at_import(self):
-        from systool.runtime import HAS_PYGAME, pygame
+    def test_mixer_not_initialized_at_import(self):
+        """Mixer must NOT be initialized at import time — it's lazy now.
+
+        pygame-ce produces white noise when mixer is started; the gate stays
+        shut until audio is actually requested.
+        """
+        from systool.runtime import HAS_PYGAME, pygame, ensure_pygame_mixer
 
         if not HAS_PYGAME:
             pytest.skip("pygame not available")
 
-        assert pygame.mixer.get_init() is not None, (
-            "mixer must be initialized at import time"
-        )
+        # In the mocked test env, get_init() returns a MagicMock (truthy).
+        # Verify ensure_pygame_mixer() exists and is callable.
+        assert callable(ensure_pygame_mixer)
+        result = ensure_pygame_mixer()
+        assert result is True, "ensure_pygame_mixer must return True when mixer is ready"
+
+    def test_ensure_pygame_mixer_idempotent(self):
+        """Calling ensure_pygame_mixer() multiple times is safe."""
+        from systool.runtime import HAS_PYGAME, ensure_pygame_mixer
+
+        if not HAS_PYGAME:
+            pytest.skip("pygame not available")
+
+        r1 = ensure_pygame_mixer()
+        r2 = ensure_pygame_mixer()
+        r3 = ensure_pygame_mixer()
+        assert r1 == r2 == r3, "ensure_pygame_mixer must be idempotent"
+
+    def test_ensure_pygame_mixer_false_when_no_pygame(self, monkeypatch):
+        """Returns False when HAS_PYGAME is False."""
+        from systool.runtime import ensure_pygame_mixer
+
+        import systool.runtime as rt
+        original_flag = rt.HAS_PYGAME
+        try:
+            monkeypatch.setattr(rt, "HAS_PYGAME", False)
+            assert ensure_pygame_mixer() is False, (
+                "must return False when pygame unavailable"
+            )
+        finally:
+            rt.HAS_PYGAME = original_flag
 
 
 class TestPauseControllerWaitInterruptibleDeadline:
