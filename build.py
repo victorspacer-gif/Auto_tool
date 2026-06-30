@@ -371,14 +371,6 @@ def find_tesseract_source() -> Path | None:
 
 
 def compile_app(clean_build: bool, spec: Path, name: str) -> None:
-    try:
-        import PyInstaller.__main__
-    except ImportError as exc:
-        raise BuildError(
-            "PyInstaller is not importable. Rerun with --install-deps, or install "
-            "dependencies manually."
-        ) from exc
-
     args = ["--noconfirm"]
     if clean_build:
         args.append("--clean")
@@ -386,17 +378,24 @@ def compile_app(clean_build: bool, spec: Path, name: str) -> None:
 
     print(f"  PyInstaller args: {' '.join(args)}")
     try:
-        PyInstaller.__main__.run(args)
-    except SystemExit as exc:
-        code = exc.code if isinstance(exc.code, int) else 1
-        if code != 0:
-            raise BuildError(
-                f"PyInstaller failed with exit code {code} for {name}.\n"
-                f"  Spec: {spec}\n"
-                f"  Check the output above for ERROR/WARNING messages from PyInstaller."
-            ) from exc
-    except Exception as exc:
+        # Use subprocess instead of direct import to capture full output
+        result = run_subprocess(
+            [sys.executable, "-m", "PyInstaller", *args],
+            action=f"building {name} executable",
+            capture_output=False,
+            check=False,
+        )
+    except BuildError as exc:
         raise BuildError(f"PyInstaller failed: {exc}") from exc
+
+    if result.returncode != 0:
+        error_text = result.stderr.strip() if result.stderr.strip() else "(no stderr — check output above)"
+        raise BuildError(
+            f"PyInstaller failed with exit code {result.returncode} for {name}.\n"
+            f"  Spec: {spec}\n"
+            f"  Error: {error_text}"
+        )
+    print(f"  PyInstaller finished successfully for {name}.")
 
 
 def remove_stray_bootloader(name: str) -> None:
