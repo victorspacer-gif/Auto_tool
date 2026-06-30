@@ -8,6 +8,7 @@ companion module controls.
 from __future__ import annotations
 
 import logging
+import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 
@@ -432,7 +433,15 @@ class CaveBotTab:
             self._mark_preview_label.config(text=f"→ {mark} / {wp_type}")
 
     def _add_waypoint(self) -> None:
-        """Add a new waypoint at the current position."""
+        """Add a new waypoint — auto-detects mark on minimap, falls back to manual.
+
+        TibiaAuto12 behaviour: when user clicks "Add WP" with a mark selected,
+        the bot uses ``LocateCenterImage()`` to find the mark icon on the minimap
+        automatically and records its centre position — no manual clicking needed.
+
+        If image detection is unavailable (no OpenCV, no minimap region, or mark
+        not found on screen), falls back to manual position capture via hotkey.
+        """
         name = self._script_var.get().strip()
         if not name:
             self.runtime.ui.log("⚠️  Select/create a script first")
@@ -440,8 +449,32 @@ class CaveBotTab:
 
         mark_name = self._mark_var.get()
         wp_type = self._wp_type_var.get()
+        state = self.runtime.state.cavebot
 
-        # Record current mouse position for the waypoint coordinate
+        # ── Strategy 1: Auto-detect the mark on the minimap (TibiaAuto12 style) ─
+        map_region = state.map_region
+        img_enabled = state.image_detection_enabled
+        if mark_name and map_region and img_enabled:
+            from ...services.image_finder import locate_center_image, get_map_settings_dir, HAS_CV2
+            if HAS_CV2:
+                img_dir = get_map_settings_dir()
+                mark_path = os.path.join(img_dir, f"{mark_name}.png")
+                if os.path.isfile(mark_path):
+                    precision = state.image_detection_precision
+                    pos = locate_center_image(mark_path, region=map_region, precision=precision)
+                    if pos is not None:
+                        self._add_waypoint_at_pos(name, mark_name, wp_type, pos)
+                        self.runtime.ui.log(f"🔍 Auto-detected '{mark_name}' on minimap at ({pos[0]}, {pos[1]})")
+                        return
+                    else:
+                        self.runtime.ui.log(f"   ⚠️  Mark '{mark_name}' not found on minimap — falling back to manual")
+                else:
+                    self.runtime.ui.log(f"   ⚠️  Mark image '{mark_name}.png' not found in images/MapSettings/")
+            # Fall through to manual capture
+
+        # ── Strategy 2: Manual position capture (original fallback) ──────────
+        if not mark_name:
+            self.runtime.ui.log("   💡 Select a mark name to enable auto-detection")
         pos_service = self.services.get("position_capture")
         if pos_service:
             pos_service.capture(
@@ -449,7 +482,6 @@ class CaveBotTab:
                 label=f"Waypoint: {mark_name}",
             )
         else:
-            # Without position capture, just add the mark without coordinates
             self._add_waypoint_at_pos(name, mark_name, wp_type, None)
 
     def _add_waypoint_at_pos(self, script_name: str, mark_name: str, wp_type: int, pos: tuple | None) -> None:

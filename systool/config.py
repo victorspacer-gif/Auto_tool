@@ -128,7 +128,7 @@ _JSON_SPECIAL = frozenset({
     "hotkey_bindings", "jobs", "fish_spots", "__meta__", "cavebot_monsters_to_attack",
  "cavebot_sqm_positions", "cavebot_map_region",
  "cavebot_image_detection_precision",
-    "chase_monster_names", "looter_sqm_positions",
+ "startup_modules",
 })
 
 
@@ -224,6 +224,7 @@ class ConfigSerializer:
             "food_pointer_address_hex", "food_source", "food_value",
             "input_mode", "game_window_title", "game_hwnd",
             "scheduling_mode",
+            "startup_modules",
         ]
         for attr in direct_attrs:
             result[attr] = ConfigSerializer._to_json_compatible(getattr(state, attr))
@@ -329,6 +330,7 @@ class ConfigSerializer:
             "char_status_cap_region": tuple(raw["char_status_cap_region"]) if raw.get("char_status_cap_region") else None,
             "hotkeys": raw.get("hotkey_bindings", {}),
             "metadata": raw.get("__meta__", {}),
+            "startup_modules": raw.get("startup_modules", []),
         }
 
     @staticmethod
@@ -701,3 +703,13 @@ class ConfigSerializer:
                 state.auto_looter.sqm_positions = [tuple(p) for p in parsed]
             except (TypeError, ValueError, json.JSONDecodeError):
                 state.auto_looter.sqm_positions = []
+
+        # ── Startup Modules ────────────────────────────────────────────
+        raw_modules = payload.get("startup_modules")
+        if isinstance(raw_modules, list):
+            state.startup_modules = list(raw_modules)
+        elif isinstance(raw_modules, str):
+            try:
+                state.startup_modules = json.loads(raw_modules)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                state.startup_modules = []

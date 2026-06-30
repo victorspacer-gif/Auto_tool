@@ -4,7 +4,10 @@ Adapted from the TibiaAuto12 CaveBotController:
   1. Load script → find active waypoint
   2. Walk to waypoint (image-detected mark OR coordinate fallback)
   3. Stand still for N seconds
-  4. Signal ChaseTarget to attack monsters
+  4. Attack window — image-based IsAttacking border analysis:
+     a. Wait for coloured battle border (combat starts)
+     b. Wait for border to disappear (monster killed)
+     c. Falls back to timing when border images are unavailable
   5. Signal AutoLooter to loot
   6. Advance to next waypoint
   7. Loop back to start on completion
@@ -48,10 +51,13 @@ from ..constants import (
 )
 from ..theme import GREEN, ORANGE, RED
 from .image_finder import (
+    is_attacking,
     locate_center_image,
     locate_image,
     get_map_settings_dir,
     list_available_images as _list_marks,
+    wait_until_attacking,
+    wait_until_not_attacking,
 )
 
 # Default scripts directory
@@ -325,11 +331,38 @@ class CaveBotService:
                     else:
                         self.runtime.ui.log(f"   ⚠️  Could not confirm arrival at {mark_name} (continuing)")
 
-                # ── Phase 4: Attack window ────────────────────
+                # ── Phase 4: Attack window (image-based IsAttacking) ─
                 if state.monsters_to_attack:
-                    attack_time = max(2.0, state.stand_seconds * 2)
-                    if not self._wait_interruptible(attack_time):
-                        break
+                    # Resolve battle region: use chase_target's config if available
+                    battle_region = None
+                    chase_region = self.runtime.state.chase_target.battle_region
+                    if chase_region is not None and all(v > 0 for v in chase_region):
+                        battle_region = chase_region
+
+                    if battle_region is not None and HAS_CV2 and HAS_MSS and HAS_NUMPY:
+                        # ── Image-based attack window ──────────────
+                        # Wait for combat to start (max 5s — monster may be far)
+                        combat_started = wait_until_attacking(
+                            battle_region, timeout=5.0, check_interval=0.15, precision=0.8,
+                        )
+                        if combat_started:
+                            self.runtime.ui.log("   ⚔️  Combat started (border detected)")
+                            # Wait for combat to end (max 20s — typical kill time)
+                            combat_ended = wait_until_not_attacking(
+                                battle_region, timeout=20.0, check_interval=0.25, precision=0.8,
+                            )
+                            if combat_ended:
+                                self.runtime.ui.log("   ✅ Combat ended")
+                            else:
+                                self.runtime.ui.log("   ⚠️  Combat timeout (20s) — proceeding")
+                        else:
+                            self.runtime.ui.log("   ⏳ No target found in 5s — continuing")
+                    else:
+                        # ── Fallback: timing-based window ───────────
+                        attack_time = max(2.0, state.stand_seconds * 2)
+                        self.runtime.ui.log(f"   ⏱️  Timing-based attack window ({attack_time:.1f}s)")
+                        if not self._wait_interruptible(attack_time):
+                            break
 
                 # ── Phase 5: Loot ─────────────────────────────
                 if state.looting_enabled and state.sqm_positions:

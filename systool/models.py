@@ -510,3 +510,8 @@ class AppState:
     looter_loot_delay_max_ms = _group_property("auto_looter", "loot_delay_max_ms")
     looter_jitter = _group_property("auto_looter", "jitter")
     looter_auto_loot_on_kill = _group_property("auto_looter", "auto_loot_on_kill")
+
+    # ── Startup Modules (quick-launch presets) ─────────────────────────
+    # List of module IDs to auto-start when the "START!" button is pressed.
+    # Saved to the character profile for persistence across sessions.
+    startup_modules: list[str] = dataclasses.field(default_factory=list)

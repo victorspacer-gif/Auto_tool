@@ -323,7 +323,8 @@ class SystemMonitorApp:
 
         pause_bar = tk.Frame(self.root, bg=BG)
         pause_bar.pack(fill="x", padx=14, pady=(2, 0))
-        self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left")
+        self._btn(pause_bar, "▶  START!", self._show_start_popup, GREEN).pack(side="left")
+        self._btn(pause_bar, "⏸  Pause / Resume", self.runtime.pause.toggle, ORANGE).pack(side="left", padx=(8, 0))
         self._btn(pause_bar, "🔗  Attach", self.attach_light_process, BLUE).pack(side="left", padx=(8, 0))
         self._btn(pause_bar, "show/hide log", self.toggle_log_window, BLUE).pack(side="left", padx=(8, 0))
         if HAS_SANDBOX_LAUNCHER:
@@ -1191,6 +1192,128 @@ class SystemMonitorApp:
         state_text = getattr(indicator, "_state_text", None)
         if state_text:
             state_text.config(text=indicator_text)
+
+    # ── Module definitions for SELECT-AND-START popup ────────────────────
+    # Each entry: (id, display_name, start_callable_or_None)
+    _STARTUP_MODULE_DEFS = [
+        ("afk", "Activity Monitor (AFK)", lambda self: self.afk_service.start()),
+        ("rclick", "Right-Click Monitor", lambda self: self.rclick_service.start()),
+        ("alarm", "Screen Watch (Alarm)", lambda self: self.alarm_service.start()),
+        ("char_status", "Character Status OCR", lambda self: self.char_status_service.start()),
+        ("fish", "Fishing Session", lambda self: self.fishing_service.start()),
+        ("healer", "Auto Healer", lambda self: self.healer_service.start()),
+        ("rune", "Rune Session", lambda self: self.rune_service.start()),
+        ("cavebot", "CaveBot", lambda self: self.cavebot_service.start()),
+        ("chase_target", "Chase Target", lambda self: self.chase_target_service.start()),
+        ("auto_looter", "Auto Looter", lambda self: self.auto_looter_service.start()),
+        ("light_freeze", "Light Freeze", None),
+        ("battle_reaction", "Enable Battle Window Reaction", None),
+    ]
+
+    def _start_selected_module(self, module_id: str) -> None:
+        """Start a single module by its ID, using the STARTUP_MODULE_DEFS mapping."""
+        for mid, _display, starter_fn in self._STARTUP_MODULE_DEFS:
+            if mid != module_id:
+                continue
+            if starter_fn is not None:
+                starter_fn(self)
+            elif mid == "light_freeze":
+                state = self.runtime.state
+                if getattr(self.light_service, "controller", None) is None:
+                    self.runtime.ui.log("⚠️  Light Freeze: attach to a game process first")
+                    self.runtime.ui.set_status("Attach first to use Light Freeze", ORANGE)
+                    return
+                ok, message = self.light_service.start_freeze()
+                if ok:
+                    state.light_freeze_enabled = True
+                    self._refresh_module_indicator("light", True)
+                    self._set_light_status(True, message)
+                else:
+                    self.runtime.ui.log(f"❌ Light Freeze: {message}")
+            elif mid == "battle_reaction":
+                self.runtime.state.alarm.battle_enabled = True
+                self.runtime.ui.log("✅ Battle Window Reaction enabled")
+                self.runtime.ui.set_status("Battle Window Reaction enabled", GREEN)
+                if "battle_enabled_var" in self.ui_vars:
+                    self.ui_vars["battle_enabled_var"].set(True)
+            return
+
+    def _show_start_popup(self) -> None:
+        """Show a popup to select which modules to start — selection is saved to character profile."""
+        if not self.root:
+            return
+
+        state = self.runtime.state
+        popup = tk.Toplevel(self.root)
+        popup.title("START! — Select Modules")
+        popup.configure(bg=BG)
+        popup.geometry("420x480")
+        popup.minsize(360, 400)
+        popup.transient(self.root)
+        popup.grab_set()
+
+        frame = tk.Frame(popup, bg=BG)
+        frame.pack(fill="both", expand=True, padx=14, pady=14)
+
+        tk.Label(frame, text="Select which modules to start:", font=BOLD, fg=FG, bg=BG).pack(anchor="w", pady=(0, 10))
+
+        prev_saved = set(state.startup_modules)
+        vars_list: list[tuple[str, tk.BooleanVar]] = []
+
+        scroll_frame = tk.Frame(frame, bg=BG)
+        scroll_frame.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(scroll_frame, bg=BG, highlightthickness=0)
+        scrollbar = tk.Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
+        check_frame = tk.Frame(canvas, bg=BG)
+        check_frame.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=check_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        for mid, display_name, _ in self._STARTUP_MODULE_DEFS:
+            var = tk.BooleanVar(value=mid in prev_saved)
+            cb = tk.Checkbutton(
+                check_frame, text=display_name, variable=var,
+                bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG,
+                font=BODY, anchor="w",
+            )
+            cb.pack(fill="x", pady=2, padx=4)
+            vars_list.append((mid, var))
+
+        def select_all() -> None:
+            for _, var in vars_list:
+                var.set(True)
+
+        def deselect_all() -> None:
+            for _, var in vars_list:
+                var.set(False)
+
+        btn_frame = tk.Frame(frame, bg=BG)
+        btn_frame.pack(fill="x", pady=(10, 0))
+
+        self._btn(btn_frame, "☑  All", select_all, BLUE).pack(side="left", padx=2, expand=True, fill="x")
+        self._btn(btn_frame, "☐  None", deselect_all, MUTED).pack(side="left", padx=2, expand=True, fill="x")
+
+        start_frame = tk.Frame(frame, bg=BG)
+        start_frame.pack(fill="x", pady=(6, 0))
+
+        def on_start() -> None:
+            selected = [mid for mid, var in vars_list if var.get()]
+            # Save selection to state
+            state.startup_modules = list(selected)
+            # Start each selected module
+            for mid in selected:
+                self._start_selected_module(mid)
+            # Save to character profile for persistence
+            self._save_current_character_profile(log_success=True, force=True)
+            popup.destroy()
+
+        self._btn(start_frame, "▶  START", on_start, GREEN).pack(expand=True, fill="x", ipady=8)
+
+        popup.bind("<Escape>", lambda e: popup.destroy())
+        popup.focus_force()
 
     def _start_global_hotkeys(self) -> None:
         if not HAS_PYNPUT:

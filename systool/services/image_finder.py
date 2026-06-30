@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -802,13 +803,20 @@ def scan_monster_in_battle(
 def is_attacking(
     battle_region: tuple[int, int, int, int],
     precision: float = 0.8,
+    verify: bool = True,
 ) -> bool:
     """Detect if the character is currently attacking using battle border analysis.
 
     Mirrors TibiaAuto12's ``IsAttacking()`` in Scanners.py:
     Captures the battle list region and runs template matching against 16
-    border images (4 sides x 4 colour variants). If ALL four sides of ANY
-    colour variant match, the character is NOT attacking (idle border).
+    border images (4 sides x 4 colour variants). When ALL four sides of ANY
+    colour variant match, the coloured border is present → character is
+    actively attacking/has a target selected.
+
+    When ``verify=True`` (default), a positive border match is confirmed
+    with a second detection pass using ``VerifyAttacking.png`` (a 33x33
+    corner section of the border), reducing false positives from UI elements
+    that happen to match individual border strips.
 
     Border images live in ``images/MonstersAttack/``:
       LeftRed, TopRed, RightRed, BottomRed        — red border
@@ -818,11 +826,12 @@ def is_attacking(
 
     Args:
         battle_region: (left, top, width, height) of the battle list.
-        precision: Confidence threshold.
+        precision: Confidence threshold for border strip matching.
+        verify: If True, confirm positive with VerifyAttacking.png.
 
     Returns:
-        True if attacking (no idle border pattern matched).
-        False if idle or border images are missing.
+        True if the coloured battle border is detected (character is attacking).
+        False if no complete border is found or dependencies are missing.
     """
     img_dir = get_monsters_attack_dir()
     sides = ["Left", "Top", "Right", "Bottom"]
@@ -869,11 +878,119 @@ def is_attacking(
             except Exception:
                 continue
 
-    # Any variant with all 4 sides = idle border → NOT attacking
-    for hits in variant_hits.values():
-        if hits >= 4:
-            return False
+    # Any variant with all 4 sides = coloured border present → IS attacking
+    border_detected = any(hits >= 4 for hits in variant_hits.values())
+    if not border_detected:
+        return False
+
+    # Optional verification pass with VerifyAttacking.png
+    if verify:
+        return verify_attacking(battle_region, precision=precision)
     return True
+
+
+def verify_attacking(
+    battle_region: tuple[int, int, int, int],
+    precision: float = 0.8,
+) -> bool:
+    """Confirm attack state using the VerifyAttacking.png reference image.
+
+    Mirrors TibiaAuto12's secondary verification step. After the 16-border
+    analysis finds a potential match, this function does a broader template
+    match against ``VerifyAttacking.png`` (33x33 px — a corner section of
+    the coloured battle border) to filter out false positives from stray
+    UI elements that happened to match the thin border strips.
+
+    Args:
+        battle_region: (left, top, width, height) of the battle list.
+        precision: Confidence threshold (same as used in is_attacking).
+
+    Returns:
+        True if VerifyAttacking.png is found within the battle region.
+        False if not found or dependencies missing.
+    """
+    if not HAS_CV2 or not HAS_MSS or not HAS_NUMPY or cv2 is None or np is None:
+        return False
+
+    img_dir = get_monsters_attack_dir()
+    verify_path = os.path.join(img_dir, "VerifyAttacking.png")
+    if not os.path.isfile(verify_path):
+        return False
+
+    frame = _capture_region(battle_region)
+    if frame is None or frame.size == 0:
+        return False
+
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        template = cv2.imread(verify_path, cv2.IMREAD_GRAYSCALE)
+        if template is None:
+            return False
+        res = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(res)
+        return max_val >= precision
+    except Exception:
+        return False
+
+
+def wait_until_attacking(
+    battle_region: tuple[int, int, int, int],
+    timeout: float = 10.0,
+    check_interval: float = 0.2,
+    precision: float = 0.8,
+) -> bool:
+    """Block until the character enters attack state or timeout expires.
+
+    Polls ``is_attacking()`` every ``check_interval`` seconds. Returns
+    True as soon as attack state is detected, False on timeout.
+
+    Args:
+        battle_region: (left, top, width, height) of the battle list.
+        timeout: Maximum seconds to wait.
+        check_interval: Seconds between polls (minimum 0.05).
+        precision: Confidence threshold for border matching.
+
+    Returns:
+        True if attack state was detected within timeout.
+    """
+    deadline = time.monotonic() + timeout
+    interval = max(0.05, check_interval)
+    while time.monotonic() < deadline:
+        if is_attacking(battle_region, precision=precision, verify=True):
+            return True
+        time.sleep(interval)
+    return False
+
+
+def wait_until_not_attacking(
+    battle_region: tuple[int, int, int, int],
+    timeout: float = 30.0,
+    check_interval: float = 0.3,
+    precision: float = 0.8,
+) -> bool:
+    """Block until the character exits attack state or timeout expires.
+
+    Polls ``is_attacking()`` every ``check_interval`` seconds. Returns
+    True as soon as attack state is gone, False on timeout.
+
+    Used in cavebot to wait for combat to end before looting/proceeding.
+
+    Args:
+        battle_region: (left, top, width, height) of the battle list.
+        timeout: Maximum seconds to wait.
+        check_interval: Seconds between polls (minimum 0.05).
+        precision: Confidence threshold for border matching.
+
+    Returns:
+        True if attack state ended within timeout (combat finished).
+    """
+    deadline = time.monotonic() + timeout
+    interval = max(0.05, check_interval)
+    while time.monotonic() < deadline:
+        if not is_attacking(battle_region, precision=precision, verify=True):
+            return True
+        time.sleep(interval)
+    return False
 
 
 # ── Follow / Idle detection (from TibiaAuto12 Scanners.py) ────────────
