@@ -15,10 +15,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PYTHON_WHEELS = ROOT / "vendor" / "python-wheels"
 TESSERACT_VENDOR = ROOT / "vendor" / "tesseract"
-SPEC_FILE = ROOT / "SystemMonitor.spec"
 REQUIREMENTS_FILE = ROOT / "requirements.txt"
 OCR_DIAG_JSON = ROOT / "build" / "ocr-diag.json"
-OUTPUT_EXE = ROOT / "dist" / "SystemMonitor" / "SystemMonitor.exe"
+
+# Build targets: (entry_point, spec_file, output_exe, display_name)
+BUILD_TARGETS = {
+    "tk": {
+        "entry": "raw.py",
+        "spec": ROOT / "SystemMonitor.spec",
+        "output": ROOT / "dist" / "SystemMonitor" / "SystemMonitor.exe",
+        "name": "SystemMonitor",
+        "label": "Tkinter (original)",
+    },
+    "luxe": {
+        "entry": "luxe.py",
+        "spec": ROOT / "SystemMonitorLuxe.spec",
+        "output": ROOT / "dist" / "SystemMonitorLuxe" / "SystemMonitorLuxe.exe",
+        "name": "SystemMonitorLuxe",
+        "label": "CustomTkinter (Luxe)",
+    },
+}
 
 REQUIRED_MODULES = [
     "PyInstaller",
@@ -36,6 +52,7 @@ REQUIRED_MODULES = [
     "cv2",
     "cysignals",
     "tesserocr",
+    "customtkinter",
 ]
 
 
@@ -45,6 +62,7 @@ class BuildError(RuntimeError):
 
 @dataclass(frozen=True)
 class BuildOptions:
+    target: str = "tk"  # "tk" or "luxe" or "both"
     clean: bool = False
     install_deps: bool = False
     upgrade_pip: bool = False
@@ -73,6 +91,16 @@ def parse_args(argv: list[str]) -> BuildOptions:
         description="Build SystemMonitor for Windows with PyInstaller.",
     )
     parser.add_argument(
+        "--luxe",
+        action="store_true",
+        help="Build the Luxe (CustomTkinter) UI instead of the default Tkinter UI.",
+    )
+    parser.add_argument(
+        "--both",
+        action="store_true",
+        help="Build both Tkinter and Luxe UIs.",
+    )
+    parser.add_argument(
         "--clean",
         action="store_true",
         help="Remove previous build artifacts before building.",
@@ -94,7 +122,14 @@ def parse_args(argv: list[str]) -> BuildOptions:
     )
     args = parser.parse_args(argv)
 
+    target = "tk"
+    if args.both:
+        target = "both"
+    elif args.luxe:
+        target = "luxe"
+
     return BuildOptions(
+        target=target,
         clean=args.clean,
         install_deps=args.install_deps,
         upgrade_pip=args.upgrade_pip,
@@ -105,52 +140,90 @@ def parse_args(argv: list[str]) -> BuildOptions:
 def show_menu() -> BuildOptions:
     print()
     print("Select a build option:")
-    print("  [1] Fast build")
-    print("  [2] Clean build")
-    print("  [3] Clean build + reinstall dependencies")
-    print("  [4] Fast build, do not open dist folder")
+    print("  [1] Fast build (Tkinter — original)")
+    print("  [2] Clean build (Tkinter)")
+    print("  [3] Clean build + reinstall deps (Tkinter)")
+    print("  [4] Fast build (Luxe — CustomTkinter)")
+    print("  [5] Clean build (Luxe)")
+    print("  [6] Clean build + reinstall deps (Luxe)")
+    print("  [7] Build BOTH Tkinter + Luxe")
+    print("  [8] Build BOTH + reinstall deps")
+    print("  [9] Fast build, do not open dist folder")
 
     while True:
         choice = input("Enter choice: ").strip()
         if choice == "1":
-            return BuildOptions()
+            return BuildOptions(target="tk")
         if choice == "2":
-            return BuildOptions(clean=True)
+            return BuildOptions(target="tk", clean=True)
         if choice == "3":
-            return BuildOptions(clean=True, install_deps=True)
+            return BuildOptions(target="tk", clean=True, install_deps=True)
         if choice == "4":
+            return BuildOptions(target="luxe")
+        if choice == "5":
+            return BuildOptions(target="luxe", clean=True)
+        if choice == "6":
+            return BuildOptions(target="luxe", clean=True, install_deps=True)
+        if choice == "7":
+            return BuildOptions(target="both")
+        if choice == "8":
+            return BuildOptions(target="both", clean=True, install_deps=True)
+        if choice == "9":
             return BuildOptions(open_dist=False)
-        print("Please enter 1, 2, 3, or 4.")
+        print("Please enter 1-9.")
 
 
 def run_build(options: BuildOptions) -> None:
+    targets_to_build = []
+    if options.target == "both":
+        targets_to_build = ["tk", "luxe"]
+    else:
+        targets_to_build = [options.target]
+
+    for target_key in targets_to_build:
+        target = BUILD_TARGETS[target_key]
+        print(f"\n{'='*60}")
+        print(f"  Building: {target['label']}  ({target['entry']})")
+        print(f"{'='*60}\n")
+
+        _do_build(options, target)
+
+        if len(targets_to_build) > 1:
+            print(f"\n  ✅ {target['label']} built successfully.\n")
+
+
+def _do_build(options: BuildOptions, target: dict) -> None:
+    spec = target["spec"]
+    output = target["output"]
+    name = target["name"]
+
     print("[1/6] Checking Python...")
     check_environment()
 
-    print("[2/6] Checking for running SystemMonitor instances...")
-    ensure_system_monitor_not_running()
+    print("[2/6] Checking for running instances...")
+    ensure_process_not_running(name)
 
     print("[3/6] Checking runtime and build dependencies...")
     manage_dependencies(options)
 
-    print("[4/6] Cleaning previous build artifacts...")
-    clean_directories(options.clean)
+    print(f"[4/6] Cleaning previous build artifacts for {name}...")
+    _clean_named_directories(options.clean, name)
 
     print("[5/6] Preparing bundled Tesseract...")
     sync_tesseract()
 
-    print("[6/6] Building executable with PyInstaller...")
-    compile_app(options.clean)
-    remove_stray_bootloader()
+    print(f"[6/6] Building executable with PyInstaller ({spec.name})...")
+    compile_app(options.clean, spec, name)
+    remove_stray_bootloader(name)
 
     print("[7/7] Validating OCR bundle...")
-    validate_ocr_bundle()
+    validate_ocr_bundle(output)
 
-    print("Build complete.")
-    print(f'Executable path: "{OUTPUT_EXE}"')
+    print(f"Build complete — {name}.")
+    print(f'Executable path: "{output}"')
 
     if options.open_dist:
-        open_output_folder()
+        open_output_folder(output)
 
     post_build_cleanup()
 
@@ -171,13 +244,12 @@ def check_environment() -> None:
             f"3.14 x64 from python.org, then rerun this script."
         )
 
-    require_file(SPEC_FILE)
     require_file(REQUIREMENTS_FILE)
 
 
-def ensure_system_monitor_not_running() -> None:
+def ensure_process_not_running(name: str) -> None:
     result = run_subprocess(
-        ["tasklist", "/FI", "IMAGENAME eq SystemMonitor.exe"],
+        ["tasklist", "/FI", f"IMAGENAME eq {name}.exe"],
         capture_output=True,
         check=False,
         action="checking running processes",
@@ -185,10 +257,10 @@ def ensure_system_monitor_not_running() -> None:
     if result.returncode != 0:
         raise BuildError("Could not inspect running processes with tasklist.")
 
-    if "SystemMonitor.exe" in result.stdout:
+    if f"{name}.exe" in result.stdout:
         raise BuildError(
-            "SystemMonitor.exe is currently running. Close it before building "
-            "so PyInstaller can replace dist\\SystemMonitor.exe."
+            f"{name}.exe is currently running. Close it before building "
+            f"so PyInstaller can replace dist\\{name}\\{name}.exe."
         )
 
 
@@ -259,14 +331,18 @@ def install_preferred_wheel(package: str, *, required: bool) -> None:
         )
 
 
-def clean_directories(clean_build: bool) -> None:
+def _clean_named_directories(clean_build: bool, name: str) -> None:
     if not clean_build:
         print("Reusing existing build caches for a faster incremental build.")
         return
 
-    for directory in [ROOT / "build", ROOT / "dist", ROOT / "SystemMonitor.spec-build"]:
-        remove_directory(directory)
-    print("Clean build requested.")
+    build_dir = ROOT / "build" / name.replace("SystemMonitor", "SystemMonitor")
+    dist_dir = ROOT / "dist" / name
+    spec_build = ROOT / f"{name}.spec-build"
+    remove_directory(build_dir, missing_ok=True)
+    remove_directory(dist_dir, missing_ok=True)
+    remove_directory(spec_build, missing_ok=True)
+    print(f"Cleaned build artifacts for {name}.")
 
 
 def sync_tesseract() -> None:
@@ -294,7 +370,7 @@ def find_tesseract_source() -> Path | None:
     return None
 
 
-def compile_app(clean_build: bool) -> None:
+def compile_app(clean_build: bool, spec: Path, name: str) -> None:
     try:
         import PyInstaller.__main__
     except ImportError as exc:
@@ -303,10 +379,10 @@ def compile_app(clean_build: bool) -> None:
             "dependencies manually."
         ) from exc
 
-    args = ["--noconfirm"]
+    args = ["--noconfirm", "--name", name]
     if clean_build:
         args.append("--clean")
-    args.append(str(SPEC_FILE))
+    args.append(str(spec))
 
     try:
         PyInstaller.__main__.run(args)
@@ -318,20 +394,20 @@ def compile_app(clean_build: bool) -> None:
         raise BuildError(f"PyInstaller failed: {exc}") from exc
 
 
-def remove_stray_bootloader() -> None:
-    stray_exe = ROOT / "dist" / "SystemMonitor.exe"
+def remove_stray_bootloader(name: str) -> None:
+    stray_exe = ROOT / "dist" / f"{name}.exe"
     if stray_exe.exists():
-        print("Removing stray executable at dist\\SystemMonitor.exe...")
+        print(f"Removing stray executable at dist\\{name}.exe...")
         remove_file(stray_exe)
 
 
-def open_output_folder() -> None:
-    if not OUTPUT_EXE.exists():
+def open_output_folder(output_exe: Path) -> None:
+    if not output_exe.exists():
         return
 
     print("Launching output folder...")
     try:
-        os.startfile(OUTPUT_EXE.parent)  # type: ignore[attr-defined]
+        os.startfile(output_exe.parent)  # type: ignore[attr-defined]
     except OSError as exc:
         raise BuildError(f"Could not open output folder: {exc}") from exc
 
@@ -346,18 +422,18 @@ def post_build_cleanup() -> None:
         remove_file(doc_dir / filename, missing_ok=True)
 
 
-def validate_ocr_bundle() -> None:
+def validate_ocr_bundle(output_exe: Path) -> None:
     """Run the frozen .exe's OCR diagnostics and confirm tesserocr is bundled.
 
     This catches silent failures where the .exe falls back to pytesseract
     because tesserocr's .pyd or native DLLs were not bundled correctly.
     """
-    if not OUTPUT_EXE.exists():
-        raise BuildError(f"Cannot validate OCR: {OUTPUT_EXE} was not found.")
+    if not output_exe.exists():
+        raise BuildError(f"Cannot validate OCR: {output_exe} was not found.")
 
     diag_path = str(OCR_DIAG_JSON)
     result = run_subprocess(
-        [str(OUTPUT_EXE), "--diagnose-ocr-env", diag_path],
+        [str(output_exe), "--diagnose-ocr-env", diag_path],
         action="running OCR diagnostics on built executable",
         capture_output=True,
         check=False,

@@ -11,3 +11,5 @@ pytesseract
 tesserocr
 psutil
 pymem
+customtkinter>=5.2.2
+darkdetect

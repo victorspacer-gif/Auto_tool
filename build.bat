@@ -1,4 +1,11 @@
 @echo off
+echo.
+echo SystemMonitor Build Script
+echo Usage: build.bat [--luxe] [--both] [--clean] [--install-deps] [--upgrade-pip] [--no-open]
+echo   --luxe           Build Luxe (CustomTkinter) UI instead of default Tkinter
+echo   --both           Build both Tkinter and Luxe UIs
+echo   Or run without arguments for the interactive menu.
+echo.
 py -3.12-64 -c "import platform, sys; sys.exit(0 if sys.version_info[:2] == (3, 12) and platform.architecture()[0] == '64bit' else 1)" >nul 2>nul
 if errorlevel 1 (
     echo.
