@@ -64,7 +64,17 @@ def main() -> None:
             json.dump(diagnostics, handle, indent=2)
         return
 
-    from systool.app_luxe import run
+    try:
+        from systool.app_luxe import run
+    except ImportError as exc:
+        name = exc.name or ""
+        if "customtkinter" in name:
+            print("❌ SystemMonitor Luxe requires customtkinter.")
+            print("   Install it with:  pip install customtkinter")
+            print("   Or install all dependencies: pip install -r requirements.txt")
+        else:
+            print(f"❌ Failed to load Luxe UI: {exc}")
+        return
     run()
 
 
