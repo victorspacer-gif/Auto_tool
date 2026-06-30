@@ -18,7 +18,7 @@ class ActivityControlTab:
         self.helpers = helpers
         self.ui_vars = ui_vars
 
-        self.jobs_frame: ctk.CTkScrollableFrame | None = None
+        self.jobs_frame = None  # tk.Frame inside canvas (scrollable job list)
         self.pos_label: ctk.CTkLabel | None = None
         self.rclick_food_mode_container: ctk.CTkFrame | None = None
 
@@ -42,8 +42,25 @@ class ActivityControlTab:
         ctk.CTkLabel(top, text="Enable 'Focus window' to direct keys to a selected app window",
                       font=ctk.CTkFont(size=10), text_color="#777777").pack(side="left", padx=10)
 
-        self.jobs_frame = ctk.CTkScrollableFrame(jobs_frame, fg_color="transparent")
-        self.jobs_frame.pack(fill="both", expand=True, padx=6, pady=(0, 8))
+        # Canvas+Scrollbar for hotkey tasks (same pattern as the outer scroll)
+        import tkinter as tk
+        canvas = tk.Canvas(jobs_frame, bg="#1e1e1e", highlightthickness=0)
+        scrollbar = tk.Scrollbar(jobs_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.jobs_frame = tk.Frame(canvas, bg="#1e1e1e")
+        win_id = canvas.create_window((0, 0), window=self.jobs_frame, anchor="nw")
+        self.jobs_frame.bind("<Configure>",
+                             lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                     lambda e, wid=win_id: canvas.itemconfigure(wid, width=e.width))
+
+        reg = self.helpers["register_mousewheel_target"]
+        reg(jobs_frame, canvas)
+        reg(canvas, canvas)
+        reg(self.jobs_frame, canvas)
 
         self._build_afk_panel(right)
         self._build_right_click_panel(right)
@@ -224,12 +241,13 @@ class ActivityControlTab:
         ctk.CTkLabel(outer, text=f"Job #{job.job_id}", font=ctk.CTkFont(size=10, weight="bold"),
                       text_color="#5ac8fa", anchor="w").pack(padx=8, pady=(4, 0))
 
-        row1 = ctk.CTkFrame(outer, fg_color="transparent")
-        row1.pack(fill="x", padx=8, pady=2)
-        ctk.CTkLabel(row1, text="Key:", font=ctk.CTkFont(size=11, weight="bold"),
+        # Row 1a: Key + Min + Max (fits in ~350px)
+        row1a = ctk.CTkFrame(outer, fg_color="transparent")
+        row1a.pack(fill="x", padx=8, pady=1)
+        ctk.CTkLabel(row1a, text="Key:", font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8").pack(side="left")
         key_var = ctk.StringVar(value=job.key)
-        menu = ctk.CTkOptionMenu(row1, values=[f"F{i}" for i in range(1, 13)] + list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+        menu = ctk.CTkOptionMenu(row1a, values=[f"F{i}" for i in range(1, 13)] + list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
                                   variable=key_var, fg_color="#1a1a1a", button_color="#0a84ff",
                                   dropdown_fg_color="#252525", dropdown_text_color="#e8e8e8",
                                   dropdown_hover_color="#0a84ff", width=70)
@@ -241,27 +259,30 @@ class ActivityControlTab:
             (f"Min ({unit}):", "min", str(self.helpers["ms_to_display"](job.min_ms))),
             (f"Max ({unit}):", "max", str(self.helpers["ms_to_display"](job.max_ms))),
         ]:
-            ctk.CTkLabel(row1, text=label, font=ctk.CTkFont(size=11, weight="bold"),
+            ctk.CTkLabel(row1a, text=label, font=ctk.CTkFont(size=11, weight="bold"),
                           text_color="#e8e8e8").pack(side="left", padx=(8, 0))
             value = ctk.StringVar(value=default)
-            entry = ctk.CTkEntry(row1, textvariable=value, width=90, fg_color="#1a1a1a",
+            entry = ctk.CTkEntry(row1a, textvariable=value, width=70, fg_color="#1a1a1a",
                                   border_color="#3a3a3a", text_color="#e8e8e8")
             entry.pack(side="left", padx=4)
             outer._vars[name] = value
 
-        ctk.CTkLabel(row1, text="Min mana:", font=ctk.CTkFont(size=11, weight="bold"),
-                      text_color="#e8e8e8").pack(side="left", padx=(8, 0))
+        # Row 1b: Min mana + Max mana + indicator (fits in ~320px)
+        row1b = ctk.CTkFrame(outer, fg_color="transparent")
+        row1b.pack(fill="x", padx=8, pady=1)
+        ctk.CTkLabel(row1b, text="Min mana:", font=ctk.CTkFont(size=11, weight="bold"),
+                      text_color="#e8e8e8").pack(side="left", padx=(0, 0))
         min_mana_var = ctk.StringVar(value=str(job.min_mana))
-        ctk.CTkEntry(row1, textvariable=min_mana_var, width=90, fg_color="#1a1a1a",
+        ctk.CTkEntry(row1b, textvariable=min_mana_var, width=70, fg_color="#1a1a1a",
                       border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=4)
         outer._vars["min_mana"] = min_mana_var
-        ctk.CTkLabel(row1, text="Max mana:", font=ctk.CTkFont(size=11, weight="bold"),
+        ctk.CTkLabel(row1b, text="Max mana:", font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8").pack(side="left", padx=(8, 0))
         max_mana_var = ctk.StringVar(value=str(job.max_mana))
-        ctk.CTkEntry(row1, textvariable=max_mana_var, width=90, fg_color="#1a1a1a",
+        ctk.CTkEntry(row1b, textvariable=max_mana_var, width=70, fg_color="#1a1a1a",
                       border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=4)
         outer._vars["max_mana"] = max_mana_var
-        indicator = ctk.CTkLabel(row1, text="●", font=ctk.CTkFont(size=14, weight="bold"),
+        indicator = ctk.CTkLabel(row1b, text="●", font=ctk.CTkFont(size=14, weight="bold"),
                                   text_color="#777777")
         indicator.pack(side="right", padx=4)
         outer._indicator = indicator

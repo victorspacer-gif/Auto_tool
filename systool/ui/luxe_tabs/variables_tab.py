@@ -76,40 +76,40 @@ class VariablesTab:
                       font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8", anchor="w").pack(padx=10, pady=(8, 4))
         self.var_hp_source_label = ctk.CTkLabel(meta_panel, text="HP source: —",
-                                                 font=ctk.CTkFont(size=10, family="Consolas"),
+                                                 font=ctk.CTkFont(size=12, family="Consolas"),
                                                  text_color="#777777", anchor="w")
-        self.var_hp_source_label.pack(padx=10, fill="x", pady=2)
+        self.var_hp_source_label.pack(padx=10, fill="x", pady=3)
         self.var_mp_source_label = ctk.CTkLabel(meta_panel, text="MP source: —",
-                                                 font=ctk.CTkFont(size=10, family="Consolas"),
+                                                 font=ctk.CTkFont(size=12, family="Consolas"),
                                                  text_color="#777777", anchor="w")
-        self.var_mp_source_label.pack(padx=10, fill="x", pady=2)
+        self.var_mp_source_label.pack(padx=10, fill="x", pady=3)
         self.var_cap_source_label = ctk.CTkLabel(meta_panel, text="Cap source: —",
-                                                  font=ctk.CTkFont(size=10, family="Consolas"),
+                                                  font=ctk.CTkFont(size=12, family="Consolas"),
                                                   text_color="#777777", anchor="w")
-        self.var_cap_source_label.pack(padx=10, fill="x", pady=2)
+        self.var_cap_source_label.pack(padx=10, fill="x", pady=3)
         self.var_food_source_label = ctk.CTkLabel(meta_panel, text="Food source: —",
-                                                   font=ctk.CTkFont(size=10, family="Consolas"),
+                                                   font=ctk.CTkFont(size=12, family="Consolas"),
                                                    text_color="#777777", anchor="w")
-        self.var_food_source_label.pack(padx=10, fill="x", pady=2)
+        self.var_food_source_label.pack(padx=10, fill="x", pady=3)
 
         addr_frame = ctk.CTkFrame(meta_panel, fg_color="transparent")
-        addr_frame.pack(fill="x", padx=10, pady=(4, 0))
+        addr_frame.pack(fill="x", padx=10, pady=(6, 0))
         self.var_hp_addr_label = ctk.CTkLabel(addr_frame, text="HP address: —",
-                                               font=ctk.CTkFont(size=10, family="Consolas"),
+                                               font=ctk.CTkFont(size=12, family="Consolas"),
                                                text_color="#777777", anchor="w")
-        self.var_hp_addr_label.pack(fill="x", pady=1)
+        self.var_hp_addr_label.pack(fill="x", pady=2)
         self.var_mp_addr_label = ctk.CTkLabel(addr_frame, text="MP address: —",
-                                               font=ctk.CTkFont(size=10, family="Consolas"),
+                                               font=ctk.CTkFont(size=12, family="Consolas"),
                                                text_color="#777777", anchor="w")
-        self.var_mp_addr_label.pack(fill="x", pady=1)
+        self.var_mp_addr_label.pack(fill="x", pady=2)
         self.var_cap_addr_label = ctk.CTkLabel(addr_frame, text="Cap address: —",
-                                                font=ctk.CTkFont(size=10, family="Consolas"),
+                                                font=ctk.CTkFont(size=12, family="Consolas"),
                                                 text_color="#777777", anchor="w")
-        self.var_cap_addr_label.pack(fill="x", pady=1)
+        self.var_cap_addr_label.pack(fill="x", pady=2)
         self.var_food_addr_label = ctk.CTkLabel(addr_frame, text="Food address: —",
-                                                 font=ctk.CTkFont(size=10, family="Consolas"),
+                                                 font=ctk.CTkFont(size=12, family="Consolas"),
                                                  text_color="#777777", anchor="w")
-        self.var_food_addr_label.pack(fill="x", pady=1)
+        self.var_food_addr_label.pack(fill="x", pady=2)
 
         # ── Read Statistics ──
         stats_panel = ctk.CTkFrame(right, fg_color="transparent", border_width=1, border_color="#3a3a3a")
@@ -118,17 +118,17 @@ class VariablesTab:
                       font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8", anchor="w").pack(padx=10, pady=(8, 4))
         self.var_regen_label = ctk.CTkLabel(stats_panel, text="Regen: HP 0.0/min | Mana 0.0/min",
-                                             font=ctk.CTkFont(size=10, family="Consolas"),
+                                             font=ctk.CTkFont(size=12, family="Consolas"),
                                              text_color="#777777", anchor="w")
-        self.var_regen_label.pack(padx=10, fill="x", pady=2)
+        self.var_regen_label.pack(padx=10, fill="x", pady=3)
         self.var_read_stats_label = ctk.CTkLabel(stats_panel, text="Reads: — | Misses: —",
-                                                  font=ctk.CTkFont(size=10, family="Consolas"),
+                                                  font=ctk.CTkFont(size=12, family="Consolas"),
                                                   text_color="#777777", anchor="w")
-        self.var_read_stats_label.pack(padx=10, fill="x", pady=2)
+        self.var_read_stats_label.pack(padx=10, fill="x", pady=3)
         self.var_last_update_label = ctk.CTkLabel(stats_panel, text="Last update: —",
-                                                   font=ctk.CTkFont(size=10, family="Consolas"),
+                                                   font=ctk.CTkFont(size=12, family="Consolas"),
                                                    text_color="#777777", anchor="w")
-        self.var_last_update_label.pack(padx=10, fill="x", pady=(10, 2))
+        self.var_last_update_label.pack(padx=10, fill="x", pady=(12, 2))
 
     def refresh_display(self) -> None:
         state = self.runtime.state

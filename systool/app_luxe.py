@@ -64,8 +64,10 @@ from .ui.luxe_tabs import (
     CharacterStatusTab,
     ConfigTab,
     FishingTab,
+    HealerTab,
     HotkeysTab,
     LightControlTab,
+    RuneTab,
     ScreenWatchTab,
     VariablesTab,
 )
@@ -167,7 +169,7 @@ class SystemMonitorLuxeApp:
         self.status_label: ctk.CTkLabel | None = None
         self.stats_label: ctk.CTkLabel | None = None
         self.pause_label: ctk.CTkLabel | None = None
-        self.tabview: ctk.CTkTabview | None = None
+        self._tab_content: ctk.CTkFrame | None = None
         self.module_indicators: dict[str, ctk.CTkLabel] = {}
         self.tray_icon = None
         self.listener = None
@@ -182,6 +184,10 @@ class SystemMonitorLuxeApp:
         self._stats_poll_timer_id: int | None = None
         self._prev_stats_values: tuple = (None, None, None)
         self._fullscreen_enabled = False
+        self._responsive_panels: list[dict] = []
+        self._relayout_after_id: str | None = None
+        self._selected_tab_id: str | None = None
+        self._tab_buttons: dict[str, ctk.CTkButton] = {}
         self.battle_logout_popup: ctk.CTkToplevel | None = None
         self._battle_logout_popup_after_id: str | None = None
 
@@ -196,12 +202,21 @@ class SystemMonitorLuxeApp:
         self._enable_dpi_awareness()
         self.root = ctk.CTk()
         self.root.title("SystemMonitor Luxe")
+        # Stealth: hide taskbar icon — only tray icon visible (toolwindow removes from taskbar)
+        try:
+            self.root.wm_attributes("-toolwindow", True)
+        except Exception:
+            pass
         self.root.configure(fg_color=BG)
         self.root.resizable(True, True)
         self._configure_screen_aware_window()
         self.root.protocol("WM_DELETE_WINDOW", self.exit_app)
         self.root.bind("<F11>", lambda _event: self.toggle_fullscreen())
         self.root.bind("<Escape>", self._exit_fullscreen)
+        self.root.bind("<Configure>", self._on_root_resize)
+        self.root.bind_all("<MouseWheel>", self._route_mousewheel)
+        self.root.bind_all("<Button-4>", self._route_mousewheel)
+        self.root.bind_all("<Button-5>", self._route_mousewheel)
 
         self.runtime.ui.configure(
             dispatch=lambda fn: self.root.after(0, fn),
@@ -236,6 +251,7 @@ class SystemMonitorLuxeApp:
             self._start_tray()
 
         self.root.after(100, self._center_window_on_screen)
+        self.root.after(300, self._update_responsive_panels)
 
         missing = [
             name for name, installed in [
@@ -316,39 +332,66 @@ class SystemMonitorLuxeApp:
         ctk.CTkFrame(self.root, fg_color=SURFACE, height=1, corner_radius=0).pack(fill="x", padx=14, pady=4)
 
     def _build_tabview(self) -> None:
-        """Build the tab view with CustomTkinter's modern tab system."""
+        """Build the tab view with two rows of tab buttons (like the Tkinter version)."""
         wrapper = ctk.CTkFrame(self.root, fg_color="transparent")
         wrapper.pack(fill="both", expand=True, padx=14, pady=6)
 
-        self.tabview = ctk.CTkTabview(wrapper, fg_color="transparent",
-                                       segmented_button_fg_color=PANEL,
-                                       segmented_button_selected_color=BLUE,
-                                       segmented_button_selected_hover_color=_darken(BLUE, 0.2),
-                                       segmented_button_unselected_color=PANEL,
-                                       segmented_button_unselected_hover_color=SURFACE,
-                                       text_color=FG, text_color_disabled=MUTED,
-                                       corner_radius=8,
-                                       anchor="nw")
-        self.tabview.pack(fill="both", expand=True)
+        # Two rows of tab buttons
+        tab_bar = ctk.CTkFrame(wrapper, fg_color="transparent")
+        tab_bar.pack(fill="x", pady=(0, 8))
 
-        # Define tabs (no healer/rune/cavebot)
-        tab_specs = [
+        row_top = ctk.CTkFrame(tab_bar, fg_color="transparent")
+        row_top.pack(fill="x", pady=(0, 4))
+        row_bottom = ctk.CTkFrame(tab_bar, fg_color="transparent")
+        row_bottom.pack(fill="x")
+
+        # Content area — selected tab frame is packed here
+        self._tab_content = ctk.CTkFrame(wrapper, fg_color="transparent")
+        self._tab_content.pack(fill="both", expand=True)
+
+        # Define tabs
+        tab_specs: list[tuple[str, str]] = [
             ("activity", "🎮  Activity Control"),
             ("light", "💡  Light Control"),
             ("alarm", "👁️  Screen Watch"),
             ("char_status", "📊  Character Status"),
             ("variables", "🔬  Variables"),
             ("fish", "🎣  Fishing Session"),
+            ("healer", "❤️  Auto Healer"),
+            ("rune", "🧿  Rune Session"),
             ("hotkeys", "⌨️  Hotkeys"),
             ("config", "💾  Config"),
         ]
 
         self.tab_frames = {}
-        for tab_id, label in tab_specs:
-            self.tabview.add(label)
-            frame = self.tabview.tab(label)
-            frame.configure(fg_color="transparent")
+        self._tab_buttons.clear()
+        self._selected_tab_id = None
+
+        for index, (tab_id, label) in enumerate(tab_specs):
+            # Create content frame (packed only when selected)
+            frame = ctk.CTkFrame(self._tab_content, fg_color="transparent")
             self.tab_frames[tab_id] = frame
+
+            # Tab button in appropriate row
+            row = row_top if index < 5 else row_bottom
+            btn = ctk.CTkButton(
+                row,
+                text=label,
+                command=lambda tid=tab_id: self._select_tab_view(tid),
+                fg_color=PANEL,
+                hover_color=SURFACE,
+                text_color=MUTED,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                corner_radius=6,
+                border_width=0,
+                height=30,
+            )
+            btn.pack(side="left", padx=3)
+            self._tab_buttons[tab_id] = btn
+
+        # Show first tab by default
+        if tab_specs:
+            self._select_tab_view(tab_specs[0][0])
 
         helpers = self._build_tab_helpers()
 
@@ -389,6 +432,16 @@ class SystemMonitorLuxeApp:
             {"fishing_service": self.fishing_service, "position_capture": self.position_capture},
             helpers, self.ui_vars)
 
+        self.healer_tab_ui = HealerTab(
+            self.tab_frames["healer"], self.runtime,
+            {"healer_service": self.healer_service, "position_capture": self.position_capture},
+            helpers, self.ui_vars)
+
+        self.rune_tab_ui = RuneTab(
+            self.tab_frames["rune"], self.runtime,
+            {"rune_service": self.rune_service, "position_capture": self.position_capture},
+            helpers, self.ui_vars)
+
         self.hotkeys_tab_ui = HotkeysTab(
             self.tab_frames["hotkeys"], self.runtime,
             {"begin_rebind": self.begin_rebind, "hotkey_vars": self.hotkey_vars},
@@ -416,19 +469,19 @@ class SystemMonitorLuxeApp:
             "muted": MUTED,
             "normalize_food_threshold_minutes": self._normalize_food_threshold_minutes,
             "refresh_module_indicator": self._refresh_module_indicator,
-            "register_mousewheel_target": lambda w, t: None,
+            "register_mousewheel_target": self._register_mousewheel_target,
             "register_module_indicator": self._register_module_indicator,
             "select_region": self._select_region,
             "set_stat_label": self._set_stat_label,
         }
 
-    def _ctk_entry(self, parent, var, width=100):
+    def _ctk_entry(self, parent, var, width=80):
         return ctk.CTkEntry(parent, textvariable=var, width=width,
                              fg_color="#1a1a1a", border_color="#3a3a3a",
                              text_color=FG, font=ctk.CTkFont(size=11),
                              corner_radius=4, border_width=1)
 
-    def _ctk_label_entry(self, parent, label, var, width=100, pady=2):
+    def _ctk_label_entry(self, parent, label, var, width=80, pady=2):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=pady)
         ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=11, weight="bold"),
@@ -438,11 +491,35 @@ class SystemMonitorLuxeApp:
         return row
 
     def _create_scrollable_content(self, parent, padx=6, pady=6):
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent",
-                                         corner_radius=0, scrollbar_button_color=SURFACE,
-                                         scrollbar_button_hover_color=BLUE)
-        scroll.pack(fill="both", expand=True, padx=padx, pady=pady)
-        return scroll
+        """Create a scrollable content area using the same Canvas+Scrollbar
+        pattern as the Tkinter UI — guarantees identical mousewheel behavior."""
+        import tkinter as tk
+
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        v_scroll = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=v_scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.pack(side="right", fill="y")
+
+        outer = tk.Frame(canvas, bg=BG)
+        outer.columnconfigure(0, weight=1)
+        window_id = canvas.create_window((0, 0), window=outer, anchor="nw")
+
+        content_frame = tk.Frame(outer, bg=BG)
+        content_frame.grid(row=0, column=0, sticky="nsew", padx=padx, pady=pady)
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.columnconfigure(1, weight=1)
+
+        outer.bind("<Configure>",
+                    lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                     lambda event, wid=window_id: canvas.itemconfigure(wid, width=event.width))
+
+        self._register_mousewheel_target(parent, canvas)
+        self._register_mousewheel_target(canvas, canvas)
+        self._register_mousewheel_target(outer, canvas)
+        self._register_mousewheel_target(content_frame, canvas)
+        return content_frame
 
     def _create_responsive_columns(self, parent, threshold=1080):
         left = ctk.CTkFrame(parent, fg_color="transparent")
@@ -451,6 +528,45 @@ class SystemMonitorLuxeApp:
         parent.columnconfigure(1, weight=1)
         left.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         right.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+
+        panel_info = {
+            "container": parent,
+            "left": left,
+            "right": right,
+            "threshold": threshold,
+            "stacked": False,
+        }
+        self._responsive_panels.append(panel_info)
+
+        # Direct relayout binding on the parent (like the Tkinter version)
+        # — fires immediately when the parent frame resizes, not just on root
+        #   resize events. Also keeps panel_info["stacked"] in sync so the
+        #   root-level _update_responsive_panels skips redundant work.
+        def relayout(_event=None) -> None:
+            width = parent.winfo_width()
+            if not width:
+                return
+            try:
+                parent.update_idletasks()
+                requested_width = left.winfo_reqwidth() + right.winfo_reqwidth() + 36
+                actual_threshold = max(threshold, requested_width)
+                should_stack = width < actual_threshold
+                if should_stack == panel_info["stacked"]:
+                    return
+                left.grid_forget()
+                right.grid_forget()
+                if should_stack:
+                    left.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 3))
+                    right.grid(row=1, column=0, sticky="nsew", padx=6, pady=(3, 6))
+                else:
+                    left.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+                    right.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+                panel_info["stacked"] = should_stack
+            except Exception:
+                pass
+
+        parent.bind("<Configure>", lambda _e: relayout())
+        relayout()
         return left, right
 
     # ── Helper passthroughs ────────────────────────────────
@@ -522,6 +638,7 @@ class SystemMonitorLuxeApp:
             "afk": state.afk_active, "rclick": state.rclick_active,
             "alarm": state.alarm_active, "char_status": state.char_status_active,
             "fish": state.fish_active, "light": state.light_freeze_enabled,
+            "healer": state.healer_active, "rune": state.rune_active,
         }.items():
             self._refresh_module_indicator(module_id, running)
 
@@ -572,9 +689,9 @@ class SystemMonitorLuxeApp:
         self.log_widget.configure(state="disabled")
 
         self.log_window.protocol("WM_DELETE_WINDOW", lambda: (
+            self.log_window.destroy(),  # destroy before wiping the reference
             setattr(self, "log_window", None),
             setattr(self, "log_widget", None),
-            self.log_window.destroy() if self.log_window else None,
         ))
 
     # ── Stats ──────────────────────────────────────────────
@@ -632,6 +749,10 @@ class SystemMonitorLuxeApp:
                 self.character_status_tab_ui.poll_settings(state)
             if hasattr(self, "light_tab_ui") and self.light_tab_ui:
                 self.light_tab_ui.poll_settings(state)
+            if hasattr(self, "healer_tab_ui") and self.healer_tab_ui:
+                self.healer_tab_ui.poll_settings(state)
+            if hasattr(self, "rune_tab_ui") and self.rune_tab_ui:
+                self.rune_tab_ui.poll_settings(state)
         self._refresh_all_module_indicators_from_state()
         if hasattr(self, "character_status_tab_ui") and self.character_status_tab_ui:
             self.character_status_tab_ui.refresh_display()
@@ -1309,11 +1430,126 @@ class SystemMonitorLuxeApp:
 
         min_width = min(APP_WINDOW_MIN_WIDTH, max(720, work_width - margin_x))
         min_height = min(APP_WINDOW_MIN_HEIGHT, max(520, work_height - margin_y))
+        # Start at a size that fits everything comfortably but respects screen bounds
         start_width = min(max(1280, min_width), max(min_width, work_width - margin_x))
-        start_height = min(max(820, min_height), max(min_height, work_height - margin_y))
+        start_height = min(max(840, min_height), max(min_height, work_height - margin_y))
 
         self.root.minsize(min_width, min_height)
         self.root.geometry(f"{start_width}x{start_height}+{work_x}+{work_y}")
+
+    def _on_root_resize(self, event) -> None:
+        if event.widget is not self.root:
+            return
+        if self.status_label:
+            self.status_label.configure(wraplength=max(320, event.width - 48))
+        self._schedule_responsive_relayout()
+
+    def _schedule_responsive_relayout(self) -> None:
+        if self._relayout_after_id is not None:
+            try:
+                self.root.after_cancel(self._relayout_after_id)
+            except Exception:
+                pass
+        self._relayout_after_id = self.root.after(50, self._update_responsive_panels)
+
+    def _update_responsive_panels(self) -> None:
+        self._relayout_after_id = None
+        for panel in self._responsive_panels:
+            container = panel["container"]
+            left = panel["left"]
+            right = panel["right"]
+            threshold = panel["threshold"]
+            try:
+                width = container.winfo_width()
+                if not width:
+                    continue
+                container.update_idletasks()
+                requested_width = left.winfo_reqwidth() + right.winfo_reqwidth() + 36
+                actual_threshold = max(threshold, requested_width)
+                should_stack = width < actual_threshold
+                if should_stack == panel["stacked"]:
+                    continue  # already in correct layout mode
+                left.grid_forget()
+                right.grid_forget()
+                if should_stack:
+                    left.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 3))
+                    right.grid(row=1, column=0, sticky="nsew", padx=6, pady=(3, 6))
+                else:
+                    left.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+                    right.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+                panel["stacked"] = should_stack
+            except Exception:
+                pass
+
+    def _select_tab_view(self, tab_id: str) -> None:
+        """Switch to the given tab: hide current frame, show selected, update button styles."""
+        if tab_id == self._selected_tab_id or not self._tab_content:
+            return
+        # Hide current tab frame
+        if self._selected_tab_id and self._selected_tab_id in self.tab_frames:
+            self.tab_frames[self._selected_tab_id].pack_forget()
+        # Show selected tab frame
+        if tab_id in self.tab_frames:
+            self.tab_frames[tab_id].pack(fill="both", expand=True)
+        # Update button highlight
+        for tid, btn in self._tab_buttons.items():
+            if tid == tab_id:
+                btn.configure(fg_color=BLUE, text_color=FG)
+            else:
+                btn.configure(fg_color=PANEL, text_color=MUTED)
+        self._selected_tab_id = tab_id
+
+    # ── Mousewheel routing (port from Tkinter) ────────────
+    # CTkScrollableFrame's internal mousewheel handler can be unreliable when
+    # child widgets (entries, option menus) have focus.  We use the same
+    # explicit routing as the Tkinter version: global bind_all + widget
+    # target markers + yview_scroll on the target.
+
+    def _register_mousewheel_target(self, widget, target) -> None:
+        setattr(widget, "_system_monitor_wheel_target", target)
+
+    def _route_mousewheel(self, event) -> str | None:
+        if not self.root:
+            return None
+        try:
+            widget = self.root.winfo_containing(event.x_root, event.y_root)
+        except Exception:
+            return None
+        target = self._find_mousewheel_target(widget)
+        if target is None:
+            return None
+        direction = self._mousewheel_direction(event)
+        if direction == 0:
+            return None
+        try:
+            target.yview_scroll(direction, "units")
+        except Exception:
+            return None
+        return "break"
+
+    def _find_mousewheel_target(self, widget) -> object | None:
+        while widget is not None:
+            target = getattr(widget, "_system_monitor_wheel_target", None)
+            if target is not None:
+                return target
+            try:
+                parent_name = widget.winfo_parent()
+                if not parent_name:
+                    return None
+                widget = widget.nametowidget(parent_name)
+            except Exception:
+                return None
+        return None
+
+    def _mousewheel_direction(self, event) -> int:
+        if getattr(event, "num", None) == 4:
+            return -8
+        if getattr(event, "num", None) == 5:
+            return 8
+        delta = getattr(event, "delta", 0)
+        if delta == 0:
+            return 0
+        return -4 * max(-4, min(4, int(delta / 120)))
 
     def _center_window_on_screen(self) -> None:
         try:
