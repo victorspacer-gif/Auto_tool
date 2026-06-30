@@ -336,7 +336,7 @@ def _clean_named_directories(clean_build: bool, name: str) -> None:
         print("Reusing existing build caches for a faster incremental build.")
         return
 
-    build_dir = ROOT / "build" / name.replace("SystemMonitor", "SystemMonitor")
+    build_dir = ROOT / "build" / name
     dist_dir = ROOT / "dist" / name
     spec_build = ROOT / f"{name}.spec-build"
     remove_directory(build_dir, missing_ok=True)
@@ -379,17 +379,22 @@ def compile_app(clean_build: bool, spec: Path, name: str) -> None:
             "dependencies manually."
         ) from exc
 
-    args = ["--noconfirm", "--name", name]
+    args = ["--noconfirm"]
     if clean_build:
         args.append("--clean")
     args.append(str(spec))
 
+    print(f"  PyInstaller args: {' '.join(args)}")
     try:
         PyInstaller.__main__.run(args)
     except SystemExit as exc:
         code = exc.code if isinstance(exc.code, int) else 1
         if code != 0:
-            raise BuildError(f"PyInstaller failed with exit code {code}.") from exc
+            raise BuildError(
+                f"PyInstaller failed with exit code {code} for {name}.\n"
+                f"  Spec: {spec}\n"
+                f"  Check the output above for ERROR/WARNING messages from PyInstaller."
+            ) from exc
     except Exception as exc:
         raise BuildError(f"PyInstaller failed: {exc}") from exc
 
