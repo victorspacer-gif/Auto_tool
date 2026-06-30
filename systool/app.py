@@ -49,6 +49,7 @@ from .runtime import (
     HAS_TESSERACT,
     HAS_TRAY,
     HAS_WIN32,
+    ensure_pygame_mixer,
     Image,
     ImageDraw,
     pystray,
@@ -258,6 +259,12 @@ class SystemMonitorApp:
         # Start background stats polling (100ms interval, UI-only-on-change)
         self._start_stats_polling()
         self._schedule_character_autosave()
+
+        # Pre-initialize pygame mixer on the main thread — SDL audio
+        # subsystem init must happen on the main thread; doing it from a
+        # background thread (e.g. play_alarm) causes audio stutter.
+        if HAS_PYGAME:
+            ensure_pygame_mixer()
 
         if self.runtime.state.char_status_region or self.runtime.state.char_status_hp_region or self.runtime.state.char_status_mana_region or self.runtime.state.char_status_cap_region:
             self.char_status_service.start()

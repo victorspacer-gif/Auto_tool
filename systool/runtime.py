@@ -142,15 +142,66 @@ from .constants import (  # noqa: E402
 try:
     import pygame
 
-    # Eager init at import time (main thread) — matches Pointers-evaluation behavior.
-    pygame.mixer.pre_init(PYGAME_MIXER_FREQ, PYGAME_MIXER_FORMAT, PYGAME_MIXER_CHANNELS, PYGAME_MIXER_BUFFER)
-    pygame.mixer.init()
-
     HAS_PYGAME = True
 except Exception as exc:
     pygame = None
     HAS_PYGAME = False
     logger.warning("pygame unavailable — audio alerts disabled: %s", exc)
+
+
+def ensure_pygame_mixer() -> bool:
+    """Initialize pygame mixer on first call (lazy) — no white noise at launch.
+
+    Call this before ANY pygame.mixer.music.* or pygame.mixer.* usage.
+    Returns True if mixer is ready, False if pygame is unavailable or init failed.
+    Thread-safe: idempotent after first success or failure.
+    """
+    global HAS_PYGAME, pygame
+
+    if not HAS_PYGAME or pygame is None:
+        return False
+
+    # Check if already initialized (fast path, no lock needed)
+    try:
+        if pygame.mixer.get_init() is not None:
+            return True
+    except Exception:
+        pass  # Not initialized yet, proceed
+
+    # One-shot init under lock
+    _mixer_lock = _get_mixer_lock()
+    with _mixer_lock:
+        # Double-check after acquiring lock
+        try:
+            if pygame.mixer.get_init() is not None:
+                return True
+        except Exception:
+            pass
+
+        try:
+            pygame.mixer.pre_init(
+                PYGAME_MIXER_FREQ,
+                PYGAME_MIXER_FORMAT,
+                PYGAME_MIXER_CHANNELS,
+                PYGAME_MIXER_BUFFER,
+            )
+            pygame.mixer.init()
+            logger.info("pygame mixer initialized (lazy)")
+            return True
+        except Exception as exc:
+            logger.warning("pygame mixer lazy-init failed: %s", exc)
+            return False
+
+
+def _get_mixer_lock() -> threading.Lock:
+    """Return the module-level mixer init lock, creating it on first access."""
+    global _mixer_lock
+    if _mixer_lock is None:
+        _mixer_lock = threading.Lock()
+    return _mixer_lock
+
+
+_mixer_lock: threading.Lock | None = None
 
 
 try:
