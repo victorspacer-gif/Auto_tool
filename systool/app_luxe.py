@@ -15,6 +15,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 import os
+import ctypes
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ from .constants import (
     APP_STATS_POLL_INTERVAL_MS,
     APP_TRAY_BOOTSTRAP_DELAY_MS,
     APP_TRAY_POLL_INTERVAL_MS,
+    APP_WINDOW_MIN_WIDTH,
+    APP_WINDOW_MIN_HEIGHT,
 )
 from .config import ConfigSerializer
 from .container import ServiceContainer
@@ -419,13 +422,13 @@ class SystemMonitorLuxeApp:
             "set_stat_label": self._set_stat_label,
         }
 
-    def _ctk_entry(self, parent, var, width=8):
+    def _ctk_entry(self, parent, var, width=100):
         return ctk.CTkEntry(parent, textvariable=var, width=width,
                              fg_color="#1a1a1a", border_color="#3a3a3a",
                              text_color=FG, font=ctk.CTkFont(size=11),
                              corner_radius=4, border_width=1)
 
-    def _ctk_label_entry(self, parent, label, var, width=8, pady=2):
+    def _ctk_label_entry(self, parent, label, var, width=100, pady=2):
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=pady)
         ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=11, weight="bold"),
@@ -1300,42 +1303,48 @@ class SystemMonitorLuxeApp:
                 pass
 
     def _configure_screen_aware_window(self) -> None:
-        try:
-            import ctypes as _ct
-            class RECT(_ct.Structure):
-                _fields_ = [("left", _ct.c_long), ("top", _ct.c_long),
-                            ("right", _ct.c_long), ("bottom", _ct.c_long)]
-            rect = RECT()
-            if _ct.windll.user32.SystemParametersInfoW(0x0030, 0, _ct.byref(rect), 0):
-                work_x, work_y = rect.left, rect.top
-                work_width = rect.right - rect.left
-                work_height = rect.bottom - rect.top
-            else:
-                work_x = work_y = 0
-                work_width, work_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        except Exception:
-            work_x = work_y = 0
-            work_width, work_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-
+        work_x, work_y, work_width, work_height = self._get_work_area()
         margin_x = 80 if work_width >= 900 else 24
         margin_y = 100 if work_height >= 700 else 24
-        start_w = min(max(1280, 720), work_width - margin_x)
-        start_h = min(max(820, 520), work_height - margin_y)
-        self.root.minsize(720, 520)
-        self.root.geometry(f"{start_w}x{start_h}+{work_x}+{work_y}")
+
+        min_width = min(APP_WINDOW_MIN_WIDTH, max(720, work_width - margin_x))
+        min_height = min(APP_WINDOW_MIN_HEIGHT, max(520, work_height - margin_y))
+        start_width = min(max(1280, min_width), max(min_width, work_width - margin_x))
+        start_height = min(max(820, min_height), max(min_height, work_height - margin_y))
+
+        self.root.minsize(min_width, min_height)
+        self.root.geometry(f"{start_width}x{start_height}+{work_x}+{work_y}")
 
     def _center_window_on_screen(self) -> None:
         try:
             self.root.update_idletasks()
-            w = self.root.winfo_width()
-            h = self.root.winfo_height()
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-            x = max(0, (sw - w) // 2)
-            y = max(0, (sh - h) // 2)
-            self.root.geometry(f"{w}x{h}+{x}+{y}")
+            work_x, work_y, work_width, work_height = self._get_work_area()
+            width = min(self.root.winfo_width(), work_width)
+            height = min(self.root.winfo_height(), work_height)
+            x_pos = work_x + max(0, (work_width - width) // 2)
+            y_pos = work_y + max(0, (work_height - height) // 2)
+            self.root.geometry(f"{width}x{height}+{x_pos}+{y_pos}")
         except Exception:
-            pass
+            logger.debug("Could not center main window")
+
+    def _get_work_area(self) -> tuple[int, int, int, int]:
+        if os.name == "nt":
+            try:
+                class RECT(ctypes.Structure):
+                    _fields_ = [
+                        ("left", ctypes.c_long),
+                        ("top", ctypes.c_long),
+                        ("right", ctypes.c_long),
+                        ("bottom", ctypes.c_long),
+                    ]
+                rect = RECT()
+                spi_getworkarea = 0x0030
+                if ctypes.windll.user32.SystemParametersInfoW(spi_getworkarea, 0, ctypes.byref(rect), 0):
+                    return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+            except Exception:
+                logger.debug("Could not read Windows work area")
+
+        return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight()
 
     def minimize_window(self) -> None:
         self._set_fullscreen(False)

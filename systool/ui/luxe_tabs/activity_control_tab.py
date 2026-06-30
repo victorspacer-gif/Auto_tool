@@ -92,7 +92,7 @@ class ActivityControlTab:
         unit = self.helpers["get_unit_label"]()
         rclick_jitter = ctk.StringVar(value=str(self.runtime.state.rclick_jitter))
         self.ui_vars["rclick_jitter_var"] = rclick_jitter
-        self.helpers["label_entry"](panel, "Click jitter (px ±):", rclick_jitter, width=5)
+        self.helpers["label_entry"](panel, "Click jitter (px ±):", rclick_jitter, width=75)
 
         min_var = ctk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.rclick_min_ms)))
         max_var = ctk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.rclick_max_ms)))
@@ -112,8 +112,8 @@ class ActivityControlTab:
         self.ui_vars["rclick_food_burst_count_max_var"] = rclick_food_burst_count_max
         r2 = ctk.CTkFrame(panel, fg_color="transparent")
         r2.pack(fill="x", padx=10, pady=2)
-        self.helpers["label_entry"](r2, "Burst clicks min:", rclick_food_burst_count_min, width=6).pack(side="left")
-        self.helpers["label_entry"](r2, "Burst clicks max:", rclick_food_burst_count_max, width=6).pack(side="left", padx=(8, 0))
+        self.helpers["label_entry"](r2, "Burst clicks min:", rclick_food_burst_count_min, width=90).pack(side="left")
+        self.helpers["label_entry"](r2, "Burst clicks max:", rclick_food_burst_count_max, width=90).pack(side="left", padx=(8, 0))
 
         rclick_food_burst_interval = ctk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.rclick_food_burst_interval_ms)))
         click_delay_min = ctk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.rclick_click_delay_min_ms)))
@@ -121,8 +121,8 @@ class ActivityControlTab:
         self.ui_vars["rclick_click_delay_min_var"] = click_delay_min
         r3 = ctk.CTkFrame(panel, fg_color="transparent")
         r3.pack(fill="x", padx=10, pady=2)
-        self.helpers["label_entry"](r3, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6).pack(side="left")
-        self.helpers["label_entry"](r3, f"Click delay min ({unit}):", click_delay_min, width=6).pack(side="left", padx=(8, 0))
+        self.helpers["label_entry"](r3, f"Burst interval ({unit}):", rclick_food_burst_interval, width=90).pack(side="left")
+        self.helpers["label_entry"](r3, f"Click delay min ({unit}):", click_delay_min, width=90).pack(side="left", padx=(8, 0))
 
         click_delay_max = ctk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.rclick_click_delay_max_ms)))
         post_settle = ctk.StringVar(value=str(self.helpers["ms_to_display"](self.runtime.state.rclick_post_click_settle_ms)))
@@ -130,8 +130,8 @@ class ActivityControlTab:
         self.ui_vars["rclick_post_settle_ms_var"] = post_settle
         r4 = ctk.CTkFrame(panel, fg_color="transparent")
         r4.pack(fill="x", padx=10, pady=2)
-        self.helpers["label_entry"](r4, f"Click delay max ({unit}):", click_delay_max, width=6).pack(side="left")
-        self.helpers["label_entry"](r4, f"Post-click settle ({unit}):", post_settle, width=6).pack(side="left", padx=(8, 0))
+        self.helpers["label_entry"](r4, f"Click delay max ({unit}):", click_delay_max, width=90).pack(side="left")
+        self.helpers["label_entry"](r4, f"Post-click settle ({unit}):", post_settle, width=90).pack(side="left", padx=(8, 0))
 
         rclick_mode = ctk.StringVar(value=self.runtime.state.rclick_mode)
         rclick_food_min = ctk.StringVar(value=str(self.runtime.state.rclick_food_min_minutes))
@@ -149,11 +149,11 @@ class ActivityControlTab:
 
         self.rclick_food_mode_container = ctk.CTkFrame(panel, fg_color="transparent")
         self.rclick_food_mode_container.pack(fill="x", padx=10)
-        self.helpers["label_entry"](self.rclick_food_mode_container, "Min food timer (minutes):", rclick_food_min, width=6)
-        self.helpers["label_entry"](self.rclick_food_mode_container, f"Burst interval ({unit}):", rclick_food_burst_interval, width=6)
-        self.helpers["label_entry"](self.rclick_food_mode_container, f"Click delay min ({unit}):", click_delay_min, width=6)
-        self.helpers["label_entry"](self.rclick_food_mode_container, f"Click delay max ({unit}):", click_delay_max, width=6)
-        self.helpers["label_entry"](self.rclick_food_mode_container, f"Post-click settle ({unit}):", post_settle, width=6)
+        self.helpers["label_entry"](self.rclick_food_mode_container, "Min food timer (minutes):", rclick_food_min, width=90)
+        self.helpers["label_entry"](self.rclick_food_mode_container, f"Burst interval ({unit}):", rclick_food_burst_interval, width=90)
+        self.helpers["label_entry"](self.rclick_food_mode_container, f"Click delay min ({unit}):", click_delay_min, width=90)
+        self.helpers["label_entry"](self.rclick_food_mode_container, f"Click delay max ({unit}):", click_delay_max, width=90)
+        self.helpers["label_entry"](self.rclick_food_mode_container, f"Post-click settle ({unit}):", post_settle, width=90)
 
         rclick_mode.trace_add("write", self._update_rclick_mode_controls)
         self._update_rclick_mode_controls()
@@ -244,7 +244,7 @@ class ActivityControlTab:
             ctk.CTkLabel(row1, text=label, font=ctk.CTkFont(size=11, weight="bold"),
                           text_color="#e8e8e8").pack(side="left", padx=(8, 0))
             value = ctk.StringVar(value=default)
-            entry = ctk.CTkEntry(row1, textvariable=value, width=70, fg_color="#1a1a1a",
+            entry = ctk.CTkEntry(row1, textvariable=value, width=90, fg_color="#1a1a1a",
                                   border_color="#3a3a3a", text_color="#e8e8e8")
             entry.pack(side="left", padx=4)
             outer._vars[name] = value
@@ -252,13 +252,13 @@ class ActivityControlTab:
         ctk.CTkLabel(row1, text="Min mana:", font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8").pack(side="left", padx=(8, 0))
         min_mana_var = ctk.StringVar(value=str(job.min_mana))
-        ctk.CTkEntry(row1, textvariable=min_mana_var, width=70, fg_color="#1a1a1a",
+        ctk.CTkEntry(row1, textvariable=min_mana_var, width=90, fg_color="#1a1a1a",
                       border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=4)
         outer._vars["min_mana"] = min_mana_var
         ctk.CTkLabel(row1, text="Max mana:", font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8").pack(side="left", padx=(8, 0))
         max_mana_var = ctk.StringVar(value=str(job.max_mana))
-        ctk.CTkEntry(row1, textvariable=max_mana_var, width=70, fg_color="#1a1a1a",
+        ctk.CTkEntry(row1, textvariable=max_mana_var, width=90, fg_color="#1a1a1a",
                       border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=4)
         outer._vars["max_mana"] = max_mana_var
         indicator = ctk.CTkLabel(row1, text="●", font=ctk.CTkFont(size=14, weight="bold"),
@@ -280,7 +280,7 @@ class ActivityControlTab:
         ]:
             ctk.CTkLabel(row2, text=label, font=ctk.CTkFont(size=10), text_color="#777777").pack(side="left", padx=(8, 0))
             value = ctk.StringVar(value=default)
-            ctk.CTkEntry(row2, textvariable=value, width=50, fg_color="#1a1a1a",
+            ctk.CTkEntry(row2, textvariable=value, width=80, fg_color="#1a1a1a",
                           border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=2)
             outer._vars[name] = value
 

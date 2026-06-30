@@ -66,9 +66,9 @@ class CharacterStatusTab:
         self.ui_vars["char_status_sample_delay_var"] = char_sample_delay
         self.ui_vars["char_status_tesseract_var"] = tesseract_path
 
-        self.helpers["label_entry"](watch_panel, f"Refresh every ({unit}):", char_poll, width=6)
-        self.helpers["label_entry"](watch_panel, "Samples per scan:", char_samples, width=6)
-        self.helpers["label_entry"](watch_panel, f"Delay between samples ({unit}):", char_sample_delay, width=6)
+        self.helpers["label_entry"](watch_panel, f"Refresh every ({unit}):", char_poll, width=90)
+        self.helpers["label_entry"](watch_panel, "Samples per scan:", char_samples, width=90)
+        self.helpers["label_entry"](watch_panel, f"Delay between samples ({unit}):", char_sample_delay, width=90)
 
         tesseract_row = ctk.CTkFrame(watch_panel, fg_color="transparent")
         tesseract_row.pack(fill="x", padx=10, pady=2)

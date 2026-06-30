@@ -63,7 +63,7 @@ class FishingTab:
 
         rod_jitter = ctk.StringVar(value=str(self.runtime.state.fish_rod_jitter))
         self.ui_vars["fish_rod_jit_var"] = rod_jitter
-        self.helpers["label_entry"](rod_panel, "Rod jitter (px ±):", rod_jitter, width=5)
+        self.helpers["label_entry"](rod_panel, "Rod jitter (px ±):", rod_jitter, width=75)
 
         # ── Fishing Positions ──
         spots_panel = ctk.CTkFrame(left, fg_color="transparent", border_width=1, border_color="#3a3a3a")
@@ -86,7 +86,7 @@ class FishingTab:
 
         spot_jitter = ctk.StringVar(value=str(self.runtime.state.fish_spot_jitter))
         self.ui_vars["fish_spot_jit_var"] = spot_jitter
-        self.helpers["label_entry"](spots_panel, "Spot jitter (px ±):", spot_jitter, width=5)
+        self.helpers["label_entry"](spots_panel, "Spot jitter (px ±):", spot_jitter, width=75)
 
         # ── Timing ──
         timing_panel = ctk.CTkFrame(right, fg_color="transparent", border_width=1, border_color="#3a3a3a")
@@ -113,7 +113,7 @@ class FishingTab:
         self.helpers["label_entry"](timing_panel, f"Wait for bite Max ({unit}):", wait_max)
         fish_min_cap = ctk.StringVar(value=str(self.runtime.state.fish_min_cap))
         self.ui_vars["fish_min_cap_var"] = fish_min_cap
-        self.helpers["label_entry"](timing_panel, "Stop below cap:", fish_min_cap, width=6)
+        self.helpers["label_entry"](timing_panel, "Stop below cap:", fish_min_cap, width=90)
 
         fish_auto_restart_enabled = ctk.BooleanVar(value=self.runtime.state.fish_auto_restart_enabled)
         fish_auto_restart_food_secs = ctk.StringVar(value=str(self.runtime.state.fish_auto_restart_food_min_secs))
@@ -128,7 +128,7 @@ class FishingTab:
         ctk.CTkLabel(ar_frame, text="Auto-restart session when food drops below:",
                       font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8").pack(side="left", padx=(8, 4))
-        ctk.CTkEntry(ar_frame, textvariable=fish_auto_restart_food_secs, width=60,
+        ctk.CTkEntry(ar_frame, textvariable=fish_auto_restart_food_secs, width=85,
                       fg_color="#1a1a1a", border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left")
         ctk.CTkLabel(ar_frame, text="sec", font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#5ac8fa").pack(side="left", padx=2)
@@ -140,7 +140,7 @@ class FishingTab:
         ms_frame.pack(fill="x", padx=10, pady=2)
         ctk.CTkLabel(ms_frame, text="Mouse Speed (×):", font=ctk.CTkFont(size=11, weight="bold"),
                       text_color="#e8e8e8").pack(side="left")
-        ctk.CTkEntry(ms_frame, textvariable=fish_mouse_speed_var, width=60,
+        ctk.CTkEntry(ms_frame, textvariable=fish_mouse_speed_var, width=85,
                       fg_color="#1a1a1a", border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=(8, 4))
         ctk.CTkLabel(ms_frame, text=f"(range: {FISH_MOUSE_SPEED_MIN}–{FISH_MOUSE_SPEED_MAX})",
                       font=ctk.CTkFont(size=11, weight="bold"),

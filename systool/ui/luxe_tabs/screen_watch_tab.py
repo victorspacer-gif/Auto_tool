@@ -74,11 +74,11 @@ class ScreenWatchTab:
 
         battle_threshold = ctk.StringVar(value=str(int(self.runtime.state.alarm_battle_threshold * 100)))
         self.ui_vars["battle_thresh_var"] = battle_threshold
-        self.helpers["label_entry"](battle_section, "Battle Change Threshold (%):", battle_threshold, width=6)
+        self.helpers["label_entry"](battle_section, "Battle Change Threshold (%):", battle_threshold, width=90)
 
         battle_popup_timeout = ctk.StringVar(value=str(self.runtime.state.alarm.battle_logout_popup_timeout_sec))
         self.ui_vars["battle_popup_timeout_var"] = battle_popup_timeout
-        self.helpers["label_entry"](battle_section, "Logout popup timeout (sec, 0=manual):", battle_popup_timeout, width=8)
+        self.helpers["label_entry"](battle_section, "Logout popup timeout (sec, 0=manual):", battle_popup_timeout, width=110)
 
         # ── Alert settings ──
         mp3_row = ctk.CTkFrame(panel, fg_color="transparent")
@@ -99,12 +99,12 @@ class ScreenWatchTab:
         self.ui_vars["alarm_hp_value_var"] = alarm_hp_value
         self.ui_vars["alarm_mp_value_var"] = alarm_mp_value
         self.ui_vars["alarm_cap_value_var"] = alarm_cap_value
-        self.helpers["label_entry"](panel, "Change threshold (%):", alarm_threshold, width=6)
+        self.helpers["label_entry"](panel, "Change threshold (%):", alarm_threshold, width=90)
         ctk.CTkLabel(panel, text="— or —", font=ctk.CTkFont(size=10),
                       text_color="#777777", anchor="w").pack(padx=14)
-        self.helpers["label_entry"](panel, "Low HP alert (value):", alarm_hp_value, width=8)
-        self.helpers["label_entry"](panel, "Low MP/Mana alert (value):", alarm_mp_value, width=8)
-        self.helpers["label_entry"](panel, "Low Cap alert (value):", alarm_cap_value, width=8)
+        self.helpers["label_entry"](panel, "Low HP alert (value):", alarm_hp_value, width=110)
+        self.helpers["label_entry"](panel, "Low MP/Mana alert (value):", alarm_mp_value, width=110)
+        self.helpers["label_entry"](panel, "Low Cap alert (value):", alarm_cap_value, width=110)
 
         auto_pause = ctk.BooleanVar(value=self.runtime.state.alarm_auto_pause)
         self.ui_vars["alarm_auto_pause_var"] = auto_pause

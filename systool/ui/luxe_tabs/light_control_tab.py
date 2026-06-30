@@ -47,7 +47,7 @@ class LightControlTab:
         self.ui_vars["light_custom_intensity_value_var"] = light_custom_intensity
         self.ui_vars["light_freeze_interval_ms_var"] = light_freeze_interval
 
-        self.helpers["label_entry"](panel, "Process name:", light_process, width=22)
+        self.helpers["label_entry"](panel, "Process name:", light_process, width=240)
         backend_row = ctk.CTkFrame(panel, fg_color="transparent")
         backend_row.pack(fill="x", padx=14, pady=2)
         ctk.CTkLabel(backend_row, text="Memory backend:", font=ctk.CTkFont(size=11, weight="bold"),
@@ -58,7 +58,7 @@ class LightControlTab:
                                           dropdown_fg_color="#252525", dropdown_text_color="#e8e8e8",
                                           dropdown_hover_color="#0a84ff")
         backend_menu.pack(side="left", padx=4)
-        self.helpers["label_entry"](panel, "Target color address (hex):", light_direct_address, width=18)
+        self.helpers["label_entry"](panel, "Target color address (hex):", light_direct_address, width=200)
 
         custom_row = ctk.CTkFrame(panel, fg_color="transparent")
         custom_row.pack(fill="x", padx=14, pady=2)
@@ -66,15 +66,15 @@ class LightControlTab:
                       text_color="#e8e8e8", width=150, anchor="w").pack(side="left")
         ctk.CTkLabel(custom_row, text="Color", font=ctk.CTkFont(size=10, weight="bold"),
                       text_color="#e8e8e8").pack(side="left", padx=(4, 3))
-        ctk.CTkEntry(custom_row, textvariable=light_custom_color, width=60,
+        ctk.CTkEntry(custom_row, textvariable=light_custom_color, width=85,
                       fg_color="#1a1a1a", border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left", padx=(0, 10))
         ctk.CTkLabel(custom_row, text="Intensity", font=ctk.CTkFont(size=10, weight="bold"),
                       text_color="#e8e8e8").pack(side="left", padx=(0, 3))
-        ctk.CTkEntry(custom_row, textvariable=light_custom_intensity, width=60,
+        ctk.CTkEntry(custom_row, textvariable=light_custom_intensity, width=85,
                       fg_color="#1a1a1a", border_color="#3a3a3a", text_color="#e8e8e8").pack(side="left")
 
         unit = self.helpers["get_unit_label"]()
-        self.helpers["label_entry"](panel, f"Freeze interval ({unit}):", light_freeze_interval, width=8)
+        self.helpers["label_entry"](panel, f"Freeze interval ({unit}):", light_freeze_interval, width=110)
 
         ctk.CTkCheckBox(panel, text="Freeze", variable=light_freeze_enabled,
                          command=self.toggle_light_freeze,
