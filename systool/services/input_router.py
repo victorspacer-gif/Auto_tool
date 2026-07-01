@@ -16,6 +16,7 @@ Adapted from TibiaAuto12's ``SendToClient`` (mode 0) and ``MoveMouse``
 from __future__ import annotations
 
 import logging
+import random
 import time
 from typing import Callable
 
@@ -103,6 +104,12 @@ class InputRouter:
         the window receives the coordinate directly).
         """
         if self.mode == "direct":
+            # Direct mode has no physical cursor movement, but we still
+            # sleep for `duration` to simulate the time a human would take
+            # to move the mouse.  If no duration is given, use a short
+            # random pre-click settling delay (50-120 ms).
+            move_delay = duration if duration is not None else random.uniform(0.050, 0.120)
+            time.sleep(move_delay)
             self.left_click(x, y) if button == "left" else self.right_click(x, y)
             return
 
@@ -202,30 +209,41 @@ class InputRouter:
             self._warn_direct_fail(f"ScreenToClient failed: {exc}")
             return
 
+        # Human-like pre-click settling delay — simulates the brief pause
+        # between cursor arrival and button press (10-60 ms).
+        pre_delay = random.uniform(0.010, 0.060)
+        time.sleep(pre_delay)
+
         # Post mouse-move so the window knows where the cursor is
         try:
             win32api.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lparam)
         except Exception:
             pass
 
+        # Human-like click hold duration — varies between 30-80 ms to avoid
+        # robotic back-to-back down/up that anti-cheat can fingerprint.
+        hold_duration = random.uniform(0.030, 0.080)
+
         success = False
         if button == "left":
             try:
-                win32api.SendMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
-                win32api.SendMessage(hwnd, win32con.WM_LBUTTONUP, win32con.MK_LBUTTON, lparam)
+                win32api.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
+                time.sleep(hold_duration)
+                win32api.PostMessage(hwnd, win32con.WM_LBUTTONUP, win32con.MK_LBUTTON, lparam)
                 success = True
             except Exception as exc:
-                self._warn_direct_fail(f"SendMessage left-click: {exc}")
+                self._warn_direct_fail(f"PostMessage left-click: {exc}")
         else:
             try:
-                win32api.SendMessage(hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
-                win32api.SendMessage(hwnd, win32con.WM_RBUTTONUP, win32con.MK_RBUTTON, lparam)
+                win32api.PostMessage(hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
+                time.sleep(hold_duration)
+                win32api.PostMessage(hwnd, win32con.WM_RBUTTONUP, win32con.MK_RBUTTON, lparam)
                 success = True
             except Exception as exc:
-                self._warn_direct_fail(f"SendMessage right-click: {exc}")
+                self._warn_direct_fail(f"PostMessage right-click: {exc}")
 
         if not success:
-            # Invalidate cache if SendMessage fails — the window may have died
+            # Invalidate cache if PostMessage fails — the window may have died
             self.runtime.state.game_hwnd = None
 
     def _direct_key(self, key_str: str, hold_seconds: float) -> None:
