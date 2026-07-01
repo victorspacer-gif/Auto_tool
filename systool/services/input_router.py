@@ -110,7 +110,6 @@ class InputRouter:
             return
         mouse = pynput_mouse.Controller()
         HumanMouse.move(mouse, (x, y), duration=duration)
-        time.sleep(self._jitter_delay())
         if button == "left":
             mouse.click(pynput_mouse.Button.left)
         else:
@@ -254,11 +253,6 @@ class InputRouter:
         if now - self._last_warn_ts > 5.0:
             InputRouter._last_warn_ts = now
             self.runtime.ui.log(f"⚠️  [direct input] {msg}")
-
-    @staticmethod
-    def _jitter_delay() -> float:
-        import random
-        return random.uniform(0.02, 0.06)
 
 
 # ── Key mapping helpers ──────────────────────────────────────────────
