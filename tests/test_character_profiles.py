@@ -92,11 +92,11 @@ def test_load_character_profile_blocks_flash_window_setting(tmp_path: Path):
     restored = AppState()
     ConfigSerializer.apply_loaded(restored, payload)
 
-    assert "alarm.flash_window" not in payload["cfg"]
-    assert "alarm_flash_window" not in payload["cfg"]
+    assert "alarm.flash_window" in payload["cfg"]
+    assert "alarm_flash_window" in payload["cfg"]
     assert "light_freeze_enabled" not in payload["cfg"]
     assert "light_custom_color_value" not in payload["cfg"]
-    assert restored.alarm_flash_window is False
+    assert restored.alarm_flash_window is True
     assert restored.light_freeze_enabled is False
     assert restored.light_custom_color_value == 215
 

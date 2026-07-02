@@ -43,12 +43,7 @@ PROFILE_LIGHT_CFG_KEYS = frozenset(
         "light_original_intensity_value",
     )
 )
-PROFILE_BLOCKED_CFG_KEYS = frozenset(
-    (
-        "alarm.flash_window",
-        "alarm_flash_window",
-    )
-) | PROFILE_LIGHT_CFG_KEYS
+PROFILE_BLOCKED_CFG_KEYS = PROFILE_LIGHT_CFG_KEYS
 
 
 @dataclass(frozen=True)

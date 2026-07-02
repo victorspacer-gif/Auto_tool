@@ -1303,6 +1303,22 @@ class SystemMonitorLuxeApp:
             "rclick_food_min_var": state.rclick_food_min_minutes,
             "rclick_food_burst_count_min_var": state.rclick_food_burst_count_min,
             "rclick_food_burst_count_max_var": state.rclick_food_burst_count_max,
+            # ── Rune vars ──
+            "rune_spell_key_var": state.rune.spell_key,
+            "rune_jitter_var": state.rune.jitter,
+            "rune_min_mana_var": state.rune.min_mana,
+            "rune_max_mana_var": state.rune.max_mana,
+            "rune_blank_cycles_var": state.rune.available_blank_runes,
+            # ── Healer vars ──
+            "healer_mode_var": state.healer.mode,
+            "healer_spell_key_var": state.healer.spell_key,
+            "healer_hp_percent_var": state.healer.hp_percent,
+            "healer_hp_value_var": state.healer.hp_value,
+            "healer_min_mana_var": state.healer.min_mana,
+            "healer_max_mana_var": state.healer.max_mana,
+            "healer_mouse_speed_var": state.healer.mouse_speed,
+            "healer_rune_delay_var": state.healer.rune_delay_ms,
+            # ── Light vars ──
             "light_process_name_var": state.light_process_name,
             "light_direct_address_hex_var": state.light_direct_address_hex,
             "light_freeze_interval_ms_var": state.light_freeze_interval_ms,
@@ -1314,9 +1330,31 @@ class SystemMonitorLuxeApp:
             self.ui_vars["alarm_auto_pause_var"].set(state.alarm_auto_pause)
         if "battle_enabled_var" in self.ui_vars:
             self.ui_vars["battle_enabled_var"].set(state.alarm_battle_enabled)
+        if "healer_use_percent_var" in self.ui_vars:
+            self.ui_vars["healer_use_percent_var"].set(state.healer.use_percent)
         if "light_freeze_enabled_var" in self.ui_vars:
             self.ui_vars["light_freeze_enabled_var"].set(state.light_freeze_enabled)
         self._refresh_all_module_indicators_from_state()
+        self._refresh_variables_display()
+        # Refresh all tab UIs from the newly loaded state (matching _sync_ui_from_state
+        # from the original tkinter app — ensures spots, labels, and position displays
+        # reflect loaded config/profile data).
+        if hasattr(self, "activity_control_tab_ui") and self.activity_control_tab_ui:
+            self.activity_control_tab_ui.refresh_from_state()
+        if hasattr(self, "rune_tab_ui") and self.rune_tab_ui:
+            self.rune_tab_ui.refresh_from_state()
+        if hasattr(self, "healer_tab_ui") and self.healer_tab_ui:
+            self.healer_tab_ui.refresh_from_state()
+        if hasattr(self, "screen_watch_tab_ui") and self.screen_watch_tab_ui:
+            self.screen_watch_tab_ui.refresh_from_state()
+        if hasattr(self, "character_status_tab_ui") and self.character_status_tab_ui:
+            self.character_status_tab_ui.refresh_display()
+        if hasattr(self, "fishing_tab_ui") and self.fishing_tab_ui:
+            self.fishing_tab_ui.refresh_from_state()
+        if hasattr(self, "light_tab_ui") and self.light_tab_ui:
+            self.light_tab_ui.refresh_from_state()
+        if hasattr(self, "hotkeys_tab_ui") and self.hotkeys_tab_ui:
+            self.hotkeys_tab_ui.refresh_from_state()
 
     # ── Config tab helpers ─────────────────────────────────
 
