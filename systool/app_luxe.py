@@ -393,7 +393,7 @@ class SystemMonitorLuxeApp:
                 border_width=0,
                 height=30,
             )
-            btn.pack(side="left", padx=3)
+            btn.pack(side="left", padx=3, fill="x", expand=True)
             self._tab_buttons[tab_id] = btn
 
         # Show first tab by default

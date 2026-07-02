@@ -154,7 +154,15 @@ class InputRouter:
         """Resolve the target window handle. Caches the result in game_hwnd."""
         state = self.runtime.state
         if state.game_hwnd:
-            return state.game_hwnd
+            # Validate cached HWND — the game may have been restarted
+            if HAS_WIN32:
+                try:
+                    if win32gui.IsWindow(state.game_hwnd):
+                        return state.game_hwnd
+                except Exception:
+                    pass
+            # Stale — clear cache so we re-detect below
+            state.game_hwnd = None
         if not HAS_WIN32:
             return None
         if state.game_window_title:
@@ -254,12 +262,24 @@ class InputRouter:
         vk = _key_str_to_vk(key_str)
         if vk is None:
             return
+
+        # Verify the HWND is still valid (may be stale from cached game_hwnd)
+        try:
+            if not win32gui.IsWindow(hwnd):
+                self.runtime.state.game_hwnd = None  # invalidate cache
+                self._warn_direct_fail("HWND is no longer valid — re-detect the window")
+                return
+        except Exception:
+            pass
+
         try:
             win32api.SendMessage(hwnd, win32con.WM_KEYDOWN, vk, 0)
             time.sleep(max(0.01, hold_seconds))
             win32api.SendMessage(hwnd, win32con.WM_KEYUP, vk, 0)
         except Exception as exc:
             self._warn_direct_fail(f"SendMessage key '{key_str}': {exc}")
+            # Invalidate cache — the window may have died
+            self.runtime.state.game_hwnd = None
 
     # ── Helpers ─────────────────────────────────────────────────────
 
