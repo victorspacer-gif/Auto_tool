@@ -1005,9 +1005,24 @@ class SystemMonitorLuxeApp:
         ("cavebot", "CaveBot", lambda self: self.cavebot_service.start()),
         ("chase_target", "Chase Target", lambda self: self.chase_target_service.start()),
         ("auto_looter", "Auto Looter", lambda self: self.auto_looter_service.start()),
+        ("jobs", "Hotkey Tasks (Jobs)", lambda self: self._start_all_jobs()),
         ("light_freeze", "Light Freeze", None),
         ("battle_reaction", "Enable Battle Window Reaction", None),
     ]
+
+    def _start_all_jobs(self) -> None:
+        """Start every hotkey job that has been configured."""
+        jobs = self.runtime.state.jobs
+        if not jobs:
+            self.runtime.ui.log("⚠️  No hotkey jobs configured to start")
+            self.runtime.ui.set_status("No jobs to start", ORANGE)
+            return
+        started = 0
+        for job in jobs:
+            self.job_service.start_job(job)
+            started += 1
+        self.runtime.ui.log(f"▶ Started {started} hotkey job(s)")
+        self.runtime.ui.set_status(f"{started} job(s) started", GREEN)
 
     def _start_selected_module(self, module_id: str) -> None:
         for mid, _display, starter_fn in self._STARTUP_MODULE_DEFS:
