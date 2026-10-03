@@ -1,279 +1,311 @@
 # Variables Tab — State Variable Reference
 
+> This is the reference companion to the **State variables — detailed analysis** section in
+> `README.md`. Both describe the same model; this file lists it field by field.
+
 ## Overview
 
-The Variables tab displays real-time character statistics read from the game process. These values are exposed through a shared `AppState` object that multiple services consume for decision-making (healing, alarms, fishing, rune crafting).
+The Variables tab shows the live character statistics that the services use for decision-making
+(healing, alarms, fishing, rune crafting). All of them live on the shared `AppState`
+(`systool/models.py`), which groups related fields into dataclasses (`AlarmState`, `CharStatusState`,
+`FishingState`, `RuneState`, `HealerState`, `SandboxState`) while still exposing the flat attribute
+names (`char_status_hp`, `fish_min_cap`, …) as properties.
 
-This document describes every variable displayed in the Variables table, its source, how it's computed, and which services consume it.
+Every stat has two channels:
+
+1. **Pointer read (primary)** — `HpService` / `MpService` / `CapService` / `FoodService` walk a pointer
+   chain in the game process and read a double.
+2. **OCR read (fallback)** — `CharacterStatusService` screenshots the status window or individual
+   fields and parses them with Tesseract.
+
+`hp_source` / `mp_source` / `cap_source` / `food_source` always say which channel produced the value
+that is currently displayed.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                    Memory Sources                │
-│                                                 │
-│  ┌──────────────┐   ┌────────────────────────┐  │
-│  │ Pointer Read │   │ Character Status OCR   │  │
-│  │ (Primary)    │   │ (Fallback / Secondary) │  │
-│  └──────────────┘   └────────────────────────┘  │
-│         ↓                    ↓                   │
-│  ┌─────────────────────────────────────────┐    │
-│  │           AppState (Shared State)        │    │
-│  │                                         │    │
-│  │  hp_value / char_status_hp              │    │
-│  │  mp_value / char_status_mana            │    │
-│  │  cap_value / char_status_cap            │    │
-│  └─────────────────────────────────────────┘    │
-│         ↓                    ↓                   │
-│  ┌──────────────┐   ┌────────────────────────┐  │
-│  │ AlarmService │   │ FishService            │  │
-│  │ HealerServ.  │   │ RuneService            │  │
-│  │ RightClick   │   │ ...                    │  │
-│  └──────────────┘   └────────────────────────┘  │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        Memory sources                        │
+│                                                              │
+│  ┌────────────────────────┐   ┌────────────────────────────┐ │
+│  │ PointerReader          │   │ CharacterStatusService     │ │
+│  │ (primary)              │   │ (fallback / secondary)     │ │
+│  │ pymem / driver / DBVM  │   │ mss + Tesseract            │ │
+│  └────────────────────────┘   └────────────────────────────┘ │
+│              ↓                            ↓                  │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                  AppState (shared state)               │  │
+│  │  hp_value   / char_status_hp    mp_value / …_mana      │  │
+│  │  cap_value  / char_status_cap   food_value / …_food_*  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│              ↓                            ↓                  │
+│  ┌────────────────────────┐   ┌────────────────────────────┐ │
+│  │ AlarmService           │   │ FishingService             │ │
+│  │ AutoHealerService      │   │ RuneMakerService           │ │
+│  │ RightClickService      │   │ HotkeyJobService           │ │
+│  └────────────────────────┘   └────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Variable Categories
+## Variable categories
 
-### A. Primary Stat Values (Pointer-Based)
+### A. Primary stat values (pointer-backed)
 
-These are the main character stats read from memory pointers. They take precedence over OCR values when available.
+| Variable | State field | Type | Source | Description |
+|---|---|---|---|---|
+| `hp_value` | `state.hp_value` | `int \| None` | pointer / OCR fallback | Current HP; falls back to `char_status_hp` |
+| `mp_value` | `state.mp_value` | `int \| None` | pointer / OCR fallback | Current Mana; falls back to `char_status_mana` |
+| `cap_value` | `state.cap_value` | `int \| None` | pointer / OCR fallback | Current Cap; falls back to `char_status_cap` |
+| `food_value` | `state.food_value` | `int \| None` | pointer / OCR fallback | Food timer; falls back to `char_status_food_seconds` |
 
-| Variable | State Field | Type | Source | Description |
-|----------|------------|------|--------|-------------|
-| `hp_value` | `state.hp_value` | `int \| None` | Pointer (primary) / OCR (fallback) | Current character HP read from memory pointer at resolved address. Falls back to `char_status_hp` when pointer unavailable. |
-| `mp_value` | `state.mp_value` | `float \| None` | Pointer (primary) / OCR (fallback) | Current character MP/Mana read from memory pointer. Falls back to `char_status_mana`. |
-| `cap_value` | `state.cap_value` | `float \| None` | Pointer (primary) / OCR (fallback) | Current Cap value (capacity stat, separate from HP). Falls back to `char_status_cap`. |
+Implemented by `StatPointerService` subclasses in `systool/services/monitoring.py`, driven by
+`PointerReader` (`systool/pointers/pointer_reader.py`) over the profiles in
+`systool/pointers/profiles.py`.
 
-**Pointer Resolution:**
-- Base address: `0x00A783E0` (shared across all three stats)
-- HP offset: `+ 0x4A0` → resolved via `HpService._resolve_hp_pointer()`
-- MP offset: `+ 0x4F8` → resolved via `MpService._resolve_mp_pointer()`
-- Cap offset: `+ 0x4B8` → resolved via `CapService._resolve_cap_pointer()`
+**Pointer chains (current `main`):**
 
-**Batch Read Optimization:**
-All three stats can be read in a single controller call via `HpService._read_all_stats()`. This reduces redundant module lookups and pointer chain resolution overhead.
+| Stat | Chains (module base → offsets) | Source table |
+|---|---|---|
+| HP | `+0x00A6DA60 → 0x4A0`, `+0x00A6DA6C → 0x4A0 → 0x11C` | `pointers_ct/HP Pointers.CT` |
+| MP | `+0x00A6DA60 → 0x4F8`, `+0x00A6DA6C → 0x4F8 → 0x11C` | `pointers_ct/MP Pointers.CT` |
+| Cap | `+0x00A6DA6C → 0x4B8 → 0x11C`, `+0x00A6DA60 → 0x4B8` | `pointers_ct/CAP Pointers.CT` |
+| Food | `+0x00285388 → 0x69C → 0x3E8` (+`0x3BC`, +`0x3CC`) | `pointers_ct/Food_pointers.CT` |
+| Light color | `+0x00A3E4C0 → 0xAC` (intensity = color + 1) | `pointers_ct/Light Pointers.CT` |
+
+Chains are tried in order; the first one that resolves *and* probes successfully is cached for
+`cache_ttl` seconds (default 60). `read_*` in `PointerReader` are the read entry points, and the
+module base comes from Toolhelp rather than from pymem internals so the driver backends work too.
+
+**Batch read:** `HpService._read_all_stats()` reads HP, MP, Cap and Food in one pass and writes
+whichever value it obtained — pointer or promoted OCR — to `hp_value`, `mp_value`, `cap_value`,
+`food_value`. The Variables tab calls it before refreshing the labels.
+
+### B. Value validation and pointer invalidation
+
+`StatPointerService._validate_pointer_value()` rejects a read when:
+
+- the value is not a finite number, is negative, or is fractional for an integer stat,
+- it exceeds the hard maximum (`1_000_000` for HP/MP/Cap),
+- it is more than `3 ×` the last observed peak (`char_status_hp_peak`),
+- it differs from the OCR value by more than `max(500, 5 × OCR value)`,
+- after normalisation it is `<= 0`.
+
+Rejection calls `_invalidate_pointer()`, which sets the sticky flag (`_hp_pointer_invalid`,
+`_mp_pointer_invalid`, `_cap_pointer_invalid`), clears the resolved address and hex field, flips the
+source tag to `ocr`, and logs `"<STAT> pointer invalidated: <reason>. Falling back to OCR."`.
+The address cache is also rebuilt whenever its 60 s TTL expires.
+
+### C. OCR-derived values (fallback source)
+
+| Variable | State field | Type | Description |
+|---|---|---|---|
+| `char_status_hp` | `state.char_status_hp` | `int \| None` | HP parsed from the status window |
+| `char_status_mana` | `state.char_status_mana` | `int \| None` | Mana parsed from the status window |
+| `char_status_cap` | `state.char_status_cap` | `int \| None` | Cap parsed from the status window |
+| `char_status_level` | `state.char_status_level` | `int \| None` | Character level |
+| `char_status_food_seconds` | `state.char_status_food_seconds` | `int \| None` | Remaining food-buff seconds |
+| `char_status_food_text` | `state.char_status_food_text` | `str` | Food-buff text (e.g. `Ham`, `Fish`) |
+
+**OCR configuration:** `char_status_region`, `char_status_hp_region`, `char_status_mana_region`,
+`char_status_cap_region`; poll interval `char_status_poll_ms` (default 800 ms); `char_status_samples`
+(default 3) with `char_status_sample_delay_ms` (default 100 ms); optional `char_status_tesseract_path`.
+
+Samples are aggregated with the **median** for numeric fields and the **most common value** for
+`char_status_food_text`.
+
+### D. Derived statistics
+
+| Variable | State field | Computation |
+|---|---|---|
+| `char_status_hp_peak` | `state.char_status_hp_peak` | Running maximum of the OCR HP value |
+| `char_status_hp_regen_per_min` | `state.char_status_hp_regen_per_min` | Positive HP deltas over a rolling 180 s window ÷ elapsed minutes |
+| `char_status_mana_regen_per_min` | `state.char_status_mana_regen_per_min` | Same, for mana |
+
+Regen history only records *changes*, is trimmed to 180 s, and ignores losses, so the number is a
+regeneration rate rather than a net change rate.
+
+### E. Source metadata
+
+| Variable | State field | Values |
+|---|---|---|
+| `hp_source` | `state.hp_source` | `pointer` / `ocr` (default `ocr`) |
+| `mp_source` | `state.mp_source` | `pointer` / `ocr` / `none` |
+| `cap_source` | `state.cap_source` | `pointer` / `ocr` / `none` |
+| `food_source` | `state.food_source` | `pointer` / `ocr` |
+
+### F. Pointer addresses (hex display)
+
+| Variable | State field | Description |
+|---|---|---|
+| `hp_pointer_address_hex` | `state.hp_pointer_address_hex` | Resolved HP address, hex without prefix |
+| `mp_pointer_address_hex` | `state.mp_pointer_address_hex` | Resolved MP address |
+| `cap_pointer_address_hex` | `state.cap_pointer_address_hex` | Resolved Cap address |
+| `food_pointer_address_hex` | `state.food_pointer_address_hex` | Resolved Food address |
+
+**Internal (used by the batched read and the UI):**
+
+- `_mp_resolved_addr`, `_cap_resolved_addr`, `_food_resolved_addr` — raw integer addresses
+- `_prev_ocr_hp`, `_prev_ocr_mp`, `_prev_ocr_cap` — previous OCR values for change detection
+
+### G. Read statistics and health monitoring
+
+| Variable | State field | Type | Description |
+|---|---|---|---|
+| `char_status_reads` | `state.char_status_reads` | `int` | Successful OCR reads since start |
+| `char_status_failures` | `state.char_status_failures` | `int` | Failed OCR attempts |
+| `char_status_last_seen` | `state.char_status_last_seen` | `float \| None` | Timestamp of the last successful read |
+| `char_status_last_error` | `state.char_status_last_error` | `str` | Last OCR error message |
 
 ---
 
-### B. OCR-Derived Values (Fallback Source)
+## Service consumption map
 
-These values come from the Character Status OCR service, which reads character stats by taking screenshots of the game UI and running Tesseract OCR. They serve as fallback when pointers are unavailable or for additional data not exposed via memory pointers.
+### HpService / MpService / CapService / FoodService
 
-| Variable | State Field | Type | Description |
-|----------|------------|------|-------------|
-| `char_status_hp` | `state.char_status_hp` | `int \| None` | HP value extracted from OCR character status window. Used as fallback when pointer read fails. |
-| `char_status_mana` | `state.char_status_mana` | `int \| None` | Mana/MP value extracted from OCR. Fallback for MP service. |
-| `char_status_cap` | `state.char_status_cap` | `int \| None` | Cap value extracted from OCR. Fallback for Cap service. |
-| `char_status_level` | `state.char_status_level` | `int \| None` | Character level extracted from OCR. Displayed in Variables tab. |
-| `char_status_food_text` | `state.char_status_food_text` | `str` | Food buff text (e.g., "Ham", "Fish") extracted from OCR. |
-| `char_status_food_seconds` | `state.char_status_food_seconds` | `int \| None` | Remaining seconds on food buff, parsed from OCR. Used by RightClickService to trigger burst clicks when food expires. |
-
-**OCR Configuration:**
-- Region: `char_status_region`, `char_status_hp_region`, `char_status_mana_region`, `char_status_cap_region` — screen coordinates for OCR capture
-- Poll interval: `char_status_poll_ms` (default 800ms)
-- Samples: `char_status_samples` (default 3), with median aggregation
-
----
-
-### C. Derived Statistics
-
-These are computed from raw values and used for monitoring, alarms, and decision-making.
-
-| Variable | State Field | Type | Computation | Description |
-|----------|------------|------|-------------|-------------|
-| `char_status_hp_peak` | `state.char_status_hp_peak` | `int` | `max(hp_value)` over time | Peak HP observed. Used by AlarmService to calculate HP percentage thresholds. |
-| `char_status_hp_regen_per_min` | `state.char_status_hp_regen_per_min` | `float` | Computed from HP history (180s window) | HP regeneration rate per minute. Tracks positive delta over time. |
-| `char_status_mana_regen_per_min` | `state.char_status_mana_regen_per_min` | `float` | Computed from Mana history (180s window) | Mana regeneration rate per minute. |
-
-**Regen Rate Algorithm:**
 ```python
-# Maintains a rolling 180-second history of value changes
-# Only counts positive deltas (gains), ignores losses
-# Rate = total_gained / elapsed_minutes
-```
+HpService.get_hp()    -> state.hp_value     # pointer read or OCR fallback
+MpService.get_mp()    -> state.mp_value     # pointer read or OCR fallback
+CapService.get_cap()  -> state.cap_value    # pointer read or OCR fallback
+FoodService.get_food() -> state.food_value  # pointer read or OCR fallback
 
----
-
-### D. Source Metadata
-
-These track the provenance and reliability of each stat source.
-
-| Variable | State Field | Type | Values | Description |
-|----------|------------|------|--------|-------------|
-| `hp_source` | `state.hp_source` | `str` | `"pointer"` / `"ocr"` | Source tag for HP value display. Shows whether pointer or OCR is active. |
-| `mp_source` | `state.mp_source` | `str` | `"pointer"` / `"ocr"` / `"none"` | Source tag for MP value display. |
-| `cap_source` | `state.cap_source` | `str` | `"pointer"` / `"ocr"` / `"none"` | Source tag for Cap value display. |
-
----
-
-### E. Pointer Addresses (Hex Display)
-
-These show the resolved memory addresses used for pointer reads, displayed in hex format.
-
-| Variable | State Field | Type | Description |
-|----------|------------|------|-------------|
-| `hp_pointer_address_hex` | `state.hp_pointer_address_hex` | `str` | Hex string of resolved HP pointer address (e.g., `"22B9EE60"`) |
-| `mp_pointer_address_hex` | `state.mp_pointer_address_hex` | `str` | Hex string of resolved MP pointer address |
-| `cap_pointer_address_hex` | `state.cap_pointer_address_hex` | `str` | Hex string of resolved Cap pointer address |
-
-**Internal (for batch reads):**
-- `_mp_resolved_addr`: Raw integer address for MP, stored by MpService.attach()
-- `_cap_resolved_addr`: Raw integer address for Cap, stored by CapService.attach()
-
----
-
-### F. Read Statistics & Health Monitoring
-
-These track the health and performance of the OCR character status reader.
-
-| Variable | State Field | Type | Description |
-|----------|------------|------|-------------|
-| `char_status_reads` | `state.char_status_reads` | `int` | Total successful OCR reads since service started |
-| `char_status_failures` | `state.char_status_failures` | `int` | Total failed OCR attempts (exceptions, no digits recognized) |
-| `char_status_last_seen` | `state.char_status_last_seen` | `float \| None` | Unix timestamp of last successful OCR read |
-| `char_status_last_error` | `state.char_status_last_error` | `str` | Last error message from OCR service (empty string if no error) |
-
----
-
-## Service Consumption Map
-
-Shows which services consume each variable and how they use it:
-
-### HpService / MpService / CapService
-```python
-# Primary read path
-HpService.get_hp() → state.hp_value          # pointer read or OCR fallback
-MpService.get_mp()  → state.mp_value         # pointer read or OCR fallback
-CapService.get_cap() → state.cap_value       # pointer read or OCR fallback
-
-# Batch read (optimized)
-HpService._read_all_stats() → (hp_val, mp_val, cap_val)
+HpService._read_all_stats() -> (hp_val, mp_val, cap_val)   # batched, also stores food
 ```
 
 ### AlarmService
+
 ```python
-# Uses HP values to trigger alarms when HP drops below threshold
-state.alarm_hp_percent  # alarm percentage threshold
-state.char_status_hp_peak  # peak HP for ratio calculation: (current / peak) * 100
-state.hp_value           # current HP value
-state.char_status_hp     # fallback OCR HP if pointer unavailable
+state.alarm.threshold          # pixel-change ratio threshold
+state.alarm.battle_threshold   # battle-region change ratio
+state.alarm_hp_percent         # low-HP alarm percentage
+state.alarm_hp_value           # low-HP alarm absolute value
+state.alarm.mp_value           # mp alarm threshold
+state.alarm.cap_value          # cap alarm threshold
+state.hp_value                 # current HP
+state.char_status_hp_peak      # peak for the percentage calculation
 ```
 
-### FishService
+### FishingService
+
 ```python
-# Uses Cap values to determine fishing session conditions
-state.fish_min_cap       # minimum Cap required before starting fish session
-state.char_status_cap    # current Cap from OCR for comparison
-state.cap_value          # current Cap from pointer (primary)
+state.fish_min_cap                      # stop/abort below this Cap
+state.cap_value                         # pointer Cap (primary)
+state.char_status_cap                   # OCR Cap fallback
+state.fish_auto_restart_food_min_secs   # restart when food drops below this
+state.char_status_food_seconds          # OCR food timer
 ```
 
-### RuneService
+### RuneMakerService
+
 ```python
-# Uses Mana values to determine rune crafting eligibility
-state.rune_min_mana      # minimum mana required before casting runes
-state.char_status_mana   # current mana from OCR
-state.mp_value           # current mana from pointer (primary)
+state.rune_min_mana   # cast only at/above this mana
+state.rune_max_mana   # cast only at/below this mana
+state.mp_value        # pointer mana (primary)
+state.char_status_mana  # OCR fallback
 ```
 
-### HealerService
+### AutoHealerService
+
 ```python
-# Uses HP/MP values for healing decisions
-state.healer_hp_percent  # heal when HP drops below this percentage
-state.healer_hp_value    # heal when HP drops below this absolute value
-state.hp_value           # current HP to check against thresholds
-state.char_status_hp     # fallback OCR HP
+state.healer_use_percent  # percentage vs absolute threshold
+state.healer_hp_percent   # heal below this percentage
+state.healer_hp_value     # heal below this absolute value
+state.healer_min_mana     # require this much mana before healing
+state.hp_value            # current HP
+state.char_status_hp      # OCR fallback
 ```
 
 ### RightClickService
+
 ```python
-# Uses food status for burst click timing
-state.rclick_require_food  # whether to check food before right-clicking
-state.char_status_food_seconds  # remaining food buff seconds
-state.rclick_food_min_secs      # minimum food seconds before triggering burst
+state.rclick_require_food        # check food before right-clicking
+state.rclick_food_min_minutes    # keep food above this many minutes
+state.char_status_food_seconds   # OCR food timer
+state.food_value                 # pointer food timer (primary)
+```
+
+### HotkeyJobService
+
+```python
+job.min_mana / job.max_mana   # per-job mana window
+state.mp_value                # pointer mana
+state.char_status_mana        # OCR fallback
 ```
 
 ---
 
-## Data Flow Diagram
+## Data flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Memory Services                          │
-│                                                              │
-│  HpService.attach() → resolve pointer → state.hp_value      │
-│  MpService.attach() → resolve pointer → state.mp_value      │
-│  CapService.attach()→ resolve pointer → state.cap_value     │
-│                                                              │
-│  CharacterStatusService._worker():                          │
-│    screenshot → OCR → median aggregation →                  │
-│    state.char_status_hp/mana/cap/level/food                 │
-│    state.char_status_hp_regen_per_min                       │
-│    state.char_status_mana_regen_per_min                     │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    AppState (Shared)                         │
-│                                                              │
-│  Primary values:  hp_value, mp_value, cap_value             │
-│  Fallback values: char_status_hp/mana/cap                   │
-│  Derived stats:   regen rates, peak HP                      │
-│  Metadata:        source tags, pointer addresses            │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Consumer Services                         │
-│                                                              │
-│  AlarmService     → monitors HP % and triggers alarms       │
-│  FishService      → checks Cap before fishing               │
-│  RuneService      → checks Mana before rune crafting        │
-│  HealerService    → heals when HP drops below threshold     │
-│  RightClickServ.  → burst clicks when food expires          │
-└─────────────────────────────────────────────────────────────┘
+StatPointerService.attach()
+  -> LightMemoryController(backend from state.light_memory_backend)
+  -> PointerReader(controller, cache_ttl=60 s)
+  -> resolve_pointer() for the stat profile  ->  state.<stat>_pointer_address_hex
+  -> read + validate                         ->  state.<stat>_value / <stat>_source = "pointer"
+       (on validation failure: _<stat>_pointer_invalid = True, source = "ocr")
+
+CharacterStatusService._worker()
+  -> mss capture (full window and/or per-field regions)
+  -> TesseractOCREngine (tesserocr preferred, pytesseract fallback)
+  -> median / mode aggregation
+  -> state.char_status_hp / mana / cap / level / food_seconds / food_text
+  -> regen + peak update
 ```
 
 ---
 
-## UI Refresh Cycle
+## UI refresh cycle
 
-The `_refresh_variables_display()` method in `app.py` is called periodically to update the Variables tab:
+`VariablesTab.refresh_display()` (`systool/ui/tabs/variables_tab.py`):
 
-1. **Batch memory read** — calls `HpService._read_all_stats()` to get HP/MP/Cap from pointers
-2. **Fallback individual reads** — if batch fails, calls `get_hp()`, `get_mp()`, `get_cap()` separately
-3. **Update UI labels** — displays values with source tags and pointer addresses
-4. **Show regen stats** — displays regeneration rates computed from OCR history
+1. calls `HpService._read_all_stats()` when available, otherwise `get_hp()`, `get_mp()`, `get_cap()`
+   and `get_food()` individually,
+2. renders each value together with its source tag (`pointer` / `ocr` / `none`),
+3. renders the resolved pointer address for HP, MP, Cap and Food,
+4. renders regen rates, read/miss counters, HP peak and the last update timestamp.
 
----
-
-## File Locations
-
-| Component | File | Location |
-|-----------|------|----------|
-| State model definition | `systool/models.py` | Lines 30-211 (AppState class) |
-| HP service | `systool/services.py` | HpService class (~line 450+) |
-| MP service | `systool/services.py` | MpService class (~line 632+) |
-| Cap service | `systool/services.py` | CapService class (~line 761+) |
-| Character Status OCR | `systool/services.py` | CharacterStatusService class (~line 1240+) |
-| UI refresh logic | `systool/app.py` | `_refresh_variables_display()` (~line 2326) |
+The tab also drives the periodic refresh from `SystemMonitorApp` (settings poll every 500 ms, stats
+poll every 100 ms).
 
 ---
 
-## Notes for Future Updates
+## File locations (current `main`)
 
-When adding new variables or modifying existing ones:
+| Component | File |
+|---|---|
+| State models (`AppState` + grouped states) | `systool/models.py` |
+| Defaults and clamp bounds | `systool/config.py` |
+| Pointer profiles (chains, read method) | `systool/pointers/profiles.py` |
+| Pointer resolution + read entry points | `systool/pointers/pointer_reader.py` |
+| Memory backends | `systool/pointers/memory_backend.py` |
+| Chain ranking helper | `systool/pointers/pointer_chain_ranker.py` |
+| Stat services + light + alarm + OCR | `systool/services/monitoring.py` |
+| Variables tab UI | `systool/ui/tabs/variables_tab.py` |
+| Services container | `systool/container.py` |
+| Runtime state, gates, OCR engine | `systool/runtime.py` |
 
-1. **Add state fields to AppState** in `models.py` with proper type hints and default values
-2. **Update the service that populates the value** — ensure it writes under `settings_lock`
-3. **Update `_refresh_variables_display()`** in `app.py` to display the new variable
-4. **Document consumption** — note which services read this variable and how they use it
-5. **Consider batch reads** — if the new stat shares a base address with HP/MP/Cap, add it to `_read_all_stats()`
+---
 
-When adding new consumer services:
-1. Read values under `settings_lock` to avoid race conditions
-2. Use primary pointer values first (`hp_value`, `mp_value`, `cap_value`)
-3. Fall back to OCR values (`char_status_*`) when pointer is None
-4. Handle `None` gracefully — don't assume values are always available
+## Notes for future updates
+
+When adding a variable:
+
+1. add the field to the right grouped dataclass in `models.py` (and a property alias if the flat name
+   is already used elsewhere),
+2. add its default and clamp bounds to `config.py`, and include it in `ConfigSerializer.to_dict()` /
+   `apply_loaded()` if it should persist,
+3. have the populating service write it under `runtime.settings_lock`,
+4. display it in `systool/ui/tabs/variables_tab.py`,
+5. document which services consume it here,
+6. if it shares a base address with HP/MP/Cap/Food, extend `_read_all_stats()` instead of adding a new
+   resolution pass.
+
+When adding a consumer service:
+
+1. read state under `runtime.settings_lock`,
+2. prefer the pointer value (`hp_value`, `mp_value`, `cap_value`, `food_value`),
+3. fall back to `char_status_*` when the pointer value is `None`,
+4. handle `None` explicitly — the OCR channel can be empty while no window is selected.
